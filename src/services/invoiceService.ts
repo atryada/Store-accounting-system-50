@@ -1,0 +1,1534 @@
+import { checkFinancialYear, getStoreSettings } from './settingsService';
+import { mapTransactionTypeToTable, mapInvoiceTypeToTable, getPagedData, PagedResponse } from './coreService';
+import { getLedgerAccounts, addLedgerAccount, addAccountingDocument, getAccountingDocuments, updateAccountingDocument, deleteAccountingDocument, createReversalAccountingDocument, reverseInvoiceAccounting } from './accountingService';
+import { syncProductLatestPrices, syncProductsLatestPrices } from './productService';
+import { recalculateAllWarehouseStocks } from './inventoryService';
+
+import { 
+  getLocalData, 
+  saveLocalData, 
+  updateLocalData, 
+  appendLocalData, 
+  batchLocalData, 
+  generateId, 
+  parseToGregorianDate, 
+  generateDocNumber, 
+  incrementInvoiceNumber,
+  updateDocCounter, 
+  getDatabaseLogs, 
+  addDatabaseLog, 
+  getSystemLogs, 
+  addSystemLog,
+  ensureFiscalYearId,
+  invalidateCache
+} from './coreService';
+export { generateDocNumber } from './coreService';
+import { CompanySettings } from '../types';
+import { convertToGregorian } from '../utils/format';
+import { convertPriceToBaseUnit, convertQuantityToBaseUnit, getUnitRatioDirection } from '../utils/unitConversion';
+import { logActivity } from '../utils/auditLogger';
+
+
+export const syncInvoiceAllocations = async (tx: any) => {
+    if (!tx?.id) return;
+    try {
+        const now = new Date().toISOString();
+        const salesPayments = await getLocalData<any[]>('sales_invoice_payments', []);
+        const purchasePayments = await getLocalData<any[]>('purchase_invoice_payments', []);
+        const invoices = await getInvoices({all:true});
+        
+        let salesChanged = false;
+        let purchaseChanged = false;
+
+        const newSales = salesPayments.filter(p => String(p.receiptId) !== String(tx.id));
+        const newPurchases = purchasePayments.filter(p => String(p.receiptId) !== String(tx.id));
+
+        for (const invId of Object.keys(tx.linkedInvoices || {})) {
+            const amount = Number(tx.linkedInvoices[invId]) || 0;
+            if (amount <= 0) continue;
+            
+            const inv = invoices.find(i => String(i.id) === String(invId));
+            if (!inv) continue;
+
+            const record = {
+                id: `${tx.id}_${invId}`,
+                invoiceId: invId,
+                receiptId: tx.id,
+                amount: amount,
+                date: tx.date || now.split('T')[0],
+                timestamp: now
+            };
+
+            if (inv.type === 'purchase' || inv.type === 'purchase_return') {
+                newPurchases.push(record);
+                purchaseChanged = true;
+            } else {
+                newSales.push(record);
+                salesChanged = true;
+            }
+        }
+        
+        // Always save to ensure deleted allocations are actually removed
+        if (salesChanged || salesPayments.length !== newSales.length) {
+            await saveLocalData('sales_invoice_payments', newSales);
+        }
+        if (purchaseChanged || purchasePayments.length !== newPurchases.length) {
+            await saveLocalData('purchase_invoice_payments', newPurchases);
+        }
+
+    } catch (e) {
+        console.error('Error syncing invoice allocations:', e);
+    }
+};
+
+export const getSalesInvoicePayments = async () => {
+  return await getLocalData<any[]>('sales_invoice_payments', []);
+};
+
+export const getPurchaseInvoicePayments = async () => {
+  return await getLocalData<any[]>('purchase_invoice_payments', []);
+};
+
+export const getTransactions = async () => {
+  let allTx: any[] = [];
+  const tables = ['receipt_transactions', 'payment_transactions', 'transactions'];
+  for (const table of tables) {
+    try {
+      const data = await getLocalData<any[]>(table, []);
+      if (Array.isArray(data)) {
+        allTx = allTx.concat(data);
+      }
+    } catch (e) {
+      // ignore table not existing errors
+    }
+  }
+  
+  // Deduplicate by ID to prevent duplicate key warnings
+  const uniqueTx = new Map();
+  allTx.forEach(t => {
+    if (t && !t.isDeleted) {
+        if (!uniqueTx.has(t.id) || t.updatedAt > uniqueTx.get(t.id).updatedAt) {
+            uniqueTx.set(t.id, t);
+        }
+    }
+  });
+  
+  return Array.from(uniqueTx.values()).sort((a, b) => b.createdAt - a.createdAt);
+};
+
+export const addTransaction = async (transaction: any) => {
+  let activeYear = null; if (transaction.date) activeYear = await checkFinancialYear(transaction.date);
+  const now = Date.now();
+  const nowDate = new Date(now);
+  const nowTime = `${String(nowDate.getHours()).padStart(2, '0')}:${String(nowDate.getMinutes()).padStart(2, '0')}`;
+  
+  let finalTx = { ...transaction };
+  if (!finalTx.time || typeof finalTx.time !== 'string' || finalTx.time.toLowerCase().includes('invalid')) {
+    finalTx.time = nowTime;
+  }
+  const docTypeMap: any = { 'receive': 'receive_receipt', 'pay': 'pay_receipt', 'salary': 'salary' };
+  const table = mapTransactionTypeToTable(finalTx.type);
+
+  // Fast receipt number assignment if not provided
+  if (!finalTx.receiptNumber && docTypeMap[finalTx.type]) {
+    finalTx.receiptNumber = await generateDocNumber(docTypeMap[finalTx.type]);
+  }
+
+  const newTransaction = { ...finalTx, id: generateId(), createdAt: now, updatedAt: now, fiscalYearId: activeYear ? activeYear.id : undefined };
+  const operations: any[] = [];
+
+  if (transaction.type === 'receive' || transaction.type === 'pay' || transaction.type === 'salary') {
+    const amount = Number(transaction.amount) || 0;
+    if (transaction.resourceType === 'bank') {
+      const accounts = await getLocalData<any[]>('accounts', []);
+      const index = accounts.findIndex(a => a.id === transaction.resourceId);
+      if (index !== -1) {
+        let newBalance = Number(accounts[index].balance || 0);
+        if (transaction.type === 'receive') {
+          newBalance += amount;
+        } else {
+          newBalance -= amount;
+        }
+        operations.push({ type: 'update', key: 'accounts', id: accounts[index].id, data: { balance: newBalance } });
+      }
+    } else if (transaction.resourceType === 'cashbox') {
+      const cashboxes = await getLocalData<any[]>('cashboxes', []);
+      const index = cashboxes.findIndex(c => c.id === transaction.resourceId);
+      if (index !== -1) {
+        let newBalance = Number(cashboxes[index].balance || 0);
+        if (transaction.type === 'receive') {
+          newBalance += amount;
+        } else {
+          newBalance -= amount;
+        }
+        operations.push({ type: 'update', key: 'cashboxes', id: cashboxes[index].id, data: { balance: newBalance } });
+      }
+    }
+  }
+
+  operations.push({ type: 'append', key: table, data: newTransaction });
+
+  // Auto-generate detailed accounting document with full explanation
+  const shouldSkipAccounting = 
+    transaction.skipAccounting ||
+    transaction.method === 'check' ||
+    transaction.method === 'person_transfer' ||
+    transaction.resourceType === 'person' ||
+    transaction.isPersonTransfer;
+
+  if (!shouldSkipAccounting) {
+    try {
+
+     const docType = transaction.type === 'receive' ? 'receipt' : 'payment';
+     const ledgerAccounts = await getLedgerAccounts();
+     const defaultLedger = ledgerAccounts.length > 0 ? ledgerAccounts[0].id : '';
+
+     // Find Person Ledger Account
+     let personLedgerId = defaultLedger;
+     let personName = 'نامشخص';
+     if (transaction.personId) {
+        const persons = await getLocalData<any[]>('persons', []);
+        const person = persons.find(p => String(p.id) === String(transaction.personId));
+        if (person) {
+           personName = person.name || person.alias || 'نامشخص';
+           if (person.accountingCode) {
+              const acc = ledgerAccounts.find(a => a.code === person.accountingCode);
+              if (acc) personLedgerId = acc.id;
+           }
+        }
+     }
+     
+     // Override personLedgerId for Loan transactions to proper Loan Accounts
+     const getAccountForCode = async (code: string, title: string, parentCode: string, nature: 'debit' | 'credit') => {
+        let acc = ledgerAccounts.find(a => a.code === code);
+        if (acc) return acc.id;
+        const parentAcc = ledgerAccounts.find(a => a.code === parentCode);
+        if (parentAcc) {
+            const newAcc = { id: generateId(), code, title, type: 'subsidiary', nature, parentId: parentAcc.id };
+                        await addLedgerAccount(newAcc);
+            ledgerAccounts.push(newAcc);
+            return newAcc.id;
+        }
+        return defaultLedger;
+     };
+
+     if (transaction.categoryId === 'loan_given' || transaction.categoryId === 'loan_installment_received') {
+        personLedgerId = await getAccountForCode('1601', 'وام‌های پرداختی', '16', 'debit');
+     } else if (transaction.categoryId === 'loan_received' || transaction.categoryId === 'loan_installment_paid') {
+        personLedgerId = await getAccountForCode('2201', 'وام‌های دریافتی', '22', 'credit');
+     }
+
+     // Find Bank/Cashbox Resource Ledger Account
+     let resourceLedgerId = defaultLedger;
+     let resourceName = 'نامشخص';
+     const resType = transaction.resourceType || (transaction.accountId ? 'bank' : transaction.cashboxId ? 'cashbox' : '');
+     const isCheckCashing = transaction.isCheckCashing === true;
+     const resId = transaction.resourceId || transaction.accountId || transaction.cashboxId;
+
+     if (resType === 'bank' && resId) {
+        const accountsList = await getLocalData<any[]>('accounts', []);
+        const account = accountsList.find(a => String(a.id) === String(resId));
+        if (account) {
+           resourceName = account.title || account.bankName || 'نامشخص';
+           if (account.accountingCode) {
+              const acc = ledgerAccounts.find(a => a.code === account.accountingCode);
+              if (acc) resourceLedgerId = acc.id;
+           } else {
+              const acc = ledgerAccounts.find(a => a.code === '1102');
+              if (acc) resourceLedgerId = acc.id;
+           }
+        }
+     } else if (resType === 'cashbox' && resId) {
+        const cashboxesList = await getLocalData<any[]>('cashboxes', []);
+        const cashbox = cashboxesList.find(c => String(c.id) === String(resId));
+        if (cashbox) {
+           resourceName = cashbox.name || 'نامشخص';
+           if (cashbox.accountingCode) {
+              const acc = ledgerAccounts.find(a => a.code === cashbox.accountingCode);
+              if (acc) resourceLedgerId = acc.id;
+           } else {
+              const acc = ledgerAccounts.find(a => a.code === '1101');
+              if (acc) resourceLedgerId = acc.id;
+           }
+        }
+     } else {
+        const acc = ledgerAccounts.find(a => a.code === '11');
+        if (acc) resourceLedgerId = acc.id;
+     }
+
+     const formattedAmount = Number(transaction.amount || 0).toLocaleString('fa-IR');
+     const sysSettings = await getStoreSettings();
+     const currency = transaction.currency || sysSettings?.currency || 'تومان';
+     const typeText = transaction.type === 'receive' ? 'دریافت' : transaction.type === 'salary' ? 'حقوق و دستمزد' : 'پرداخت';
+     let methodText = 'نقدی';
+     if (transaction.method === 'check') methodText = 'چک';
+     else if (transaction.method === 'transfer' || transaction.method === 'card') methodText = 'حواله/کارت به کارت';
+     let docDescription = '';
+     if (transaction.type === 'salary') {
+         if (transaction.description && !transaction.description.includes('isPayslip')) {
+            docDescription = `${transaction.description} برای کارمند: ${personName}`;
+         } else {
+            docDescription = `حقوق و دستمزد به مبلغ ${formattedAmount} ${currency} برای کارمند: ${personName}`;
+         }
+     } else {
+         docDescription = `${typeText} ${methodText} به مبلغ ${formattedAmount} ${currency}`;
+         if (personName && personName !== 'نامشخص') {
+            if (transaction.type === 'receive') {
+               docDescription += ` از طرف حساب: ${personName}`;
+            } else {
+               docDescription += ` به طرف حساب: ${personName}`;
+            }
+         }
+         if (resourceName && resourceName !== 'نامشخص') {
+            if (transaction.type === 'receive') {
+               docDescription += ` - واریز به حساب/صندوق: ${resourceName}`;
+            } else {
+               docDescription += ` - برداشت از حساب/صندوق: ${resourceName}`;
+            }
+         }
+     }
+          
+     if (newTransaction.receiptNumber) {
+        docDescription += ` (شماره سند/رسید: ${newTransaction.receiptNumber})`;
+     }
+     if (transaction.method === 'check' && transaction.checkNumber) {
+        docDescription += ` - چک شماره ${transaction.checkNumber}`;
+        if (transaction.checkDueDate) docDescription += ` به سررسید ${transaction.checkDueDate}`;
+        if (transaction.checkBankName) docDescription += ` عهده بانک ${transaction.checkBankName}`;
+     }
+     if (transaction.description) {
+        let appendedDesc = transaction.description;
+        if (transaction.type === 'salary') {
+            try {
+                const p = JSON.parse(transaction.description);
+                if (p.isPayslip) {
+                    const pMonthName = ["فروردین", "اردیبهشت", "خرداد", "تیر", "مرداد", "شهریور", "مهر", "آبان", "آذر", "دی", "بهمن", "اسفند"];
+                    const mName = p.periodMonth ? pMonthName[parseInt(p.periodMonth, 10) - 1] : "";
+                    docDescription = `سند حقوق ${mName} ماه ${p.periodYear} - ${personName}`;
+                    if (newTransaction.receiptNumber) {
+                        docDescription += ` (شماره فیش: ${newTransaction.receiptNumber})`;
+                    }
+                    appendedDesc = p.userNote || "";
+                }
+            } catch(e) {}
+        }
+        if (appendedDesc && appendedDesc !== transaction.description) {
+           docDescription += ` [توضیحات: ${appendedDesc}]`;
+        } else if (appendedDesc && transaction.type !== 'salary') {
+           docDescription += ` [توضیحات: ${appendedDesc}]`;
+        }
+     }
+
+     const items = [];
+     if (transaction.method === 'check') {
+         return newTransaction; // Check accounting is fully handled by syncCheckAccountingDocument
+     } else {
+
+         if (transaction.categoryId === 'loan_given' || transaction.categoryId === 'loan_received') {
+             const interestAmt = Number((transaction as any).interestAmount) || 0;
+             const principal = Number(transaction.amount);
+             const totalPayable = principal + interestAmt;
+             
+             if (transaction.categoryId === 'loan_given') {
+                 items.push({
+                     description: transaction.description ? transaction.description + ` - طرف حساب ${personName}` : `اعطای وام به ${personName}`,
+                     debit: totalPayable, credit: 0,
+                     ledgerAccountId: personLedgerId, detailedAccountId: transaction.personId
+                 });
+                 items.push({
+                     description: transaction.description ? transaction.description + ` - برداشت از ${resourceName}` : `پرداخت وجه بابت اعطای وام`,
+                     debit: 0, credit: principal,
+                     ledgerAccountId: resourceLedgerId
+                 });
+                 if (interestAmt > 0) {
+                     const interestAcc = ledgerAccounts.find((a: any) => a.title.includes('درآمد') && a.title.includes('بهره')) || ledgerAccounts.find((a: any) => String(a.code).startsWith('4')) || { id: defaultLedger };
+                     items.push({
+                         description: `شناسایی درآمد بهره بابت وام شماره ${(newTransaction.id || '').replace('txn-loan-', '')}`,
+                         debit: 0, credit: interestAmt,
+                         ledgerAccountId: interestAcc.id
+                     });
+                 }
+             } else {
+                 items.push({
+                     description: transaction.description ? transaction.description + ` - واریز به ${resourceName}` : `دریافت وجه بابت وام دریافتی`,
+                     debit: principal, credit: 0,
+                     ledgerAccountId: resourceLedgerId
+                 });
+                 if (interestAmt > 0) {
+                     const expenseAcc = ledgerAccounts.find((a: any) => String(a.code) === '53' || String(a.code) === '5') || { id: defaultLedger };
+                     items.push({
+                         description: `شناسایی هزینه بهره بابت وام دریافتی شماره ${(newTransaction.id || '').replace('txn-loan-', '')}`,
+                         debit: interestAmt, credit: 0,
+                         ledgerAccountId: expenseAcc.id
+                     });
+                 }
+                 items.push({
+                     description: transaction.description ? transaction.description + ` - طرف حساب ${personName}` : `اخذ وام از ${personName}`,
+                     debit: 0, credit: totalPayable,
+                     ledgerAccountId: personLedgerId, detailedAccountId: transaction.personId
+                 });
+             }
+         } else if (transaction.type === 'receive') {
+
+            items.push({
+               description: transaction.description ? transaction.description + ` - مبلغ ${formattedAmount} واریز به ${resourceName}` : `دریافت وجه به مبلغ ${formattedAmount} واریز به ${resourceName} بابت رسید دریافت شماره ${newTransaction.receiptNumber || newTransaction.id}`,
+               debit: Number(transaction.amount),
+               credit: 0,
+               ledgerAccountId: resourceLedgerId});
+            items.push({
+               description: transaction.description ? transaction.description + ` - طرف حساب ${personName}` : `طرف حساب ${personName} به مبلغ ${formattedAmount} بابت رسید دریافت شماره ${newTransaction.receiptNumber || newTransaction.id}`,
+               debit: 0,
+               credit: Number(transaction.amount),
+               ledgerAccountId: personLedgerId,
+               detailedAccountId: transaction.personId});
+         } else if (transaction.type === 'salary') {
+            const expenseAcc = ledgerAccounts.find((a: any) => a.code === '52') || ledgerAccounts.find((a: any) => a.code === '5') || { id: defaultLedger };
+            items.push({
+               description: `هزینه حقوق و دستمزد کارمند ${personName} بابت فیش حقوقی شماره ${newTransaction.receiptNumber || newTransaction.id}`,
+               debit: Number(transaction.amount),
+               credit: 0,
+               ledgerAccountId: expenseAcc.id});
+            items.push({
+               description: `طرف حساب ${personName} بابت حقوق و دستمزد شماره فیش ${newTransaction.receiptNumber || newTransaction.id}`,
+               debit: 0,
+               credit: Number(transaction.amount),
+               ledgerAccountId: personLedgerId,
+               detailedAccountId: transaction.personId});
+         } else {
+            items.push({
+               description: transaction.description ? transaction.description + ` - طرف حساب ${personName}` : `طرف حساب ${personName} به مبلغ ${formattedAmount} بابت رسید پرداخت شماره ${newTransaction.receiptNumber || newTransaction.id}`,
+               debit: Number(transaction.amount),
+               credit: 0,
+               ledgerAccountId: personLedgerId,
+               detailedAccountId: transaction.personId});
+            items.push({
+               description: transaction.description ? transaction.description + ` - برداشت از ${resourceName}` : `پرداخت وجه به مبلغ ${formattedAmount} از ${resourceName} بابت رسید شماره ${newTransaction.receiptNumber || newTransaction.id}`,
+               debit: 0,
+               credit: Number(transaction.amount),
+               ledgerAccountId: resourceLedgerId});
+         }
+     }
+     if (!transaction.skipAccounting && items.length >= 2) {
+         const docNum = await generateDocNumber('accounting_document');
+         const accountingDoc = {
+            id: generateId(),
+            documentNumber: docNum,
+            date: transaction.date || new Date().toISOString().split('T')[0],
+            description: docDescription,
+            status: 'approved',
+            sourceType: docType,
+            sourceId: newTransaction.id,
+            items: items.map(i => ({ ...i, currency })),
+            currency,
+            fiscalYearId: newTransaction.fiscalYearId,
+            createdAt: Date.now()
+         };
+         operations.push({ type: 'append', key: 'accounting_documents', data: accountingDoc });
+         updateDocCounter('accounting_document', docNum).catch(() => {});
+     }
+  } catch(e) {
+     console.warn('Accounting document generation warning:', e);
+  }
+  }
+
+  if (operations.length > 0) {
+    await batchLocalData(operations);
+  }
+
+  syncInvoiceAllocations(newTransaction).catch(e => console.warn('syncInvoiceAllocations background err:', e));
+  return newTransaction;
+};
+
+export const updateTransaction = async (id: string | number, updated: any) => {
+  let activeYear = null;
+  if (updated.date) activeYear = await checkFinancialYear(updated.date);
+  const updatedData = { ...updated, updatedAt: Date.now() };
+  if (activeYear) updatedData.fiscalYearId = activeYear.id;
+  try {
+     const table = mapTransactionTypeToTable(updatedData.type);
+
+     // Balance Bank and Cashbox resources before and after transaction edit
+     try {
+       const allTxs = await getTransactions();
+       const oldTx = allTxs.find(t => String(t.id) === String(id));
+       const operations: any[] = [];
+
+       // Rollback old cash/bank balance effect
+       if (oldTx && oldTx.method !== 'check') {
+         const oldAmt = Number(oldTx.resourceAmount ?? oldTx.amount) || 0;
+         const oldResType = oldTx.resourceType || (oldTx.accountId ? 'bank' : oldTx.cashboxId ? 'cashbox' : '');
+         const oldResId = oldTx.resourceId || oldTx.accountId || oldTx.cashboxId;
+
+         if (oldResType === 'bank' && oldResId) {
+           const accounts = await getLocalData<any[]>('accounts', []);
+           const idx = accounts.findIndex(a => String(a.id) === String(oldResId));
+           if (idx !== -1) {
+             let bal = Number(accounts[idx].balance) || 0;
+             bal = oldTx.type === 'receive' ? bal - oldAmt : bal + oldAmt;
+             operations.push({ type: 'update', key: 'accounts', id: accounts[idx].id, data: { balance: bal } });
+           }
+         } else if (oldResType === 'cashbox' && oldResId) {
+           const cashboxes = await getLocalData<any[]>('cashboxes', []);
+           const idx = cashboxes.findIndex(c => String(c.id) === String(oldResId));
+           if (idx !== -1) {
+             let bal = Number(cashboxes[idx].balance) || 0;
+             bal = oldTx.type === 'receive' ? bal - oldAmt : bal + oldAmt;
+             operations.push({ type: 'update', key: 'cashboxes', id: cashboxes[idx].id, data: { balance: bal } });
+           }
+         }
+       }
+
+       // Apply new cash/bank balance effect
+       if (updatedData.method !== 'check') {
+         const newAmt = Number(updatedData.amount) || 0;
+         const newResType = updatedData.resourceType || (updatedData.accountId ? 'bank' : updatedData.cashboxId ? 'cashbox' : '');
+         const newResId = updatedData.resourceId || updatedData.accountId || updatedData.cashboxId;
+
+         if (newResType === 'bank' && newResId) {
+           const accounts = await getLocalData<any[]>('accounts', []);
+           const idx = accounts.findIndex(a => String(a.id) === String(newResId));
+           if (idx !== -1) {
+             const existingOp = operations.find(o => o.key === 'accounts' && String(o.id) === String(newResId));
+             let bal = existingOp ? Number(existingOp.data.balance) : (Number(accounts[idx].balance) || 0);
+             bal = updatedData.type === 'receive' ? bal + newAmt : bal - newAmt;
+             if (existingOp) {
+               existingOp.data.balance = bal;
+             } else {
+               operations.push({ type: 'update', key: 'accounts', id: accounts[idx].id, data: { balance: bal } });
+             }
+           }
+         } else if (newResType === 'cashbox' && newResId) {
+           const cashboxes = await getLocalData<any[]>('cashboxes', []);
+           const idx = cashboxes.findIndex(c => String(c.id) === String(newResId));
+           if (idx !== -1) {
+             const existingOp = operations.find(o => o.key === 'cashboxes' && String(o.id) === String(newResId));
+             let bal = existingOp ? Number(existingOp.data.balance) : (Number(cashboxes[idx].balance) || 0);
+             bal = updatedData.type === 'receive' ? bal + newAmt : bal - newAmt;
+             if (existingOp) {
+               existingOp.data.balance = bal;
+             } else {
+               operations.push({ type: 'update', key: 'cashboxes', id: cashboxes[idx].id, data: { balance: bal } });
+             }
+           }
+         }
+       }
+
+       if (operations.length > 0) {
+         await batchLocalData(operations);
+       }
+     } catch (err) {
+       console.error("Error balancing bank/cashbox on updateTransaction:", err);
+     }
+
+     const newTx = await updateLocalData(table, id, updatedData);
+     if (typeof addSystemLog !== 'undefined') {
+       await addSystemLog('UPDATE_' + 'Transaction'.toUpperCase(), `ویرایش رسید / سند در ${table}`, 'Transaction', newTx.id);
+     }
+
+     // Auto-update corresponding accounting document
+     try {
+       const accountingDocs = await getAccountingDocuments();
+       const existingDoc = accountingDocs.find((d: any) => (d.sourceType === 'receipt' || d.sourceType === 'payment') && String(d.sourceId) === String(id));
+       
+       if (true) {
+         const ledgerAccounts = await getLedgerAccounts();
+         const defaultLedger = ledgerAccounts.length > 0 ? ledgerAccounts[0].id : '';
+
+         // Find Person Ledger Account
+         let personLedgerId = defaultLedger;
+         let personName = 'نامشخص';
+         if (updated.personId) {
+            const persons = await getLocalData<any[]>('persons', []);
+            const person = persons.find(p => String(p.id) === String(updated.personId));
+            if (person) {
+               personName = person.name || person.alias || 'نامشخص';
+               if (person.accountingCode) {
+                  const acc = ledgerAccounts.find(a => a.code === person.accountingCode);
+                  if (acc) personLedgerId = acc.id;
+               }
+            }
+         }
+         
+         const getAccountForCode2 = async (code: string, title: string, parentCode: string, nature: 'debit' | 'credit') => {
+            let acc = ledgerAccounts.find(a => a.code === code);
+            if (acc) return acc.id;
+            const parentAcc = ledgerAccounts.find(a => a.code === parentCode);
+            if (parentAcc) {
+                const newAcc = { id: generateId(), code, title, type: 'subsidiary', nature, parentId: parentAcc.id };
+                                await addLedgerAccount(newAcc);
+                ledgerAccounts.push(newAcc);
+                return newAcc.id;
+            }
+            return defaultLedger;
+         };
+
+         if (updated.categoryId === 'loan_given' || updated.categoryId === 'loan_installment_received') {
+            personLedgerId = await getAccountForCode2('1601', 'وام‌های پرداختی', '16', 'debit');
+         } else if (updated.categoryId === 'loan_received' || updated.categoryId === 'loan_installment_paid') {
+            personLedgerId = await getAccountForCode2('2201', 'وام‌های دریافتی', '22', 'credit');
+         }
+
+         // Find Bank/Cashbox Resource Ledger Account
+         let resourceLedgerId = defaultLedger;
+         let resourceName = 'نامشخص';
+         const resType = updated.resourceType || (updated.accountId ? 'bank' : updated.cashboxId ? 'cashbox' : '');
+         const resId = updated.resourceId || updated.accountId || updated.cashboxId;
+
+         if (resType === 'bank' && resId) {
+            const accountsList = await getLocalData<any[]>('accounts', []);
+            const account = accountsList.find(a => String(a.id) === String(resId));
+            if (account) {
+               resourceName = account.title || account.bankName || 'نامشخص';
+               if (account.accountingCode) {
+                  const acc = ledgerAccounts.find(a => a.code === account.accountingCode);
+                  if (acc) resourceLedgerId = acc.id;
+               } else {
+                  const acc = ledgerAccounts.find(a => a.code === '1102');
+                  if (acc) resourceLedgerId = acc.id;
+               }
+            }
+         } else if (resType === 'cashbox' && resId) {
+            const cashboxesList = await getLocalData<any[]>('cashboxes', []);
+            const cashbox = cashboxesList.find(c => String(c.id) === String(resId));
+            if (cashbox) {
+               resourceName = cashbox.name || 'نامشخص';
+               if (cashbox.accountingCode) {
+                  const acc = ledgerAccounts.find(a => a.code === cashbox.accountingCode);
+                  if (acc) resourceLedgerId = acc.id;
+               } else {
+                  const acc = ledgerAccounts.find(a => a.code === '1101');
+                  if (acc) resourceLedgerId = acc.id;
+               }
+            }
+         } else {
+            const acc = ledgerAccounts.find(a => a.code === '11');
+            if (acc) resourceLedgerId = acc.id;
+         }
+
+         const formattedAmount = Number(updated.amount || 0).toLocaleString('fa-IR');
+         const sysSettings = await getStoreSettings();
+         const currency = updated.currency || sysSettings?.currency || 'تومان';
+         const typeText = updated.type === 'receive' ? 'دریافت' : updated.type === 'salary' ? 'حقوق و دستمزد' : 'پرداخت';
+         let methodText = 'نقدی';
+         if (updated.method === 'check') methodText = 'چک';
+         else if (updated.method === 'transfer' || updated.method === 'card') methodText = 'حواله/کارت به کارت';
+         let docDescription = '';
+         if (updated.type === 'salary') {
+             if (updated.description && !updated.description.includes('isPayslip')) {
+                docDescription = `${updated.description} برای کارمند: ${personName}`;
+             } else {
+                docDescription = `حقوق و دستمزد به مبلغ ${formattedAmount} ${currency} برای کارمند: ${personName}`;
+             }
+         } else {
+             docDescription = `${typeText} ${methodText} به مبلغ ${formattedAmount} ${currency}`;
+             if (personName && personName !== 'نامشخص') {
+                if (updated.type === 'receive') {
+                   docDescription += ` از طرف حساب: ${personName}`;
+                } else {
+                   docDescription += ` به طرف حساب: ${personName}`;
+                }
+             }
+             if (resourceName && resourceName !== 'نامشخص') {
+                if (updated.type === 'receive') {
+                   docDescription += ` - واریز به حساب/صندوق: ${resourceName}`;
+                } else {
+                   docDescription += ` - برداشت از حساب/صندوق: ${resourceName}`;
+                }
+             }
+         }
+         if (newTx.receiptNumber) {
+            docDescription += ` (شماره سند/رسید: ${newTx.receiptNumber})`;
+         }
+         if (updated.method === 'check' && updated.checkNumber) {
+            docDescription += ` - چک شماره ${updated.checkNumber}`;
+            if (updated.checkDueDate) docDescription += ` به سررسید ${updated.checkDueDate}`;
+            if (updated.checkBankName) docDescription += ` عهده بانک ${updated.checkBankName}`;
+         }
+         if (updated.description) {
+            docDescription += ` [توضیحات: ${updated.description}]`;
+         }
+         const items = [];
+         if (updated.method === 'check') {
+             await syncInvoiceAllocations(newTx);
+             return newTx; // Check accounting is fully handled by syncCheckAccountingDocument
+         } else {
+
+         if (updated.categoryId === 'loan_given' || updated.categoryId === 'loan_received') {
+             const interestAmt = Number((updated as any).interestAmount) || 0;
+             const principal = Number(updated.amount);
+             const totalPayable = principal + interestAmt;
+             
+             if (updated.categoryId === 'loan_given') {
+                 items.push({
+                     description: updated.description ? updated.description + ` - طرف حساب ${personName}` : `اعطای وام به ${personName}`,
+                     debit: totalPayable, credit: 0,
+                     ledgerAccountId: personLedgerId, detailedAccountId: updated.personId
+                 });
+                 items.push({
+                     description: updated.description ? updated.description + ` - برداشت از ${resourceName}` : `پرداخت وجه بابت اعطای وام`,
+                     debit: 0, credit: principal,
+                     ledgerAccountId: resourceLedgerId
+                 });
+                 if (interestAmt > 0) {
+                     const interestAcc = ledgerAccounts.find((a: any) => a.title.includes('درآمد') && a.title.includes('بهره')) || ledgerAccounts.find((a: any) => String(a.code).startsWith('4')) || { id: defaultLedger };
+                     items.push({
+                         description: `شناسایی درآمد بهره بابت وام شماره ${(updated.id || '').replace('txn-loan-', '')}`,
+                         debit: 0, credit: interestAmt,
+                         ledgerAccountId: interestAcc.id
+                     });
+                 }
+             } else {
+                 items.push({
+                     description: updated.description ? updated.description + ` - واریز به ${resourceName}` : `دریافت وجه بابت وام دریافتی`,
+                     debit: principal, credit: 0,
+                     ledgerAccountId: resourceLedgerId
+                 });
+                 if (interestAmt > 0) {
+                     const expenseAcc = ledgerAccounts.find((a: any) => String(a.code) === '53' || String(a.code) === '5') || { id: defaultLedger };
+                     items.push({
+                         description: `شناسایی هزینه بهره بابت وام دریافتی شماره ${(updated.id || '').replace('txn-loan-', '')}`,
+                         debit: interestAmt, credit: 0,
+                         ledgerAccountId: expenseAcc.id
+                     });
+                 }
+                 items.push({
+                     description: updated.description ? updated.description + ` - طرف حساب ${personName}` : `اخذ وام از ${personName}`,
+                     debit: 0, credit: totalPayable,
+                     ledgerAccountId: personLedgerId, detailedAccountId: updated.personId
+                 });
+             }
+         } else if (updated.type === 'receive') {
+
+                items.push({
+                   description: updated.description ? updated.description + ` - مبلغ ${formattedAmount} واریز به ${resourceName}` : `دریافت وجه به مبلغ ${formattedAmount} واریز به ${resourceName} بابت رسید دریافت شماره ${updated.receiptNumber || updated.id}`,
+                   debit: Number(updated.amount),
+                   credit: 0,
+                   ledgerAccountId: resourceLedgerId});
+                items.push({
+                   description: updated.description ? updated.description + ` - طرف حساب ${personName}` : `طرف حساب ${personName} به مبلغ ${formattedAmount} بابت رسید دریافت شماره ${updated.receiptNumber || updated.id}`,
+                   debit: 0,
+                   credit: Number(updated.amount),
+                   ledgerAccountId: personLedgerId,
+                   detailedAccountId: updated.personId});
+             } else if (updated.type === 'salary') {
+                const expenseAcc = ledgerAccounts.find((a: any) => a.code === '52') || ledgerAccounts.find((a: any) => a.code === '5') || { id: defaultLedger };
+                items.push({
+                   description: `هزینه حقوق و دستمزد کارمند ${personName} بابت فیش حقوقی شماره ${updated.receiptNumber || updated.id}`,
+                   debit: Number(updated.amount),
+                   credit: 0,
+                   ledgerAccountId: expenseAcc.id});
+                items.push({
+                   description: `طرف حساب ${personName} بابت حقوق و دستمزد شماره فیش ${updated.receiptNumber || updated.id}`,
+                   debit: 0,
+                   credit: Number(updated.amount),
+                   ledgerAccountId: personLedgerId,
+                   detailedAccountId: updated.personId});
+             } else {
+                items.push({
+                   description: updated.description ? updated.description + ` - طرف حساب ${personName}` : `طرف حساب ${personName} به مبلغ ${formattedAmount} بابت رسید پرداخت شماره ${updated.receiptNumber || updated.id}`,
+                   debit: Number(updated.amount),
+                   credit: 0,
+                   ledgerAccountId: personLedgerId,
+                   detailedAccountId: updated.personId});
+                items.push({
+                   description: updated.description ? updated.description + ` - برداشت از ${resourceName}` : `پرداخت وجه به مبلغ ${formattedAmount} از ${resourceName} بابت رسید شماره ${updated.receiptNumber || updated.id}`,
+                   debit: 0,
+                   credit: Number(updated.amount),
+                   ledgerAccountId: resourceLedgerId});
+             }
+         }
+         if (existingDoc && updated.recreateAccountingDoc) {
+            await deleteAccountingDocument(existingDoc.id);
+            await addAccountingDocument({
+               sourceId: newTx.id,
+               sourceType: updated.type === 'receive' ? 'receipt' : 'payment',
+               date: updated.date || new Date().toISOString(),
+               description: docDescription,
+               items,
+               status: 'approved'
+            });
+         } else if (existingDoc) {
+            await updateAccountingDocument(existingDoc.id, {
+               ...existingDoc,
+               date: updated.date || existingDoc.date,
+               description: docDescription,
+               items
+            });
+         } else {
+            await addAccountingDocument({
+               sourceId: newTx.id,
+               sourceType: updated.type === 'receive' ? 'receipt' : 'payment',
+               date: updated.date || new Date().toISOString(),
+               description: docDescription,
+               items,
+               status: 'approved'
+            });
+         }
+       }
+     } catch (e) {
+       console.error("Failed to update auto accounting doc for transaction:", e);
+     }
+
+     await syncInvoiceAllocations(newTx);
+     return newTx;
+  } catch (e) {
+     throw new Error('Transaction not found');
+  }
+};
+
+export const deleteTransaction = async (id: string) => {
+  const transactions = await getTransactions();
+  const t = transactions.find(tx => String(tx.id) === String(id));
+  if (t) {
+    const operations: any[] = [];
+    const amount = Number(t.resourceAmount ?? t.amount) || 0;
+    if (t.resourceType === 'bank') {
+      const accounts = await getLocalData<any[]>('accounts', []);
+      const index = accounts.findIndex(a => a.id === t.resourceId);
+      if (index !== -1) {
+        let newBalance = Number(accounts[index].balance || 0);
+        if (t.type === 'receive') {
+          newBalance -= amount;
+        } else {
+          newBalance += amount;
+        }
+        operations.push({ type: 'update', key: 'accounts', id: accounts[index].id, data: { balance: newBalance } });
+      }
+    } else if (t.resourceType === 'cashbox') {
+      const cashboxes = await getLocalData<any[]>('cashboxes', []);
+      const index = cashboxes.findIndex(c => c.id === t.resourceId);
+      if (index !== -1) {
+        let newBalance = Number(cashboxes[index].balance || 0);
+        if (t.type === 'receive') {
+          newBalance -= amount;
+        } else {
+          newBalance += amount;
+        }
+        operations.push({ type: 'update', key: 'cashboxes', id: cashboxes[index].id, data: { balance: newBalance } });
+      }
+    }
+    const table = mapTransactionTypeToTable(t.type);
+    operations.push({ type: 'delete', key: table, id: id });
+    if (t.pairedTransactionId) {
+        const pairedTx = transactions.find(tx => String(tx.id) === String(t.pairedTransactionId));
+        if (pairedTx) {
+            const pairedTable = mapTransactionTypeToTable(pairedTx.type);
+            operations.push({ type: 'delete', key: pairedTable, id: pairedTx.id });
+        }
+    }
+    if (t.type === 'salary') {
+        const allPayslips = await getLocalData<any[]>('payslips', []);
+        const toDelete = allPayslips.find(p => String(p.transactionId) === String(id));
+        if (toDelete) {
+            operations.push({ type: 'delete', key: 'payslips', id: toDelete.id });
+        }
+    }
+    if (operations.length > 0) {
+      await batchLocalData(operations);
+    }
+    
+    // Clear allocations
+    await syncInvoiceAllocations({ id, linkedInvoices: {} });
+
+    // Delete corresponding accounting document
+    try {
+      const accDocs = await getLocalData<any[]>('accounting_documents', []);
+      const docOperations: any[] = [];
+      accDocs.forEach(d => {
+         if ((String(d.sourceId) === String(id) || (t.pairedTransactionId && String(d.sourceId) === String(t.pairedTransactionId)) || (t.receiptNumber && String(d.sourceId) === String(t.receiptNumber))) && (d.sourceType === 'receipt' || d.sourceType === 'payment' || d.sourceType === 'transfer' || d.sourceType === 'person_transfer')) {
+            docOperations.push({ type: 'delete', key: 'accounting_documents', id: d.id });
+         }
+      });
+      if (docOperations.length > 0) {
+         await batchLocalData(docOperations);
+      }
+    } catch(e) {}
+  }
+};
+
+export const getInvoicesPaged = async (params: { page?: number; pageSize?: number; search?: string; type?: string; sortBy?: string; sortOrder?: 'asc' | 'desc' } = {}): Promise<PagedResponse<any>> => {
+  return getPagedData<any>('invoices', {
+    page: params.page || 1,
+    pageSize: params.pageSize || 20,
+    search: params.search || '',
+    sortBy: params.sortBy || 'date',
+    sortOrder: params.sortOrder || 'desc',
+    ...(params.type && params.type !== 'all' ? { type: params.type } : {})
+  });
+};
+
+export const getInvoices = async (params?: { page?: number; pageSize?: number; search?: string; type?: string; sortBy?: string; sortOrder?: 'asc' | 'desc'; all?: boolean }) => {
+  if (params?.all) {
+    const raw = await getLocalData<any[]>('invoices', []);
+    return (Array.isArray(raw) ? raw : []).filter(inv => inv && !inv.isDeleted).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  }
+  const res = await getInvoicesPaged({
+    page: params?.page || 1,
+    pageSize: params?.pageSize || 20,
+    search: params?.search || '',
+    type: params?.type,
+    sortBy: params?.sortBy,
+    sortOrder: params?.sortOrder
+  });
+  return res.items || [];
+};
+
+export const syncInvoiceAccountingDocument = async (invoice: any) => {
+  if (invoice?.type === 'sale' && invoice.postingId && !invoice.isDraft) return;
+  if (!invoice) return;
+  const isDraftOrVoided = 
+    invoice.isDraft || 
+    invoice.status === 'draft' || 
+    invoice.status === 'voided' || 
+    invoice.status === 'pending_approval' ||
+    invoice.type === 'proforma' || 
+    invoice.type?.startsWith('warehouse_') ||
+    invoice.type === 'consignment_out' ||
+    invoice.type === 'consignment_in';
+  const docType = invoice.type;
+  const title = docType === 'sale' ? 'فاکتور فروش' : docType === 'purchase' ? 'فاکتور خرید' : docType === 'sale_return' ? 'برگشت از فروش' : docType === 'purchase_return' ? 'برگشت از خرید' : 'فاکتور';
+
+  try {
+     const accountingDocs = await getAccountingDocuments();
+     const existingDoc = accountingDocs.find((d: any) => 
+       (d.sourceType === 'invoice_sale' || d.sourceType === 'invoice_purchase' || d.sourceType === 'invoice_sale_return' || d.sourceType === 'invoice_purchase_return') && 
+       (String(d.sourceId) === String(invoice.id) || String(d.sourceId) === String(invoice.invoiceNumber))
+     );
+
+     if (isDraftOrVoided) {
+        if (existingDoc) {
+           await deleteAccountingDocument(existingDoc.id);
+        }
+        return;
+     }
+
+     const ledgerAccounts = await getLedgerAccounts();
+     const defaultLedger = ledgerAccounts.length > 0 ? ledgerAccounts[0].id : '';
+     const total = Number(invoice.totalAmount) || 0;
+
+     // Find Customer/Supplier/Person Ledger Account
+     let personLedgerId = defaultLedger;
+     if (invoice.customerId) {
+        const persons = await getLocalData<any[]>('persons', []);
+        const person = persons.find(p => String(p.id) === String(invoice.customerId));
+        if (person && person.accountingCode) {
+           const acc = ledgerAccounts.find(a => a.code === person.accountingCode);
+           if (acc) personLedgerId = acc.id;
+        }
+     }
+
+     // Find Sales Revenue ('41') Ledger Account
+     let salesLedgerId = defaultLedger;
+     const salesAcc = ledgerAccounts.find(a => a.code === '41');
+     if (salesAcc) salesLedgerId = salesAcc.id;
+
+     // Find Inventory ('13') Ledger Account
+     let inventoryLedgerId = defaultLedger;
+     const inventoryAcc = ledgerAccounts.find(a => a.code === '13');
+     if (inventoryAcc) inventoryLedgerId = inventoryAcc.id;
+
+     const items = [];
+     if (docType === 'sale' || docType === 'purchase_return') {
+        items.push({ description: 'شخص', debit: total, credit: 0, ledgerAccountId: personLedgerId, detailedAccountId: invoice.customerId});
+        items.push({ description: 'درآمد/فروش', debit: 0, credit: total, ledgerAccountId: salesLedgerId});
+     } else if (docType === 'purchase' || docType === 'sale_return') {
+        items.push({ description: 'موجودی کالا', debit: total, credit: 0, ledgerAccountId: inventoryLedgerId});
+        items.push({ description: 'شخص', debit: 0, credit: total, ledgerAccountId: personLedgerId, detailedAccountId: invoice.customerId});
+     }
+
+     if (existingDoc) {
+        await updateAccountingDocument(existingDoc.id, {
+           ...existingDoc,
+           date: invoice.date || existingDoc.date || new Date().toISOString().split('T')[0],
+           description: `${title} شماره ${invoice.invoiceNumber || invoice.id}`,
+           isDeleted: false,
+           status: 'approved',
+           items
+        });
+     } else if (items.length > 0) {
+        await addAccountingDocument({
+           date: invoice.date || new Date().toISOString().split('T')[0],
+           description: `${title} شماره ${invoice.invoiceNumber || invoice.id}`,
+           status: 'approved',
+           sourceType: docType === 'sale' ? 'invoice_sale' : docType === 'purchase' ? 'invoice_purchase' : docType === 'sale_return' ? 'invoice_sale_return' : 'invoice_purchase_return',
+           sourceId: invoice.id,
+           items
+        });
+     }
+  } catch (e) {
+     console.error("Failed to sync accounting document for invoice:", e);
+  }
+};
+
+// Mutex queue for invoice creation/updating to serialize parallel requests and eliminate duplicate numbers
+let invoiceSaveMutex = Promise.resolve();
+
+const internalAddInvoice = async (invoice: any, skipRecalc: boolean = false, skipAccounting: boolean = false) => {
+  let activeYear = null;
+  if (invoice.date) activeYear = await checkFinancialYear(invoice.date);
+  const now = Date.now();
+  
+  let finalInvoiceObj = { ...invoice };
+  const invType = finalInvoiceObj.type || 'sale';
+  const targetTable = mapInvoiceTypeToTable(invType);
+
+  const resolvedPersonId = finalInvoiceObj.customerId || finalInvoiceObj.personId || finalInvoiceObj.supplierId || null;
+  if (resolvedPersonId) {
+    finalInvoiceObj.customerId = resolvedPersonId;
+    finalInvoiceObj.personId = resolvedPersonId;
+    if (!finalInvoiceObj.supplierId && (finalInvoiceObj.type === 'purchase' || invType === 'purchase')) {
+      finalInvoiceObj.supplierId = resolvedPersonId;
+    }
+  }
+  if (finalInvoiceObj.payableAmount === undefined && finalInvoiceObj.totalAmount !== undefined) {
+    finalInvoiceObj.payableAmount = finalInvoiceObj.totalAmount;
+  }
+  if (Array.isArray(finalInvoiceObj.items)) {
+    finalInvoiceObj.items = finalInvoiceObj.items.map((it: any) => {
+      const q = Number(it.quantity) || 0;
+      const up = Number(it.unitPrice) || 0;
+      const disc = Number(it.discount) || 0;
+      const tax = Number(it.tax) || 0;
+      const rawTot = q * up;
+      const totPrice = it.totalPrice !== undefined ? Number(it.totalPrice) : (rawTot - disc + tax);
+      const netP = it.netPrice !== undefined ? Number(it.netPrice) : totPrice;
+      return {
+        ...it,
+        totalPrice: totPrice,
+        netPrice: netP,
+      };
+    });
+  }
+
+  // Invalidate caches before checking to ensure we see invoices just added by parallel saves
+  invalidateCache('doc_counters');
+  invalidateCache(targetTable);
+  invalidateCache('invoices');
+
+  // Load fresh invoice records to check for collisions
+  const [tableInvoices, fallbackInvoices] = await Promise.all([
+    getLocalData<any[]>(targetTable, [], { _nocache: Date.now() }).catch(() => []),
+    getLocalData<any[]>('invoices', [], { _nocache: Date.now() }).catch(() => [])
+  ]);
+
+  const existingInvoices = [
+    ...(Array.isArray(tableInvoices) ? tableInvoices : []),
+    ...(Array.isArray(fallbackInvoices) ? fallbackInvoices : [])
+  ].filter(i => i && !i.isDeleted && (i.type === invType || (!i.type && invType === 'sale')));
+
+  const isDuplicateNumber = (numToCheck: any) => {
+    if (!numToCheck) return false;
+    const clean = String(numToCheck).trim().toLowerCase();
+    return existingInvoices.some(i => 
+      i && !i.isDeleted && !i.isDraft && i.status !== 'draft' &&
+      i.id?.toString() !== finalInvoiceObj.id?.toString() &&
+      String(i.invoiceNumber || '').trim().toLowerCase() === clean
+    );
+  };
+
+  const rawNum = String(finalInvoiceObj.invoiceNumber || '').trim();
+  const isAutoPlaceholder = !rawNum || rawNum.includes('خودکار') || rawNum.includes('تولید خودکار');
+  const isDuplicate = isDuplicateNumber(rawNum);
+
+  // If number is missing, placeholder, or duplicate (due to concurrent registration), allocate and verify unique number
+  if (isAutoPlaceholder || isDuplicate) {
+    let assigned = await generateDocNumber(invType);
+    let attempts = 0;
+    while (isDuplicateNumber(assigned) && attempts < 50) {
+      assigned = incrementInvoiceNumber(assigned, invType);
+      attempts++;
+    }
+    finalInvoiceObj.invoiceNumber = assigned;
+    await updateDocCounter(invType, assigned);
+  }
+
+  const newInvoice = { ...finalInvoiceObj, id: finalInvoiceObj.id || generateId(), createdAt: now, updatedAt: now, fiscalYearId: activeYear ? activeYear.id : undefined };
+  const savedResult = await appendLocalData(targetTable, newInvoice);
+  const finalSavedInvoice = (savedResult && typeof savedResult === 'object' && (savedResult as any).id) ? (savedResult as any) : newInvoice;
+  
+  if (finalSavedInvoice.invoiceNumber && !invoice.isAutoGenerated) {
+     await updateDocCounter(finalSavedInvoice.type, finalSavedInvoice.invoiceNumber);
+  }
+
+  // Invalidate cache again so future calls see the new invoice immediately
+  invalidateCache(targetTable);
+  invalidateCache('invoices');
+  invalidateCache('doc_counters');
+  
+  if (typeof addSystemLog !== 'undefined' && !invoice.isAutoGenerated) {
+    await addSystemLog('ADD_' + 'Invoice'.toUpperCase(), 'ثبت رکورد جدید در invoices', 'Invoice', finalSavedInvoice.id);
+  }
+
+  // Generate price history for invoice items (asynchronously in background)
+  if (finalSavedInvoice.type === 'purchase' || finalSavedInvoice.type === 'sale') {
+     const affectedProducts = new Set<string>();
+     if (finalSavedInvoice.items && Array.isArray(finalSavedInvoice.items)) {
+         (async () => {
+             try {
+                 const products = await getLocalData<any[]>('products', []);
+                 const historyItems: any[] = [];
+                 for (const item of finalSavedInvoice.items) {
+                     if (item.productId && Number(item.unitPrice) > 0) {
+                         const product = products.find((p: any) => String(p.id) === String(item.productId));
+                         const isSec = Boolean(item.isSecondaryUnit);
+                         const ratio = Number(item.unitRatio || product?.unitRatio || 1);
+                         const dir = item.unitRatioDirection || product?.unitRatioDirection || (product ? getUnitRatioDirection(product) : 'secondary_to_main');
+                         const baseUnitPrice = item.baseUnitPrice !== undefined && item.baseUnitPrice !== null && !isNaN(Number(item.baseUnitPrice))
+                           ? Number(item.baseUnitPrice)
+                           : convertPriceToBaseUnit(Number(item.unitPrice) || 0, isSec, ratio, dir);
+                         const baseQty = item.baseQuantity !== undefined && item.baseQuantity !== null && !isNaN(Number(item.baseQuantity))
+                           ? Number(item.baseQuantity)
+                           : convertQuantityToBaseUnit(Number(item.quantity) || 0, isSec, ratio, dir);
+
+                         historyItems.push({
+                             id: generateId(),
+                             productId: item.productId,
+                             date: finalSavedInvoice.date || new Date().toISOString().split('T')[0],
+                             type: finalSavedInvoice.type,
+                             price: baseUnitPrice,
+                             originalUnitPrice: Number(item.unitPrice),
+                             isSecondaryUnit: isSec,
+                             selectedUnit: item.selectedUnit || (isSec ? product?.secondaryUnit : product?.unit) || '',
+                             unitRatio: ratio,
+                             unitRatioDirection: dir,
+                             invoiceId: finalSavedInvoice.id,
+                             quantity: baseQty,
+                             originalQuantity: Number(item.quantity) || 0,
+                             invoiceItemId: item.id || generateId()
+                         });
+                         affectedProducts.add(String(item.productId));
+                     }
+                 }
+                 if (historyItems.length > 0) {
+                     await batchLocalData(historyItems.map(h => ({ type: 'append', key: 'product_price_history', data: h })));
+                 }
+                 if (affectedProducts.size > 0) {
+                     await syncProductsLatestPrices(Array.from(affectedProducts));
+                 }
+             } catch (e) {
+                 console.error('Error updating price history in background:', e);
+             }
+         })();
+     }
+  }
+
+  // Recalculate warehouse stocks asynchronously in background to prevent blocking
+  if (!skipRecalc) {
+    recalculateAllWarehouseStocks().catch(console.error);
+  }
+
+  if (finalSavedInvoice.isDraft || finalSavedInvoice.status === 'draft' || finalSavedInvoice.status === 'pending_approval' || finalSavedInvoice.isAutoGenerated || finalSavedInvoice.type.startsWith('warehouse_') || finalSavedInvoice.type === 'consignment_out' || finalSavedInvoice.type === 'consignment_in') {
+    return finalSavedInvoice;
+  }
+
+  if (!skipAccounting) {
+    syncInvoiceAccountingDocument(finalSavedInvoice).catch(console.error);
+  }
+
+  return finalSavedInvoice;
+};
+
+export const addInvoice = async (invoice: any, skipRecalc: boolean = false, skipAccounting: boolean = false): Promise<any> => {
+  return new Promise<any>((resolve, reject) => {
+    invoiceSaveMutex = invoiceSaveMutex.then(
+      async () => {
+        try {
+          const res = await internalAddInvoice(invoice, skipRecalc, skipAccounting);
+          resolve(res);
+        } catch (err) {
+          reject(err);
+        }
+      },
+      async () => {
+        try {
+          const res = await internalAddInvoice(invoice, skipRecalc, skipAccounting);
+          resolve(res);
+        } catch (err) {
+          reject(err);
+        }
+      }
+    );
+  });
+};
+
+export const updateInvoice = async (id: string | number, updated: any, skipRecalc: boolean = false, skipAccounting: boolean = false) => {
+  let activeYear = null;
+  if (updated.date) activeYear = await checkFinancialYear(updated.date);
+  
+  const updatedData = { ...updated, updatedAt: Date.now() };
+  if (activeYear) updatedData.fiscalYearId = activeYear.id;
+  const table = updatedData.type ? mapInvoiceTypeToTable(updatedData.type) : 'invoices';
+
+  const resolvedPersonId = updatedData.customerId || updatedData.personId || updatedData.supplierId || null;
+  if (resolvedPersonId) {
+    updatedData.customerId = resolvedPersonId;
+    updatedData.personId = resolvedPersonId;
+    if (!updatedData.supplierId && (updatedData.type === 'purchase' || table === 'purchase_invoices')) {
+      updatedData.supplierId = resolvedPersonId;
+    }
+  }
+  if (updatedData.payableAmount === undefined && updatedData.totalAmount !== undefined) {
+    updatedData.payableAmount = updatedData.totalAmount;
+  }
+  if (Array.isArray(updatedData.items)) {
+    updatedData.items = updatedData.items.map((it: any) => {
+      const q = Number(it.quantity) || 0;
+      const up = Number(it.unitPrice) || 0;
+      const disc = Number(it.discount) || 0;
+      const tax = Number(it.tax) || 0;
+      const rawTot = q * up;
+      const totPrice = it.totalPrice !== undefined ? Number(it.totalPrice) : (rawTot - disc + tax);
+      const netP = it.netPrice !== undefined ? Number(it.netPrice) : totPrice;
+      return {
+        ...it,
+        totalPrice: totPrice,
+        netPrice: netP,
+      };
+    });
+  }
+
+  if (updatedData.invoiceNumber) {
+    const rawNum = String(updatedData.invoiceNumber).trim().toLowerCase();
+    const tableInvoices = await getLocalData<any[]>(table, [], { _nocache: Date.now() }).catch(() => []);
+    const duplicate = tableInvoices.find(i => 
+      i && !i.isDeleted && !i.isDraft && i.status !== 'draft' &&
+      String(i.id) !== String(id) && 
+      (i.type === updatedData.type || (!i.type && updatedData.type === 'sale')) &&
+      String(i.invoiceNumber || '').trim().toLowerCase() === rawNum
+    );
+    if (duplicate) {
+      console.warn(`Duplicate invoiceNumber «${updatedData.invoiceNumber}» detected during update, generating next unique number...`);
+      let assigned = await generateDocNumber(updatedData.type || 'sale');
+      let attempts = 0;
+      while (
+        tableInvoices.some(i => 
+          i && !i.isDeleted && 
+          String(i.id) !== String(id) && 
+          (i.type === updatedData.type || (!i.type && updatedData.type === 'sale')) &&
+          String(i.invoiceNumber || '').trim().toLowerCase() === assigned.trim().toLowerCase()
+        ) && attempts < 50
+      ) {
+        assigned = incrementInvoiceNumber(assigned, updatedData.type || 'sale');
+        attempts++;
+      }
+      updatedData.invoiceNumber = assigned;
+      await updateDocCounter(updatedData.type || 'sale', assigned);
+    }
+  }
+
+  let newInvoice: any;
+  try {
+    newInvoice = await updateLocalData(table, id, updatedData);
+  } catch (err: any) {
+    if (err?.message?.includes('Not found') || err?.status === 404 || String(err).includes('404')) {
+      console.warn(`Invoice ${id} not found in ${table}, saving as new/migrated invoice into ${table}...`);
+      try {
+        const allInvs = await getInvoices().catch(() => []);
+        const existing = allInvs.find(i => String(i.id) === String(id));
+        if (existing) {
+          const oldTable = mapInvoiceTypeToTable(existing.type || 'sale');
+          if (oldTable !== table) {
+            await batchLocalData([{ type: 'delete', key: oldTable, id }]).catch(() => {});
+          }
+        }
+      } catch (_) {}
+      newInvoice = await appendLocalData(table, { ...updatedData, id });
+      if (!newInvoice || typeof newInvoice !== 'object' || !newInvoice.id) {
+        newInvoice = { ...updatedData, id };
+      }
+    } else {
+      throw err;
+    }
+  }
+  
+  if (newInvoice && newInvoice.invoiceNumber) {
+      await updateDocCounter(newInvoice.type, newInvoice.invoiceNumber);
+  }
+  
+  invalidateCache(table);
+  invalidateCache('invoices');
+  invalidateCache('doc_counters');
+
+  if (typeof addSystemLog !== 'undefined') {
+    await addSystemLog('UPDATE_' + 'Invoice'.toUpperCase(), 'ویرایش رکورد در invoices', 'Invoice', newInvoice.id);
+  }
+
+  // Generate/Update price history for invoice items in background
+  if ((newInvoice.type === 'purchase' || newInvoice.type === 'sale') && updated.items && Array.isArray(updated.items) && updated.items.length > 0) {
+      (async () => {
+          try {
+              const oldHistories = await getLocalData<any[]>('product_price_history', []);
+              const filteredHistories = oldHistories.filter(h => h.invoiceId?.toString() !== newInvoice.id?.toString());
+              
+              const affectedProducts = new Set<string>();
+              if (newInvoice.items && Array.isArray(newInvoice.items)) {
+                  const products = await getLocalData<any[]>('products', []);
+                  for (const item of newInvoice.items) {
+                      if (item.productId && Number(item.unitPrice) > 0) {
+                          const product = products.find((p: any) => String(p.id) === String(item.productId));
+                          const isSec = Boolean(item.isSecondaryUnit);
+                          const ratio = Number(item.unitRatio || product?.unitRatio || 1);
+                          const dir = item.unitRatioDirection || product?.unitRatioDirection || (product ? getUnitRatioDirection(product) : 'secondary_to_main');
+                          const baseUnitPrice = item.baseUnitPrice !== undefined && item.baseUnitPrice !== null && !isNaN(Number(item.baseUnitPrice))
+                            ? Number(item.baseUnitPrice)
+                            : convertPriceToBaseUnit(Number(item.unitPrice) || 0, isSec, ratio, dir);
+                          const baseQty = item.baseQuantity !== undefined && item.baseQuantity !== null && !isNaN(Number(item.baseQuantity))
+                            ? Number(item.baseQuantity)
+                            : convertQuantityToBaseUnit(Number(item.quantity) || 0, isSec, ratio, dir);
+
+                          filteredHistories.push({
+                              id: generateId(),
+                              productId: item.productId,
+                              date: newInvoice.date || new Date().toISOString().split('T')[0],
+                              type: newInvoice.type,
+                              price: baseUnitPrice,
+                              originalUnitPrice: Number(item.unitPrice),
+                              isSecondaryUnit: isSec,
+                              selectedUnit: item.selectedUnit || (isSec ? product?.secondaryUnit : product?.unit) || '',
+                              unitRatio: ratio,
+                              unitRatioDirection: dir,
+                              invoiceId: newInvoice.id,
+                              quantity: baseQty,
+                              originalQuantity: Number(item.quantity) || 0,
+                              invoiceItemId: item.id || generateId()
+                          });
+                          affectedProducts.add(String(item.productId));
+                      }
+                  }
+              }
+              await saveLocalData('product_price_history', filteredHistories);
+              if (affectedProducts.size > 0) {
+                  await syncProductsLatestPrices(Array.from(affectedProducts));
+              }
+          } catch (e) {
+              console.error('Error updating price history:', e);
+          }
+      })();
+  }
+
+  // Auto-update or create corresponding accounting document
+  if (!skipAccounting) {
+    syncInvoiceAccountingDocument(newInvoice).catch(console.error);
+  }
+
+  // Update auto-generated warehouse documents
+  try {
+     const invoices = await getInvoices({all:true});
+     const relatedWarehouseDocs = invoices.filter((inv: any) => 
+        inv.isAutoGenerated && 
+        inv.sourceInvoiceId && 
+        (String(inv.sourceInvoiceId) === String(id) || String(inv.sourceInvoiceId) === String(newInvoice.invoiceNumber))
+     );
+     
+     for (const wDoc of relatedWarehouseDocs) {
+         await updateLocalData(mapInvoiceTypeToTable(wDoc.type), wDoc.id, {
+             ...wDoc,
+             items: newInvoice.items.map((item: any) => ({
+                 ...item,
+                 warehouseId: item.warehouseId || newInvoice.warehouseId || wDoc.warehouseId,
+             })),
+             updatedAt: Date.now()
+         });
+     }
+  } catch(e) {
+      console.error("Failed to update auto warehouse docs:", e);
+  }
+
+  if (!skipRecalc) {
+    await recalculateAllWarehouseStocks();
+  }
+  return newInvoice;
+};
+
+export const voidInvoice = async (id: string | number) => {
+  const invoices = await getInvoices({all:true});
+  const invoiceToVoid = invoices.find((p: any) => String(p.id) === String(id) || p.id === Number(id));
+  
+  if (invoiceToVoid) {
+    const toVoidIds = new Set([id, Number(id), String(id)]);
+    
+    invoices.forEach(inv => {
+       if (inv.isAutoGenerated && inv.sourceInvoiceId && (inv.sourceInvoiceId === invoiceToVoid.id || inv.sourceInvoiceId === invoiceToVoid.invoiceNumber)) {
+          toVoidIds.add(inv.id);
+          toVoidIds.add(String(inv.id));
+       }
+    });
+
+    invoices.forEach(inv => {
+      if (toVoidIds.has(inv.id) || toVoidIds.has(String(inv.id))) {
+        inv.status = 'voided';
+      }
+    });
+    
+    for (const inv of invoices) {
+       if (inv.status === 'voided') {
+          await updateLocalData(mapInvoiceTypeToTable(inv.type), inv.id, inv);
+       }
+    }
+  
+
+    // Remove product price histories for the voided invoices
+    const oldHistories = await getLocalData<any[]>('product_price_history', []);
+    const affectedProductsForVoid = new Set<string>();
+    const filteredHistories = oldHistories.filter(h => {
+        if (toVoidIds.has(h.invoiceId) || toVoidIds.has(String(h.invoiceId))) {
+            affectedProductsForVoid.add(String(h.productId));
+            return false;
+        }
+        return true;
+    });
+    
+    if (affectedProductsForVoid.size > 0) {
+        await saveLocalData('product_price_history', filteredHistories);
+        await syncProductsLatestPrices(Array.from(affectedProductsForVoid));
+    }
+
+    // Issue Reversal Vouchers (سند معکوس / اصلاحی) for related approved/permanent accounting docs
+    const accDocs = await getAccountingDocuments();
+    for (const d of accDocs) {
+       if (toVoidIds.has(d.sourceId) || toVoidIds.has(String(d.sourceId))) {
+          if (d.status === 'approved' || d.status === 'permanent' || d.isFinalized) {
+             if (!d.isReversed) {
+                await createReversalAccountingDocument(
+                  d.id,
+                  `ابطال فاکتور شماره ${invoiceToVoid.invoiceNumber || invoiceToVoid.id}`
+                );
+             }
+          } else {
+             // Draft or unapproved docs can be marked voided
+             await updateLocalData('accounting_documents', d.id, { ...d, status: 'voided', isDeleted: true });
+          }
+       }
+    }
+
+    await recalculateAllWarehouseStocks();
+  }
+};
+
+export const deleteInvoice = async (id: string, forceDelete: boolean = false, skipRecalc: boolean = false) => {
+  const invoices = await getInvoices({all:true});
+  const invoiceToDelete = invoices.find((p: any) => String(p.id) === String(id) || p.id === Number(id) || p.id === String(id));
+  
+  if (invoiceToDelete) {
+    if (invoiceToDelete.status !== 'draft' && !invoiceToDelete.isDraft && !forceDelete) {
+      throw new Error('این فاکتور تایید شده است و قابلیت حذف ندارد. می‌توانید آن را ابطال یا مرجوع کنید.');
+    }
+    const toDeleteIds = new Set([id, Number(id), String(id)]);
+    
+    invoices.forEach(inv => {
+       if (inv.isAutoGenerated && inv.sourceInvoiceId && (inv.sourceInvoiceId === invoiceToDelete.id || inv.sourceInvoiceId === invoiceToDelete.invoiceNumber)) {
+          toDeleteIds.add(inv.id);
+          toDeleteIds.add(String(inv.id));
+       }
+    });
+
+    const operations: any[] = [];
+    
+    const invTypeName = invoiceToDelete.type === 'sale' ? 'فاکتور فروش' : invoiceToDelete.type === 'purchase' ? 'فاکتور خرید' : invoiceToDelete.type === 'sale_return' ? 'برگشت از فروش' : 'فاکتور';
+    const amount = Number(invoiceToDelete.totalPrice || invoiceToDelete.finalAmount || 0).toLocaleString('fa-IR');
+
+    // Fast path for draft invoices: they do not affect price history, accounting, or payments
+    if (invoiceToDelete.status === 'draft' || invoiceToDelete.isDraft) {
+      toDeleteIds.forEach(delId => {
+        operations.push({ type: 'delete', key: mapInvoiceTypeToTable(invoiceToDelete.type), id: delId });
+      });
+      if (operations.length > 0) {
+        await batchLocalData(operations);
+      }
+      try {
+        await logActivity({
+          action: 'DELETE',
+          entityType: 'invoices',
+          entityId: invoiceToDelete.id,
+          details: `حذف پیش‌نویس ${invTypeName} شماره «${invoiceToDelete.invoiceNumber || invoiceToDelete.id}» (مبلغ: ${amount} ریال)`,
+          diffSummary: `حذف پیش‌نویس فاکتور شماره ${invoiceToDelete.invoiceNumber || invoiceToDelete.id} به مبلغ ${amount} ریال`,
+          oldData: invoiceToDelete
+        });
+      } catch (_) {}
+      return;
+    }
+
+    // Soft delete
+    invoices.forEach(inv => {
+      if (toDeleteIds.has(inv.id) || toDeleteIds.has(String(inv.id))) {
+        operations.push({ type: 'delete', key: mapInvoiceTypeToTable(inv.type), id: inv.id });
+      }
+    });
+    
+    // Remove product price histories for the deleted invoices
+    const oldHistories = await getLocalData<any[]>('product_price_history', []);
+    const affectedProductsForDelete = new Set<string>();
+    const filteredHistories = oldHistories.filter(h => {
+        if (toDeleteIds.has(h.invoiceId) || toDeleteIds.has(String(h.invoiceId))) {
+            affectedProductsForDelete.add(String(h.productId));
+            return false;
+        }
+        return true;
+    });
+    
+    if (affectedProductsForDelete.size > 0) {
+        await saveLocalData('product_price_history', filteredHistories);
+        await syncProductsLatestPrices(Array.from(affectedProductsForDelete));
+    }
+
+    // delete related accounting docs
+    const accDocs = await getLocalData<any[]>('accounting_documents', []);
+    accDocs.forEach(d => {
+       if (toDeleteIds.has(d.sourceId) || toDeleteIds.has(String(d.sourceId))) {
+          operations.push({ type: 'delete', key: 'accounting_documents', id: d.id });
+       }
+    });
+
+    if (operations.length > 0) {
+      await batchLocalData(operations);
+    }
+    
+    // Clear allocations for the deleted invoice(s)
+    try {
+        const sales = await getLocalData<any[]>('sales_invoice_payments', []);
+        const newSales = sales.filter(h => !toDeleteIds.has(h.invoiceId) && !toDeleteIds.has(String(h.invoiceId)) && !toDeleteIds.has(Number(h.invoiceId)));
+        await saveLocalData('sales_invoice_payments', newSales);
+
+        const purchases = await getLocalData<any[]>('purchase_invoice_payments', []);
+        const newPurchases = purchases.filter(h => !toDeleteIds.has(h.invoiceId) && !toDeleteIds.has(String(h.invoiceId)) && !toDeleteIds.has(Number(h.invoiceId)));
+        await saveLocalData('purchase_invoice_payments', newPurchases);
+        
+        // Also remove linkedInvoices from transactions
+        const transactions = await getTransactions();
+        let txChanged = false;
+        for (const tx of transactions) {
+             if (tx.linkedInvoices) {
+                  let hasDel = false;
+                  for (const invId of Object.keys(tx.linkedInvoices || {})) {
+                       if (toDeleteIds.has(invId) || toDeleteIds.has(String(invId)) || toDeleteIds.has(Number(invId))) {
+                            delete tx.linkedInvoices[invId];
+                            hasDel = true;
+                       }
+                  }
+                  if (hasDel) {
+                       await updateLocalData(mapTransactionTypeToTable(tx.type), tx.id, tx);
+                  }
+             }
+        }
+    } catch(e) {}
+
+    try {
+      const invTypeName = invoiceToDelete.type === 'sale' ? 'فاکتور فروش' : invoiceToDelete.type === 'purchase' ? 'فاکتور خرید' : invoiceToDelete.type === 'sale_return' ? 'برگشت از فروش' : 'فاکتور';
+      const amount = Number(invoiceToDelete.totalPrice || invoiceToDelete.finalAmount || 0).toLocaleString('fa-IR');
+      await logActivity({
+        action: 'DELETE',
+        entityType: 'invoices',
+        entityId: invoiceToDelete.id,
+        details: `حذف ${invTypeName} شماره «${invoiceToDelete.invoiceNumber || invoiceToDelete.id}» (مبلغ: ${amount} ریال)`,
+        diffSummary: `حذف فاکتور شماره ${invoiceToDelete.invoiceNumber || invoiceToDelete.id} به مبلغ ${amount} ریال`,
+        oldData: invoiceToDelete
+      });
+    } catch (_) {}
+
+    // Recalculate warehouse stocks automatically
+    if (!skipRecalc) {
+      await recalculateAllWarehouseStocks();
+    }
+  }
+};
+

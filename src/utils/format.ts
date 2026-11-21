@@ -1,0 +1,474 @@
+import Num2persian from 'num2persian';
+import DateObjectModule from "react-date-object";
+const DateObject = (DateObjectModule as any).default || DateObjectModule;
+import persian from "react-date-object/calendars/persian";
+import persian_fa from "react-date-object/locales/persian_fa";
+import gregorian from "react-date-object/calendars/gregorian";
+import gregorian_en from "react-date-object/locales/gregorian_en";
+import { globalDateFormatter } from "./dateFormatter";
+
+
+export interface NumberFormatConfig {
+  use_decimals?: boolean;
+  decimal_places?: number;
+  currency?: string;
+}
+
+let activeStoreSettingsCache: NumberFormatConfig = (() => {
+  if (typeof window !== 'undefined' && window.localStorage) {
+    try {
+      const cfg = localStorage.getItem('number_format_config');
+      if (cfg) return JSON.parse(cfg);
+      const comp = localStorage.getItem('company_profile');
+      if (comp) {
+        const parsed = JSON.parse(comp);
+        if (parsed.use_decimals !== undefined) {
+          return {
+            use_decimals: parsed.use_decimals,
+            decimal_places: parsed.decimal_places,
+            currency: parsed.currency
+          };
+        }
+      }
+    } catch (_) {}
+  }
+  return { use_decimals: false, decimal_places: 2, currency: 'تومان' };
+})();
+
+export const setGlobalStoreSettings = (settings: Partial<NumberFormatConfig> | null | undefined) => {
+  if (!settings) return;
+  activeStoreSettingsCache = {
+    ...activeStoreSettingsCache,
+    ...settings,
+    use_decimals: settings.use_decimals !== undefined ? Boolean(settings.use_decimals) : activeStoreSettingsCache.use_decimals,
+    decimal_places: typeof settings.decimal_places === 'number' ? settings.decimal_places : (activeStoreSettingsCache.decimal_places || 2),
+    currency: settings.currency || activeStoreSettingsCache.currency || 'تومان'
+  };
+  if (typeof window !== 'undefined' && window.localStorage) {
+    try {
+      localStorage.setItem('number_format_config', JSON.stringify(activeStoreSettingsCache));
+    } catch (_) {}
+  }
+};
+
+export const getActiveStoreSettings = (): NumberFormatConfig => {
+  return activeStoreSettingsCache;
+};
+
+export function addCommas(num: number | string, storeSettings?: any): string {
+    if (!num && num !== 0 && num !== '0') return '';
+    
+    const settings = storeSettings || getActiveStoreSettings();
+    const useDecimals = Boolean(settings?.use_decimals);
+    const places = typeof settings?.decimal_places === 'number' ? settings.decimal_places : 2;
+
+    let str = num.toString().trim();
+    
+    // Only adjust decimals if it's a valid numeric value and not ending with a dot (mid-typing in inputs)
+    if (!str.endsWith('.') && !isNaN(Number(str))) {
+      let val = Number(str);
+      if (!useDecimals) {
+        val = Math.round(val);
+        str = val.toString();
+      } else {
+        const parts = str.split('.');
+        if (parts.length > 1 && parts[1].length > places) {
+          str = val.toFixed(places);
+        }
+      }
+    }
+
+    const parts = str.split('.');
+    parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    return parts.join('.');
+}
+
+export function removeCommas(str: string): string {
+    if (!str) return '';
+    return str.toString().replace(/,/g, '');
+}
+
+export function parseNumberField(val: string): string {
+    const raw = removeCommas(val);
+    if (!raw) return '';
+    if (isNaN(Number(raw))) return raw;
+    return raw;
+}
+
+export const numberToWords = (num: string | number): string => {
+    if (!num && num !== 0 && num !== '0') return '';
+    const raw = num.toString().replace(/,/g, '');
+    if (isNaN(Number(raw))) return '';
+    
+    return Num2persian(raw);
+}
+
+export const getBaseValueInToman = (cur: string) => {
+  if (!cur) return 1;
+  if (cur.includes('تومان')) return 1;
+  if (cur.includes('ریال')) return 0.1;
+  if (cur.includes('دلار') || cur.includes('USD')) return 70000;
+  if (cur.includes('یورو') || cur.includes('EUR')) return 75000;
+  if (cur.includes('درهم') || cur.includes('AED')) return 19000;
+  return 1;
+};
+
+export const getDefaultExchangeRate = (invoiceCur: string, storeCur: string) => {
+  if (invoiceCur === storeCur) return 1;
+  const invToman = getBaseValueInToman(invoiceCur);
+  const storeToman = getBaseValueInToman(storeCur);
+  return invToman / storeToman;
+};
+
+export const showInvoiceCurrency = (c: string) => {
+  if (!c) return 'تومان';
+  if (c === 'IRT' || c === 'toman') return 'تومان';
+  if (c === 'IRR' || c === 'rial') return 'ریال';
+  if (c === 'USD' || c === 'dollar') return 'دلار';
+  return c;
+};
+
+export function numToPersianWords(num: number): string {
+  if (num === 0) return 'صفر';
+  const yekan = ['', 'یک', 'دو', 'سه', 'چهار', 'پنج', 'شش', 'هفت', 'هشت', 'نه'];
+  const dahgan = ['', 'ده', 'بیست', 'سی', 'چهل', 'پنجاه', 'شصت', 'هفتاد', 'هشتاد', 'نود'];
+  const dahYek = ['ده', 'یازده', 'دوازده', 'سیزده', 'چهارده', 'پانزده', 'شانزده', 'هفده', 'هجده', 'نوزده'];
+  const sadgan = ['', 'صد', 'دویست', 'سیصد', 'چهارصد', 'پانصد', 'ششصد', 'هفتصد', 'هشتصد', 'نهصد'];
+  const steps = ['', 'هزار', 'میلیون', 'میلیارد', 'تریلیون'];
+
+  const convertThreeDigit = (n: number): string => {
+    if (n === 0) return '';
+    let result = '';
+    const s = Math.floor(n / 100);
+    const d = Math.floor((n % 100) / 10);
+    const y = n % 10;
+
+    if (s > 0) result += sadgan[s];
+    if (d > 0) {
+      if (result) result += ' و ';
+      if (d === 1) {
+        result += dahYek[y];
+        return result;
+      } else {
+        result += dahgan[d];
+      }
+    }
+    if (y > 0) {
+      if (result) result += ' و ';
+      result += yekan[y];
+    }
+    return result;
+  };
+
+  let word = '';
+  let stepCount = 0;
+  let temp = Math.floor(num);
+
+  while (temp > 0) {
+    const section = temp % 1000;
+    if (section > 0) {
+      const sectionWord = convertThreeDigit(section);
+      const stepWord = steps[stepCount] ? ' ' + steps[stepCount] : '';
+      word = sectionWord + stepWord + (word ? ' و ' + word : '');
+    }
+    temp = Math.floor(temp / 1000);
+    stepCount++;
+  }
+  return word.trim();
+}
+
+export function toPersianDigits(str: string | number | undefined | null): string {
+  if (str === undefined || str === null) return '';
+  const id = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
+  return str.toString().replace(/[0-9]/g, function (w) {
+    return id[+w];
+  });
+}
+
+export function toEnglishDigits(str: string | number | undefined | null): string {
+  if (str === undefined || str === null) return '';
+  return str.toString()
+    .replace(/[۰-۹]/g, (d) => "۰۱۲۳۴۵۶۷۸۹".indexOf(d).toString())
+    .replace(/[٠-٩]/g, (d) => "٠١٢٣٤٥٦٧٨٩".indexOf(d).toString());
+}
+
+export function normalizeQuantityInput(
+  rawInput: string | number | undefined | null,
+  maxDecimals: number = 2,
+  allowDecimal: boolean = true
+): string {
+  if (rawInput === undefined || rawInput === null || rawInput === '') return '';
+  const str = String(rawInput);
+  // Convert Persian and Arabic digits to 0-9
+  let clean = toEnglishDigits(str)
+    .replace(/[٫\/]/g, '.')
+    .replace(/[^0-9.]/g, '');
+
+  if (!allowDecimal || maxDecimals <= 0) {
+    return clean.replace(/\./g, '');
+  }
+
+  // Handle multiple dots: keep only first dot
+  const dotIndex = clean.indexOf('.');
+  if (dotIndex !== -1) {
+    const integerPart = clean.slice(0, dotIndex);
+    const decimalPart = clean.slice(dotIndex + 1).replace(/\./g, '');
+    return `${integerPart}.${decimalPart.slice(0, maxDecimals)}`;
+  }
+
+  return clean;
+}
+
+export function formatQuantity(
+  val: number | string | undefined | null,
+  maxDecimals: number = 2
+): string {
+  if (val === undefined || val === null || val === '') return '0';
+  const num = typeof val === 'number' ? val : parseFloat(toEnglishDigits(String(val)).replace(/[٫\/]/g, '.'));
+  if (isNaN(num)) return '0';
+  if (Number.isInteger(num)) return num.toString();
+  const fixed = num.toFixed(maxDecimals);
+  return parseFloat(fixed).toString();
+}
+
+export function formatDateDisplay(dateInput: string | Date | number | undefined | null, calendarType?: string): string {
+  if (!dateInput || dateInput === "-") return "-";
+  try {
+    if (calendarType === 'gregorian' || calendarType === 'jalali') {
+      const originalCalendar = globalDateFormatter.getConfig().calendarType;
+      const originalShowTime = globalDateFormatter.getConfig().showTime;
+      
+      globalDateFormatter.updateConfig({ calendarType: calendarType, showTime: false });
+      const result = globalDateFormatter.formatDateOnly(dateInput);
+      
+      globalDateFormatter.updateConfig({ calendarType: originalCalendar, showTime: originalShowTime });
+      return result;
+    } else if (calendarType === 'gregorian_time' || calendarType === 'jalali_time') {
+      const originalCalendar = globalDateFormatter.getConfig().calendarType;
+      const originalShowTime = globalDateFormatter.getConfig().showTime;
+      
+      globalDateFormatter.updateConfig({ calendarType: calendarType.replace('_time', '') as any, showTime: true });
+      const result = globalDateFormatter.formatDateTime(dateInput);
+      
+      globalDateFormatter.updateConfig({ calendarType: originalCalendar, showTime: originalShowTime });
+      return result;
+    }
+    
+    return globalDateFormatter.formatDate(dateInput);
+  } catch (e) {
+    return String(dateInput);
+  }
+}
+
+/**
+ * Accurately formats invoice issue dates and due dates for preview and printing.
+ * Handles Jalali string inputs directly without timezone corruption,
+ * removes time cleanly without truncating Persian month names,
+ * and falls back gracefully to a formatted Persian date.
+ */
+export function formatInvoiceDate(
+  dateInput: any,
+  calendarType?: string,
+  options?: { showTime?: boolean; fallback?: string }
+): string {
+  if (!dateInput && dateInput !== 0) {
+    return options?.fallback || "-";
+  }
+
+  // Handle object with toDate method (e.g. DateObject or Firestore Timestamp)
+  if (dateInput && typeof dateInput.toDate === "function") {
+    dateInput = dateInput.toDate();
+  }
+
+  const calType = calendarType || "jalali";
+
+  // Check if string is already a Jalali date string like "1403/07/08" or "1403-07-08" or "۱۴۰۳/۰۷/۰۸"
+  if (typeof dateInput === "string") {
+    const clean = dateInput.trim();
+    // Normalize Persian/Arabic digits to Latin digits
+    const latinDigits = clean
+      .replace(/[۰-۹]/g, (d) => "۰۱۲۳۴۵۶۷۸۹".indexOf(d).toString())
+      .replace(/[٠-٩]/g, (d) => "٠١٢٣٤٥٦٧٨٩".indexOf(d).toString());
+
+    // Matches YYYY/MM/DD or YYYY-MM-DD
+    const match = latinDigits.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+    if (match) {
+      const year = parseInt(match[1], 10);
+      if (year >= 1300 && year <= 1500 && calType !== "gregorian") {
+        // It is already a valid Jalali date!
+        const month = match[2].padStart(2, "0");
+        const day = match[3].padStart(2, "0");
+        return toPersianDigits(`${year}/${month}/${day}`);
+      }
+    }
+  }
+
+  try {
+    const formatted = formatDateDisplay(dateInput, calType);
+    if (!formatted || formatted === "-") {
+      return options?.fallback || "-";
+    }
+
+    if (!options?.showTime) {
+      // Remove trailing time pattern safely (e.g. " 14:30", " ۱۲:۰۰", " 08:30:15 ب.ظ")
+      const withoutTime = formatted
+        .replace(/\s+([۰-۹0-9]{1,2}:[۰-۹0-9]{1,2}(:[۰-۹0-9]{1,2})?(\s*(ق\.ظ|ب\.ظ|am|pm))?)$/i, "")
+        .trim();
+      return withoutTime || formatted;
+    }
+
+    return formatted;
+  } catch (err) {
+    console.error("formatInvoiceDate error:", err);
+    return String(dateInput);
+  }
+}
+
+export function convertToGregorian(dateInput: string | Date | number | any): string {
+  if (!dateInput) return new Date().toISOString();
+  if (dateInput instanceof Date) {
+    return isNaN(dateInput.getTime()) ? new Date().toISOString() : dateInput.toISOString();
+  }
+  if (typeof dateInput === 'number') {
+    const d = new Date(dateInput);
+    return isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
+  }
+  if (typeof dateInput?.toDate === 'function') {
+    const d = dateInput.toDate();
+    return isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
+  }
+  if (typeof dateInput === 'string') {
+    let str = dateInput.trim();
+    if (!str) return new Date().toISOString();
+    
+    // Normalize Persian and Arabic digits to Latin digits
+    str = str.replace(/[۰-۹]/g, (d) => "۰۱۲۳۴۵۶۷۸۹".indexOf(d).toString())
+             .replace(/[٠-٩]/g, (d) => "٠١٢٣٤٥٦٧٨٩".indexOf(d).toString());
+
+    // Check if already an ISO date string
+    if (str.includes('T') && !str.includes('/')) {
+      const hasZ = str.endsWith('Z');
+      const d = new Date(hasZ ? str : str + 'Z');
+      if (!isNaN(d.getTime())) return d.toISOString();
+      const d2 = new Date(str);
+      if (!isNaN(d2.getTime())) return d2.toISOString();
+    }
+
+    const normalizedSlash = str.replace(/-/g, '/');
+    if (normalizedSlash.includes('/')) {
+      try {
+        const parts = normalizedSlash.split(/[\s/:]+/);
+        const firstNum = parseInt(parts[0], 10);
+        
+        if (firstNum < 1700 && firstNum > 1200) {
+          // Jalali / Persian date
+          let format = "YYYY/MM/DD";
+          if (normalizedSlash.includes(':')) {
+            if (normalizedSlash.toLowerCase().includes('am') || normalizedSlash.toLowerCase().includes('pm')) {
+              format = "YYYY/MM/DD hh:mm a";
+            } else {
+              const colons = (normalizedSlash.match(/:/g) || []).length;
+              format = colons >= 2 ? "YYYY/MM/DD HH:mm:ss" : "YYYY/MM/DD HH:mm";
+            }
+          }
+          const d = new DateObject({ date: normalizedSlash, format, calendar: persian, locale: persian_fa });
+          if (!normalizedSlash.includes(':')) {
+            // Set noon (12:00:00) so timezone conversions in UTC+ zones (like Iran UTC+3:30) never shift across day boundary
+            d.setHour(12);
+            d.setMinute(0);
+            d.setSecond(0);
+          }
+          const jsDate = d.toDate();
+          if (!isNaN(jsDate.getTime())) {
+            return jsDate.toISOString();
+          }
+        } else {
+          // Gregorian date (e.g. 2024/08/29 or 2024-08-29)
+          const d = new Date(str.replace(/\//g, '-'));
+          if (!isNaN(d.getTime())) return d.toISOString();
+        }
+      } catch (e) {
+        console.error("Error in convertToGregorian parsing slash date:", e);
+      }
+    }
+    const num = Number(str);
+    if (!isNaN(num) && num > 1000000) {
+      const d = new Date(num);
+      if (!isNaN(d.getTime())) return d.toISOString();
+    }
+    const d2 = new Date(str);
+    if (!isNaN(d2.getTime())) return d2.toISOString();
+  }
+  return new Date().toISOString();
+}
+
+export const customPersonFilter = (option: any, inputValue: string) => {
+  if (!inputValue) return true;
+  const terms = inputValue.toLowerCase().split(" ").filter(Boolean);
+  const searchable = (
+    option.data?.searchStr ||
+    option.label ||
+    ""
+  ).toLowerCase();
+  return terms.every((term) => searchable.includes(term));
+};
+
+export function formatAmount(num: number | string | undefined | null, storeSettings?: any): string {
+    if (num === undefined || num === null || num === '') return '';
+    return addCommas(num, storeSettings);
+}
+
+export function formatNumber(
+  num: number | string | undefined | null,
+  storeSettings?: any
+): string {
+  if (num === undefined || num === null || num === "") return "0";
+  
+  let cleanNum = num;
+  if (typeof cleanNum === 'string') {
+    const persianToEnglish: Record<string, string> = {
+      '۰': '0', '۱': '1', '۲': '2', '۳': '3', '۴': '4',
+      '۵': '5', '۶': '6', '۷': '7', '۸': '8', '۹': '9',
+      '٠': '0', '١': '1', '٢': '2', '٣': '3', '٤': '4',
+      '٥': '5', '٦': '6', '٧': '7', '٨': '8', '٩': '9'
+    };
+    cleanNum = cleanNum
+      .replace(/[۰-۹٠-٩]/g, (d) => persianToEnglish[d] || d)
+      .replace(/,/g, '')
+      .replace(/٬/g, '')
+      .replace(/٫/g, '.')
+      .trim();
+  }
+  
+  let val = Number(cleanNum);
+  if (isNaN(val)) return String(num);
+
+  const settings = storeSettings || getActiveStoreSettings();
+  const useDecimals = Boolean(settings?.use_decimals);
+  const places = typeof settings?.decimal_places === 'number' ? settings.decimal_places : 2;
+
+  let maxDigits = 0;
+  if (useDecimals) {
+    maxDigits = places;
+    val = Number(val.toFixed(places));
+  } else {
+    maxDigits = 0;
+    val = Math.round(val);
+  }
+
+  return new Intl.NumberFormat("fa-IR", {
+    maximumFractionDigits: maxDigits,
+    minimumFractionDigits: 0
+  }).format(val);
+}
+
+export function formatCurrency(
+  amount: number | string | undefined | null,
+  storeSettings?: any
+): string {
+  return formatNumber(amount, storeSettings);
+}
+
+export function formatPrice(num: number | string | undefined | null, storeSettings?: any): string {
+  return formatNumber(num, storeSettings);
+}

@@ -1,0 +1,170 @@
+import React from "react";
+import { formatDateDisplay, formatInvoiceDate, toPersianDigits, addCommas } from "../../../utils/format";
+import { InvoicePrintTemplateProps } from "./InvoicePrintTypes";
+
+export default function ThermalInvoiceTemplate({
+  data,
+  storeSettings,
+  persons = [],
+  printSettings = { showStoreLogo: true, showNotes: true }
+}: InvoicePrintTemplateProps) {
+  if (!data) return null;
+
+  const isSale = data.type === "sale" || data.type === "sale_return" || !data.type;
+  const isVoided = data.status === "voided" || data.isVoided === true;
+  const isDraft = data.status === "draft" || data.isDraft === true;
+  let rawTitle = isSale ? "رسید فروش" : "رسید خرید";
+  const title = isVoided
+    ? `${rawTitle} (ابطال شده)`
+    : isDraft
+      ? `${rawTitle} (پیش‌نویس)`
+      : rawTitle;
+  
+  const relatedPerson = (persons || []).find(p => p && p.id?.toString() === data.customerId?.toString());
+
+  const driverPerson = (persons || []).find((p: any) => p && String(p.id) === String(data.driverPersonId));
+  const receiverPerson = (persons || []).find((p: any) => p && String(p.id) === String(data.receiverPersonId));
+
+  const driverName = data.driverName || driverPerson?.name || driverPerson?.alias || "";
+  const driverPhone = data.driverPhone || driverPerson?.phone || driverPerson?.mobile || "";
+  const receiverName = data.receiverName || receiverPerson?.name || receiverPerson?.alias || "";
+  const receiverPhone = data.receiverPhone || receiverPerson?.phone || receiverPerson?.mobile || "";
+  const vehiclePlateNumber = data.vehiclePlateNumber || "";
+  const shippingAddress = data.shippingAddress || "";
+  const hasLogisticsInfo = Boolean(driverName || driverPhone || receiverName || receiverPhone || vehiclePlateNumber || shippingAddress);
+  const allItems = (data.items && Array.isArray(data.items) && data.items.length > 0)
+    ? data.items
+    : (data.totalAmount || data.totalPrice || data.finalAmount)
+      ? [
+          {
+            id: '1',
+            productName: data.description || data.title || 'اقلام سند',
+            quantity: 1,
+            unitPrice: Number(data.totalAmount || data.totalPrice || data.finalAmount || 0),
+            totalPrice: Number(data.totalAmount || data.totalPrice || data.finalAmount || 0),
+          }
+        ]
+      : [];
+  const sumTotal = allItems.reduce((sum: number, item: any) => sum + (Number(item.quantity || 1) * Number(item.unitPrice || 0)), 0);
+  const effectiveTotal = Number(data.totalAmount || data.totalPrice || data.finalAmount || sumTotal);
+  const totalDiscount = Math.max(0, sumTotal - effectiveTotal);
+
+  const getInvoiceDateOnly = (d: any) => {
+    return formatInvoiceDate(d, storeSettings?.calendarType, { showTime: false });
+  };
+
+  return (
+    <div
+      className="thermal-invoice-sheet p-2 bg-white text-black font-sans text-[11px] leading-tight w-full max-w-[80mm] mx-auto print:w-[78mm] print:m-0"
+      dir="rtl"
+      style={{ fontFamily: "'IRANYekanXFaNum', 'Vazirmatn', -apple-system, sans-serif" }}
+    >
+      <style>{`
+        .thermal-invoice-sheet, .thermal-invoice-sheet * {
+          font-family: 'IRANYekanXFaNum', 'Vazirmatn', -apple-system, sans-serif !important;
+        }
+        @media print {
+          @page { size: 80mm auto; margin: 2mm; }
+          html, body { width: 100% !important; margin: 0 auto !important; background: white !important; }
+          table { width: 100% !important; }
+        }
+      `}</style>
+      <div className="text-center font-bold text-sm mb-1">{storeSettings.storeName || "فروشگاه"}</div>
+      {storeSettings.phone && <div className="text-center mb-1">تلفن: {toPersianDigits(storeSettings.phone)}</div>}
+      <div className="text-center border-b border-dashed border-black pb-2 mb-2">
+         {storeSettings.address}
+      </div>
+
+      <div className="flex justify-between mb-1 font-bold">
+         <span>{title}</span>
+         <span>شماره: {toPersianDigits(data.invoiceNumber)}</span>
+      </div>
+      <div className="flex justify-between mb-1">
+         <span>تاریخ: {getInvoiceDateOnly(data.date || data.jalaliDate || data.issueDate || data.invoiceDate || data.createdAt)}</span>
+      </div>
+      <div className="flex justify-between border-b border-dashed border-black pb-2 mb-2">
+         <span>مشتری: {relatedPerson?.name || "عمومی"}</span>
+      </div>
+
+      {hasLogisticsInfo && (
+        <div className="border-b border-dashed border-black pb-1.5 mb-1.5 text-[10px] space-y-0.5">
+          {(driverName || driverPhone) && (
+            <div className="flex justify-between">
+              <span>راننده:</span>
+              <span className="font-bold">{driverName} {driverPhone && `(${toPersianDigits(driverPhone)})`}</span>
+            </div>
+          )}
+          {(receiverName || receiverPhone) && (
+            <div className="flex justify-between">
+              <span>تحویل‌گیرنده:</span>
+              <span className="font-bold">{receiverName} {receiverPhone && `(${toPersianDigits(receiverPhone)})`}</span>
+            </div>
+          )}
+          {vehiclePlateNumber && (
+            <div className="flex justify-between">
+              <span>پلاک/خودرو:</span>
+              <span className="font-bold">{toPersianDigits(vehiclePlateNumber)}</span>
+            </div>
+          )}
+          {shippingAddress && (
+            <div className="pt-0.5">
+              <span>آدرس تحویل: </span>
+              <span className="font-bold">{shippingAddress}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      <table className="w-full text-right mb-2">
+         <thead>
+           <tr className="border-b border-black">
+             <th className="py-1">شرح</th>
+             <th className="py-1 text-center">تعداد</th>
+             <th className="py-1 text-left">مبلغ</th>
+           </tr>
+         </thead>
+         <tbody>
+           {data.items?.map((item: any, idx: number) => (
+             <tr key={idx} className="border-b border-dashed border-gray-300">
+               <td className="py-1 pr-1">{item.productName}</td>
+               <td className="py-1 text-center">{toPersianDigits(item.quantity)} {item.selectedUnit || item.unit || ""}</td>
+               <td className="py-1 text-left font-bold">{toPersianDigits(addCommas(item.totalPrice))}</td>
+             </tr>
+           ))}
+         </tbody>
+      </table>
+
+      <div className="flex justify-between mb-1">
+         <span>جمع فاکتور:</span>
+         <span>{toPersianDigits(addCommas(sumTotal))}</span>
+      </div>
+      {totalDiscount > 0 && (
+        <div className="flex justify-between mb-1">
+           <span>تخفیف:</span>
+           <span>{toPersianDigits(addCommas(totalDiscount))}</span>
+        </div>
+      )}
+      
+      <div className="flex justify-between font-bold text-sm border-t border-black pt-1 mt-1 mb-2">
+         <span>قابل پرداخت:</span>
+         <span>{toPersianDigits(addCommas(data.totalAmount || 0))}</span>
+      </div>
+
+      {printSettings.showNotes && data.description && (
+        <div className="border-t border-dashed border-black pt-1 mb-2 text-justify">
+          توضیحات: {data.description}
+        </div>
+      )}
+
+      {storeSettings.print_footer_note && (
+        <div className="text-center mt-4 border-t border-dashed border-black pt-2">
+          {storeSettings.print_footer_note}
+        </div>
+      )}
+      
+      <div className="text-center mt-2 text-[10px]">
+        نرم‌افزار حسابداری هوشمند
+      </div>
+    </div>
+  );
+}

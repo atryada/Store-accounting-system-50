@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>سامانه جامع حسابداری تراز | مدیریت مالی، انبارداری و بازرگانی</title>
+    <meta name="description" content="سامانه جامع حسابداری و مدیریت مالی تراز، نرم‌افزار یکپارچه صدور فاکتور، انبارداری، حسابداری دوبل و خزانه‌داری" />
+    <meta property="og:title" content="سامانه جامع حسابداری تراز" />
+    <meta property="og:description" content="نرم‌افزار جامع مدیریت حسابداری، انبار، چک و بازرگانی کسب‌و‌کار" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="preload" href="/fonts/vazirmatn/Vazirmatn-FD-Regular.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="/fonts/vazirmatn/Vazirmatn-FD-Bold.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+    <script>
+      // Remove TanStack Query Devtools elements if any appear
+      const cleanupQueryDevtools = () => {
+        try {
+          const targets = document.querySelectorAll(
+            '.tsqd-parent-container, .tsqd-open-btn, #tanstack-query-devtools, [data-tanstack-query-devtools], aside[aria-label*="TanStack"], button[aria-label*="TanStack Query"], button[aria-label*="React Query"], button[title*="TanStack Query"], button[title*="React Query"]'
+          );
+          targets.forEach((el) => el.remove());
+        } catch (_) {}
+      };
+      cleanupQueryDevtools();
+      const devtoolsObserver = new MutationObserver(cleanupQueryDevtools);
+      devtoolsObserver.observe(document.documentElement, { childList: true, subtree: true });
+
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(function(registrations) {
+          for(let registration of registrations) {
+            registration.unregister();
+          }
+        });
+      }
+    </script>
+  </body>
+</html>
+

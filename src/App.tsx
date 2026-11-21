@@ -1,0 +1,3611 @@
+import { BrowserRouter, Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
+import BackgroundSync from './components/common/BackgroundSync';
+import SyncStatusModal from './components/common/SyncStatusModal';
+import { useSyncQueueLength } from './services/syncQueueService';
+import { CloudOff, Keyboard, Sun, Moon } from 'lucide-react';
+
+import changelogData from './data/changelog.json';
+import React, { useState, useEffect, useMemo, useRef, useCallback, Suspense } from "react";
+const SystemUpdatePage = React.lazy(() => import('./components/admin/SystemUpdatePage'));
+const PersonalNotesManager = React.lazy(() => import('./components/notes/PersonalNotesManager'));
+import SidebarNavigation from "./components/SidebarNavigation";
+import Barcode from "react-barcode";
+import {
+  Building,
+  ScanLine,
+  Shield,
+  Key,
+  Maximize,
+  Minimize,
+  Tag,
+  Plus,
+  Trash2,
+  Edit2,
+  Image,
+  Save,
+  FileText,
+  User,
+  ShoppingCart,
+  Calculator,
+  CheckCircle,
+  AlertCircle,
+  AlertTriangle,
+  Info,
+  FilePlus,
+  Calendar,
+  List,
+  Receipt,
+  Search,
+  DollarSign,
+  Package,
+  X,
+  Zap,
+  RefreshCw,
+  Menu,
+  Github,
+  CreditCard,
+  Wallet,
+  Store,
+  Settings,
+  TrendingUp,
+  TrendingDown,
+  BarChart3,
+  ChevronDown,
+  ChevronUp,
+  Printer,
+  Eye,
+  ListTodo,
+  CheckSquare,
+  LogOut,
+  LogIn,
+  Database,
+  ArrowDownToLine,
+  ArrowUpFromLine,
+  FileSpreadsheet,
+  Users,
+  BookOpen,
+  ClipboardList,
+  Activity,
+  Clock,
+  History,
+  ArrowRightLeft,
+  Percent,
+  LayoutList,
+  GripHorizontal,
+  Box,
+  CornerDownLeft,
+  CornerUpRight,
+  Banknote,
+  PackagePlus,
+  Copy,
+  LayoutDashboard,
+  Layers,
+  Phone,
+  MapPin,
+  PlusCircle,
+  MinusCircle,
+  Barcode as BarcodeIcon,
+  LayoutGrid,
+  Table,
+  Download,
+  Globe,
+  Bell,
+  Sparkles,
+  Ban,
+  Pencil,
+  Check,
+  Smartphone,
+} from "lucide-react";
+import * as XLSX from "xlsx";
+import { playAudioFeedback } from "./utils/audio";
+import { motion, AnimatePresence } from "motion/react";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip as RechartsTooltip,
+  Legend,
+  ResponsiveContainer,
+  Line,
+  ComposedChart,
+  Cell,
+} from "recharts";
+import {
+  addCommas,
+  removeCommas,
+  numberToWords,
+  getBaseValueInToman,
+  getDefaultExchangeRate,
+  showInvoiceCurrency,
+  numToPersianWords,
+  toPersianDigits,
+  formatDateDisplay, convertToGregorian, customPersonFilter,
+} from "./utils/format";
+import DateObject from "react-date-object";
+import persian from "react-date-object/calendars/persian";
+import persian_fa from "react-date-object/locales/persian_fa";
+const LinkPerson = React.lazy(() => import("./components/profile/LinkPerson"));
+import Select from "react-select";
+import { useAuth } from "./context/AuthContext";
+import {
+  generateId,
+  getUsers,
+  addUser,
+  updateUser,
+  deleteUser,
+  getCheckbooks,
+  addCheckbook,
+  updateCheckbook,
+  deleteCheckbook,
+  getIssuedChecks,
+  addIssuedCheck,
+  updateIssuedCheck,
+  deleteIssuedCheck,
+  getReceivedChecks,
+  addReceivedCheck,
+  updateReceivedCheck,
+  deleteReceivedCheck,
+  getLocalData,
+  saveLocalData,
+  getStoreSettings,
+  saveStoreSettings,
+  getSmsMessages,
+  addSmsMessage,
+  deleteSmsMessage,
+  getPersonGroups,
+  addPersonGroup,
+  updatePersonGroup,
+  deletePersonGroup,
+  getPersonRoles,
+  addPersonRole,
+  updatePersonRole,
+  deletePersonRole,
+  getPersons,
+  addPerson,
+  updatePerson,
+  deletePerson,
+  getPersonOpeningBalances,
+  addPersonOpeningBalance,
+  updatePersonOpeningBalance,
+  deletePersonOpeningBalance,
+  getProducts,
+  addProduct,
+  updateProduct,
+  deleteProduct,
+  getProductCategories,
+  addProductCategory,
+  updateProductCategory,
+  deleteProductCategory,
+  getAccounts,
+  addAccount,
+  updateAccount,
+  deleteAccount,
+  getCashboxes,
+  addCashbox,
+  updateCashbox,
+  deleteCashbox,
+  getWarehouses,
+  addWarehouse,
+  updateWarehouse,
+  deleteWarehouse,
+  getInvoices,
+  getInventoryTransactions,
+  addInvoice,
+  generateDocNumber,
+  updateDocCounter,
+  updateInvoice,
+  deleteInvoice,
+  voidInvoice,
+  getTransactions,
+  addTransaction,
+  getPayslips,
+  addPayslip,
+  updateTransaction,
+  deleteTransaction,
+  getWarehouseStocks,
+  getProductPriceHistory,
+  updateProductPriceHistory,
+  recalculateAllWarehouseStocks,
+  getFinancialYears,
+  getActiveFinancialYear,
+  addFinancialYear,
+  closeFinancialYear,
+  getAccountingDocuments,
+} from "./services/dataService";
+import {
+  Person,
+  PersonGroup,
+  Product,
+  Account,
+  Cashbox,
+  Warehouse,
+  InvoiceItem,
+  WarehouseStock,
+} from "./types";
+import appVersion from "./version.json";
+import { useAppController } from "./hooks/useAppController";
+import PreviewModals from "./components/modals/PreviewModals";
+import ExtraModals from "./components/modals/ExtraModals";
+import GlobalProcessingOverlay from "./components/GlobalProcessingOverlay";
+import ConfirmModal from "./components/modals/ConfirmModal";
+import HeaderBusinessSelector from "./components/common/HeaderBusinessSelector";
+const BusinessManager = React.lazy(() => import('./components/admin/BusinessManager'));
+const FastStocktakingMobile = React.lazy(() => import('./components/inventory/FastStocktakingMobile'));
+const PricingWizardModal = React.lazy(() => import('./components/modals/PricingWizardModal'));
+const SalePaymentModal = React.lazy(() => import('./components/invoices/SalePaymentModal'));
+const ReceiptsList = React.lazy(() => import('./components/financial/ReceiptsList'));
+const InvoicesList = React.lazy(() => import('./components/invoices/InvoicesList'));
+const CurrencyInput = React.lazy(() => import('./components/common/CurrencyInput'));
+const FastBarcodeScanner = React.lazy(() => import('./components/common/FastBarcodeScanner'));
+const PersonLedgerActionsDropdown = React.lazy(() => import('./components/persons/PersonLedgerActionsDropdown'));
+const ChangelogModal = React.lazy(() => import('./components/ChangelogModal'));
+const ReceiveReceiptModal = React.lazy(() => import('./components/financial/ReceiveReceiptModal'));
+const PayReceiptModal = React.lazy(() => import('./components/financial/PayReceiptModal'));
+const AccountsManager = React.lazy(() => import('./components/accounts/AccountsManager'));
+const CashboxesManager = React.lazy(() => import('./components/accounts/CashboxesManager'));
+const PersonsManager = React.lazy(() => import('./components/persons/PersonsManager'));
+const MobilePersonCreatePage = React.lazy(() => import('./components/persons/MobilePersonCreatePage'));
+const DebtorsNotification = React.lazy(() => import('./components/DebtorsNotification'));
+const BeautifulLoading = React.lazy(() => import('./components/BeautifulLoading'));
+const DataReconciliation = React.lazy(() => import('./components/DataReconciliation'));
+
+const OrderTemplatesManager = React.lazy(() => import('./components/payroll/OrderTemplatesManager'));
+const WorkplacesManager = React.lazy(() => import('./components/payroll/WorkplacesManager'));
+
+const EmployeeProfilesManager = React.lazy(() => import("./components/payroll/EmployeeProfilesManager"));
+const ContractsManager = React.lazy(() => import('./components/payroll/ContractsManager'));
+const EmployeeOrdersManager = React.lazy(() => import('./components/payroll/EmployeeOrdersManager'));
+const DailyAttendanceManager = React.lazy(() => import('./components/payroll/DailyAttendanceManager'));
+const MonthlyAttendance = React.lazy(() => import('./components/payroll/MonthlyAttendance'));
+const PayslipsManager = React.lazy(() => import('./components/payroll/PayslipsManager'));
+
+const ProductsTab = React.lazy(() => import('./components/products/ProductsTab'));
+const BulkBarcodeGenerator = React.lazy(() => import('./components/products/BulkBarcodeGenerator'));
+const PersonOpeningBalances = React.lazy(() => import('./components/persons/PersonOpeningBalances'));
+const PersonLedger = React.lazy(() => import('./components/persons/PersonLedger'));
+const SettingsTab = React.lazy(() => import('./components/admin/SettingsTab'));
+const WelcomePage = React.lazy(() => import('./components/WelcomePage'));
+const SyncManager = React.lazy(() => import('./components/admin/SyncManager'));
+const MobileRestrictedMenu = React.lazy(() => import('./components/MobileRestrictedMenu'));
+const MobileRestrictedAccess = React.lazy(() => import('./components/mobile/MobileRestrictedAccess'));
+const MobilePortalLayout = React.lazy(() => import('./components/mobile/MobilePortalLayout'));
+import { MOBILE_ALLOWED_TABS } from './components/MobileRestrictedMenu';
+import { hasPagePermission } from './utils/permissionUtils';
+import AccessRestricted from './components/common/AccessRestricted';
+import NotificationBell from './components/notifications/NotificationBell';
+import LiveAdminAlertToast from './components/notifications/LiveAdminAlertToast';
+const MinimalMobilePersonModal = React.lazy(() => import('./components/modals/MinimalMobilePersonModal'));
+
+const WarehouseManager = React.lazy(() => import('./components/warehouses/WarehouseManager'));
+
+const PersonGroupsManager = React.lazy(() => import('./components/persons/PersonGroupsManager'));
+const PersonCategoriesManager = React.lazy(() => import('./components/persons/PersonCategoriesManager'));
+const PersonRolesManager = React.lazy(() => import('./components/persons/PersonRolesManager'));
+const SpecialistsDirectory = React.lazy(() => import('./components/persons/SpecialistsDirectory'));
+
+// { useState, useEffect, useMemo, useRef } from "react";
+const WarehouseDocCreate = React.lazy(() => import('./components/warehouses/WarehouseDocCreate'));
+const SaleInvoiceCreate = React.lazy(() => import('./components/invoices/SaleInvoiceCreate'));
+const CalculatorModal = React.lazy(() => import('./components/modals/CalculatorModal'));
+const SaleReturnInvoiceCreate = React.lazy(() => import('./components/invoices/SaleReturnInvoiceCreate'));
+const PurchaseInvoiceCreate = React.lazy(() => import('./components/invoices/PurchaseInvoiceCreate'));
+const PurchaseReturnInvoiceCreate = React.lazy(() => import('./components/invoices/PurchaseReturnInvoiceCreate'));
+const CustomDatePicker = React.lazy(() => import('./components/ui/CustomDatePicker'));
+const DatePicker = CustomDatePicker;
+
+const ProductFormModal = React.lazy(() => import('./components/modals/ProductFormModal'));
+const PersonFormModal = React.lazy(() => import('./components/modals/PersonFormModal'));
+const AccountFormModal = React.lazy(() => import('./components/modals/AccountFormModal'));
+const CashboxFormModal = React.lazy(() => import('./components/modals/CashboxFormModal'));
+const WarehouseFormModal = React.lazy(() => import('./components/modals/WarehouseFormModal'));
+
+const SendMessageView = React.lazy(() => import('./components/messaging/SendMessageView'));
+const MessagingChannelsView = React.lazy(() => import('./components/messaging/MessagingChannelsView'));
+const MessagingLogsView = React.lazy(() => import('./components/messaging/MessagingLogsView'));
+const SmsMessagesManager = React.lazy(() => import('./components/messaging/SmsMessagesManager'));
+const SmsTemplatesView = React.lazy(() => import('./components/messaging/SmsTemplatesView'));
+
+
+const ModuleSelector = React.lazy(() => import('./components/ui/ModuleSelector'));
+const DatabaseReconciliation = React.lazy(() => import('./components/admin/DatabaseReconciliation'));
+const DatabaseDashboard = React.lazy(() => import('./components/admin/DatabaseDashboard'));
+const SystemChecklist = React.lazy(() => import('./components/admin/SystemChecklist'));
+const SystemLogs = React.lazy(() => import('./components/admin/SystemLogs'));
+const DatabaseLogs = React.lazy(() => import('./components/admin/DatabaseLogs'));
+
+const GroupPriceUpdateWizard = React.lazy(() => import('./components/modals/GroupPriceUpdateWizard'));
+const ProductPriceChangeModal = React.lazy(() => import('./components/modals/ProductPriceChangeModal'));
+const PrintBarcodeModal = React.lazy(() => import('./components/modals/PrintBarcodeModal'));
+const ProductCardModal = React.lazy(() => import('./components/modals/ProductCardModal'));
+const ProductLastPricesView = React.lazy(() => import('./components/reports/ProductLastPricesView'));
+const QuickPriceInquiry = React.lazy(() => import('./components/inventory/QuickPriceInquiry'));
+const CheckManagement = React.lazy(() => import('./components/financial/CheckManagement'));
+const CheckbooksManager = React.lazy(() => import('./components/financial/CheckbooksManager'));
+const IssuedChecksPage = React.lazy(() => import('./components/financial/IssuedChecksPage'));
+const IssueCheckStandalone = React.lazy(() => import('./components/financial/IssueCheckStandalone'));
+const ReceivedChecksPage = React.lazy(() => import('./components/financial/ReceivedChecksPage'));
+const ReceiveCheckStandalone = React.lazy(() => import('./components/financial/ReceiveCheckStandalone'));
+const CheckCardPage = React.lazy(() => import('./components/financial/checks/CheckCardPage'));
+
+const PersonNotesAndAttachments = React.lazy(() => import('./components/financial/PersonNotesAndAttachments'));
+const InvoiceAllocation = React.lazy(() => import('./components/financial/InvoiceAllocation'));
+
+const SearchableSelect = React.lazy(() => import('./components/ui/SearchableSelect'));
+const BarcodeScannerModal = React.lazy(() => import('./components/modals/BarcodeScannerModal'));
+const EditReceiptModal = React.lazy(() => import('./components/modals/EditReceiptModal'));
+const FinancialTransfer = React.lazy(() => import('./components/financial/FinancialTransfer'));
+const QuickRefund = React.lazy(() => import('./components/financial/QuickRefund'));
+const UserManager = React.lazy(() => import('./components/admin/UserManager'));
+const ProfileModal = React.lazy(() => import('./components/profile/advanced/AdvancedProfileModal'));
+const InventoryReport = React.lazy(() => import('./components/reports/InventoryReport'));
+const KardexReport = React.lazy(() => import('./components/reports/KardexReport'));
+const CRMDashboard = React.lazy(() => import('./components/crm/CRMDashboard'));
+const SystemDiagnostics = React.lazy(() => import('./components/admin/SystemDiagnostics'));
+const SystemInfo = React.lazy(() => import('./components/admin/SystemInfo'));
+const ServerManagementPanel = React.lazy(() => import('./components/admin/ServerManagementPanel'));
+const StocktakingManager = React.lazy(() => import('./components/inventory/StocktakingManager'));
+const SalesReport = React.lazy(() => import('./components/reports/SalesReport'));
+const AnalyticalDashboard = React.lazy(() => import('./components/reports/AnalyticalDashboard'));
+const FinancialDashboard = React.lazy(() => import('./components/reports/FinancialDashboard'));
+const AccountLedgerReport = React.lazy(() => import('./components/accounting/AccountLedgerReport'));
+const DebtsCreditsReport = React.lazy(() => import('./components/reports/DebtsCreditsReport'));
+const DebtorsShowcase = React.lazy(() => import('./components/crm/DebtorsShowcase'));
+const ScreensaverManager = React.lazy(() => import('./components/crm/ScreensaverManager'));
+const LoansManager = React.lazy(() => import('./components/loans/LoansManager'));
+const LoanCardPage = React.lazy(() => import('./pages/loans/LoanCardPage'));
+const ChartOfAccounts = React.lazy(() => import('./components/accounting/ChartOfAccounts'));
+const AccountingDocsList = React.lazy(() => import('./components/accounting/AccountingDocsList'));
+const AccountingDocCreate = React.lazy(() => import('./components/accounting/AccountingDocCreate'));
+const AccountingDocView = React.lazy(() => import('./components/accounting/AccountingDocView'));
+const AccountingAutoSync = React.lazy(() => import('./components/accounting/AccountingAutoSync'));
+const AccountingVerification = React.lazy(() => import('./components/accounting/AccountingVerification'));
+const OpeningBalances = React.lazy(() => import('./components/accounting/OpeningBalances'));
+const FinancialYearManager = React.lazy(() => import('./components/accounting/FinancialYearManager'));
+const WarehousePrintTemplate = React.lazy(() => import('./components/print/WarehousePrintTemplate'));
+const InvoicePrintTemplate = React.lazy(() => import('./components/print/InvoicePrintTemplate'));
+const PrintStudioHub = React.lazy(() => import('./components/print/PrintStudioHub'));
+const AIProductSearchModal = React.lazy(() => import('./components/products/AIProductSearchModal'));
+const BulkProductImportModal = React.lazy(() => import('./components/products/BulkProductImportModal'));
+const FastProductCreateModal = React.lazy(() => import('./components/products/FastProductCreateModal'));
+const PersonProfileView = React.lazy(() => import('./components/persons/PersonProfileView'));
+const PersonIOModal = React.lazy(() => import('./components/modals/PersonIOModal'));
+const ProductCategoriesView = React.lazy(() => import('./components/products/ProductCategoriesView'));
+const OrderList = React.lazy(() => import('./components/inventory/OrderList'));
+const OnlinePipePricing = React.lazy(() => import('./components/products/OnlinePipePricing'));
+const NewpipePricing = React.lazy(() => import('./components/products/NewpipePricing'));
+const RentContractsManager = React.lazy(() => import('./components/payroll/RentContractsManager'));
+import { allSidebarGroups } from './utils/sidebarData';
+import QuickCodeHUD from './components/navigation/QuickCodeHUD';
+import { useQuickCodeNavigator } from './hooks/useQuickCodeNavigator';
+import { QuickCodeItem } from './services/quickCodeService';
+
+
+
+
+
+
+import AdminLTELayout from "./layouts/AdminLTE/AdminLTELayout";
+
+function checkIsMobileOrTabletDevice(): boolean {
+  if (typeof window === "undefined" || typeof navigator === "undefined") return false;
+
+  // Signal 1: Standard viewport width check
+  if (window.innerWidth < 768 || window.screen.width < 768) return true;
+
+  const ua = (navigator.userAgent || navigator.vendor || (window as any).opera || "").toLowerCase();
+
+  // Signal 2: Explicit Mobile / Tablet User Agent
+  const mobileUARegex = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini|mobile|tablet|crios|fxios/i;
+  if (mobileUARegex.test(ua)) return true;
+
+  // Signal 3: iOS Safari / Chrome "Desktop Site" mode (MacIntel UserAgent + touch points >= 1)
+  const isMac = navigator.platform === "MacIntel" || ua.includes("macintosh");
+  const hasTouchPoints = (navigator.maxTouchPoints && navigator.maxTouchPoints > 0) || "ontouchstart" in window;
+  if (isMac && hasTouchPoints) return true;
+
+  // Signal 4: Android Chrome / Edge "Desktop Site" mode (X11/Linux UserAgent + coarse touch pointer)
+  const isLinux = ua.includes("linux") || ua.includes("x11");
+  const isCoarsePointer = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
+  const isNoHover = window.matchMedia && window.matchMedia("(hover: none)").matches;
+
+  if ((isLinux || isMac) && hasTouchPoints && (isCoarsePointer || isNoHover)) {
+    return true;
+  }
+
+  // Signal 5: Physical screen dimensions & pixel ratio combination
+  const minDimension = Math.min(window.screen.width, window.screen.height);
+  if (minDimension <= 1024 && (hasTouchPoints || isCoarsePointer)) {
+    return true;
+  }
+
+  return false;
+}
+
+export default function App() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const syncQueueLength = useSyncQueueLength();
+  const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
+  const [isMobileScreen, setIsMobileScreen] = useState(
+    typeof window !== "undefined" ? checkIsMobileOrTabletDevice() : false
+  );
+
+  useEffect(() => {
+    const handleCheck = () => {
+      setIsMobileScreen(checkIsMobileOrTabletDevice());
+    };
+    handleCheck();
+    window.addEventListener("resize", handleCheck);
+    window.addEventListener("orientationchange", handleCheck);
+    return () => {
+      window.removeEventListener("resize", handleCheck);
+      window.removeEventListener("orientationchange", handleCheck);
+    };
+  }, []);
+
+
+        const [invoicePrintFormat, setInvoicePrintFormat] = useState<'a4' | 'a5' | 'pos80'>('a4');
+  const [isHeaderMenuOpen, setIsHeaderMenuOpen] = useState(false);
+  const [isQuickToolsOpen, setIsQuickToolsOpen] = useState(false);
+  const [isModuleMenuOpen, setIsModuleMenuOpen] = useState(false);
+  const [moduleSearchQuery, setModuleSearchQuery] = useState("");
+  const headerMenuRef = useRef<HTMLDivElement>(null);
+  const quickToolsRef = useRef<HTMLDivElement>(null);
+  const moduleMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (headerMenuRef.current && !headerMenuRef.current.contains(event.target as Node)) {
+        setIsHeaderMenuOpen(false);
+      }
+      if (quickToolsRef.current && !quickToolsRef.current.contains(event.target as Node)) {
+        setIsQuickToolsOpen(false);
+      }
+      if (moduleMenuRef.current && !moduleMenuRef.current.contains(event.target as Node)) {
+        setIsModuleMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const getModuleName = (mod: string) => {
+    switch (mod) {
+      case 'all': return 'همه بخش‌ها';
+      case 'commerce': return 'بازرگانی';
+      case 'inventory': return 'انبارداری';
+      case 'accounting': return 'حسابداری';
+      case 'admin': return 'مدیریت';
+      case 'crm': return 'CRM';
+      case 'hr': return 'منابع انسانی';
+      case 'reports_module': return 'گزارشات';
+      case 'selector': return 'انتخاب بخش';
+      default: return 'بخش کاری';
+    }
+  };
+  
+  const INVOICE_PRINT_FORMATS = {
+    a4: { name: 'کاغذ A4', css: `@page { size: A4 portrait; margin: 8mm; } .print-section { width: 100% !important; max-width: 194mm !important; margin: 0 auto !important; }` },
+    a5: { name: 'کاغذ A5', css: `@page { size: A5 portrait; margin: 6mm; } .print-section { width: 100% !important; max-width: 136mm !important; margin: 0 auto !important; font-size: 0.85em; }` },
+    pos80: { name: 'فیش پرینتر (80mm)', css: `@page { size: 80mm auto; margin: 2mm; } .print-section { width: 78mm !important; margin: 0 auto !important; padding: 2mm !important; font-size: 0.75em; } .print-section table { font-size: 0.85em; }` }
+  };
+
+  const appState = useAppController();
+      const {
+        isFastStocktaking, activeFinancialYear,
+        hasCheckedFinancialYears,
+        isComposeOpen,
+        setIsComposeOpen,
+        priceChangeProduct,
+        setPriceChangeProduct,
+        confirmState,
+        setConfirmState,
+        confirmAction,
+        user,
+        signOut,
+        activeTab,
+        setRawActiveTab,
+        setActiveTab,
+        systemModule,
+        setSystemModule,
+        isSidebarOpen,
+        setIsSidebarOpen,
+        isCalculatorOpen,
+        setIsCalculatorOpen,
+        isProfileModalOpen,
+        setIsProfileModalOpen,
+        setIsChangelogModalOpen,
+        isFullWidth,
+        setIsFullWidth,
+        menuLayout,
+        setMenuLayout,
+        expandedGroups,
+        setExpandedGroups,
+        persons,
+        setPersons,
+        personOpeningBalances,
+        isOpeningBalanceModalOpen,
+        setIsOpeningBalanceModalOpen,
+        editingOpeningBalanceId,
+        setEditingOpeningBalanceId,
+        selectedOpeningBalancePersonId,
+        setSelectedOpeningBalancePersonId,
+        openingBalanceAmount,
+        setOpeningBalanceAmount,
+        openingBalanceType,
+        setOpeningBalanceType,
+        openingBalanceDate,
+        setOpeningBalanceDate,
+        openingBalanceDescription,
+        setOpeningBalanceDescription,
+        openingBalanceSearch,
+        setOpeningBalanceSearch,
+        submittingOpeningBalance,
+        setSubmittingOpeningBalance,
+        personGroups,
+        personRoles,
+        products,
+        setProducts,
+        invoices,
+        accounts,
+        setAccounts,
+        cashboxes,
+        warehouses,
+        warehouseStocks,
+        loans,
+        setLoans,
+        installments,
+        setInstallments,
+        warehouseSubTab,
+        setWarehouseSubTab,
+        recalculating,
+        personSearchTerm,
+        setPersonSearchTerm,
+        selectedProductIds,
+        setSelectedProductIds,
+        whStockSearch,
+        setWhStockSearch,
+        selectedPersonGroup,
+        setSelectedPersonGroup,
+        selectedPersonRole,
+        setSelectedPersonRole,
+        personCurrentPage,
+        setPersonCurrentPage,
+        personPageSize,
+        setPersonPageSize,
+        personsViewMode,
+        setPersonsViewMode,
+        getRoleName,
+        getRoleBadgeClasses,
+        mapPersonToOption,
+        activePersonsOnly,
+        filteredPersons,
+        transactions,
+        setTransactions,
+        payslips,
+        accountingDocuments,
+        checkbooks,
+        issuedChecks,
+        receivedChecks,
+        storeSettings,
+        setStoreSettings,
+        isGmailTheme,
+        loading,
+        setLoading,
+        authLoading,
+        requiresInitSetup,
+        sendNotification,
+        receiptNumber,
+        setReceiptPersonId,
+        printingTransaction,
+        setPrintingTransaction,
+        receiptLinkedInvoices,
+        submittingReceipt,
+        viewingPayslip,
+        setViewingPayslip,
+        printingPersonLedger,
+        setPrintingPersonLedger,
+        printingBarcodeProduct,
+        setPrintingBarcodeProduct,
+        ledgerPersonId,
+        setLedgerPersonId,
+        profilePersonId,
+        setProfilePersonId,
+        ledgerTab,
+        setLedgerTab,
+        reportDateRange,
+        setReportDateRange,
+        viewingInvoice,
+        setViewingInvoice,
+        viewingCheck,
+        setViewingCheck,
+        viewingAccountingDoc,
+        setViewingAccountingDoc,
+        isAccountingDocModalOpen,
+        setIsAccountingDocModalOpen,
+        editingAccountingDoc,
+        setEditingAccountingDoc,
+        pricingWizardInvoice,
+        setPricingWizardInvoice,
+        pricingWizardItems,
+        setPricingWizardItems,
+        previewInvoiceData,
+        setPreviewInvoiceData,
+        previewReceiptData,
+        setPreviewReceiptData,
+        editingReceipt,
+        setEditingReceipt,
+        isEditReceiptModalOpen,
+        setIsEditReceiptModalOpen,
+        showProductBarcodesList,
+        setShowProductBarcodesList,
+        invoiceType,
+        invoiceNumber,
+        date,
+        setCustomerId,
+        items,
+        submitting,
+        transferProposal,
+        setTransferProposal,
+        clearDraft,
+        notification,
+        setNotification,
+        showNotification,
+        setSuccessMsg,
+        customAlert,
+        successMsg,
+        isScannerOpen,
+        setIsScannerOpen,
+        isBulkImportOpen,
+        setIsBulkImportOpen,
+        handleBulkImportItems,
+        handleBarcodeScan,
+        productCategories,
+        isCategoryModalOpen,
+        setIsCategoryModalOpen,
+        newCatName,
+        setNewCatName,
+        newCatParentId,
+        setNewCatParentId,
+        editingCategoryId,
+        newCatDesc,
+        setNewCatDesc,
+        submittingProduct,
+        setNewCashboxBalance,
+        setNewWarehouseName,
+        setNewWarehouseManager,
+        setNewWarehouseLocation,
+        setNewWarehouseIsActive,
+        handleSubmitPerson,
+        isProductModalOpen,
+        setIsProductModalOpen,
+        isFastProductModalOpen,
+        setIsFastProductModalOpen,
+        isGenerateBarcodesModalOpen,
+        setIsGenerateBarcodesModalOpen,
+        barcodeFormat,
+        setBarcodeFormat,
+        barcodePrefix,
+        setBarcodePrefix,
+        barcodeLength,
+        setBarcodeLength,
+        barcodeStartNumber,
+        setBarcodeStartNumber,
+        isGroupPriceModalOpen,
+        setIsGroupPriceModalOpen,
+        isPersonModalOpen,
+        setIsPersonModalOpen,
+        newPersonType,
+        setNewPersonType,
+        setNewPersonTitle,
+        setNewPersonAlias,
+        newPersonFirstName,
+        setNewPersonFirstName,
+        newPersonLastName,
+        setNewPersonLastName,
+        newPersonCompanyName,
+        setNewPersonCompanyName,
+        setNewPersonFatherName,
+        setNewPersonNationalId,
+        setNewPersonAddress,
+        setNewPersonImage,
+        newPersonRole,
+        setNewPersonRole,
+        setNewPersonAccountingCode,
+        newPersonPhone,
+        setNewPersonPhone,
+        setNewPersonContacts,
+        setNewPersonInitialBalance,
+        setNewPersonInitialBalanceType,
+        setNewPersonCreditLimit,
+        submittingPerson,
+        isPersonExtraModalOpen,
+        setIsPersonExtraModalOpen,
+        personExtraId,
+        setPersonExtraId,
+        setPersonBankName,
+        setPersonBankAcc,
+        setPersonCard,
+        setPersonSheba,
+        personBankAccounts,
+        setPersonBankAccounts,
+        personNotes,
+        setPersonNotes,
+        isPersonIOModalOpen,
+        setIsPersonIOModalOpen,
+        personIOAction,
+        setPersonIOAction,
+        isAccountModalOpen,
+        setIsAccountModalOpen,
+        isCashboxModalOpen,
+        setIsCashboxModalOpen,
+        isWarehouseModalOpen,
+        setIsWarehouseModalOpen,
+        viewingProduct,
+        setViewingProduct,
+        editingProductId,
+        setEditingProductId,
+        editingPersonId,
+        setEditingPersonId,
+        editingAccountId,
+        setEditingAccountId,
+        editingCashboxId,
+        setEditingCashboxId,
+        editingWarehouseId,
+        setEditingWarehouseId,
+        settingsForm,
+        setSettingsForm,
+        submittingSettings,
+        settingsTab,
+        setSettingsTab,
+        fetchInvoices,
+        fetchProducts,
+        handleExportProductsData,
+        handleDownloadProductsTemplate,
+        handleImportProductsData,
+        handleFastSaveProduct,
+        handleSaveCategory,
+        handleGenerateBarcodes,
+        fetchPersons,
+        fetchPersonOpeningBalances,
+        handleDeletePerson,
+        isGeneratingCodes,
+        handleGenerateMissingAccountingCodes,
+        fetchAccounts,
+        handleDeleteAccount,
+        fetchCashboxes,
+        fetchWarehouses,
+        setSalaryPersonId,
+        fetchTransactions,
+        fetchAccountingDocuments,
+        confirmReceiptSubmit,
+        handleEditReceiptByCheck,
+        handleSaveReceipt,
+        handleDeleteCashbox,
+        handleDeleteWarehouse,
+        handleRecalculateStocks,
+        handleEditWarehouse,
+        handleToggleProductActive,
+        handleDuplicateProduct,
+        handleEditPerson,
+        handleEditAccount,
+        handleEditCashbox,
+        handleSaveSettings,
+        handleLogoUpload,
+        fetchDataSilent,
+        fetchData,
+        getLastPriceForProduct,
+        handleFastAddProduct,
+        handleFastBarcodeScan,
+        getPersonDisplayName,
+        renderPersonLink,
+        handleEditInvoiceAction,
+        handleDeleteInvoice,
+        handleVoidInvoice,
+        saveInvoiceData,
+        handleExecuteTransferAndSubmit,
+        formatProductStockDetails,
+        calculatePersonBalance,
+        formatCurrency,
+        toPersianDigits,
+        formatNumber,
+        handleApprovePurchaseInvoice,
+        handleApproveWarehouseReceipt,
+        renderTabContent,
+      } = appState;
+
+  const [loadingTimeoutExceeded, setLoadingTimeoutExceeded] = useState(false);
+
+  useEffect(() => {
+    let t: any;
+    if (loading || authLoading) {
+      t = setTimeout(() => {
+        setLoadingTimeoutExceeded(true);
+      }, 4000);
+    } else {
+      setLoadingTimeoutExceeded(false);
+    }
+    return () => clearTimeout(t);
+  }, [loading, authLoading]);
+
+  const handleQuickCodeExecute = useCallback((item: QuickCodeItem) => {
+    if (item.type === 'tab') {
+      if (item.target === 'settings_quick_codes') {
+        setSettingsTab('quick_codes');
+        setActiveTab('settings');
+      } else {
+        setActiveTab(item.target);
+      }
+    } else if (item.type === 'action') {
+      switch (item.target) {
+        case 'action_calculator':
+          setIsCalculatorOpen(true);
+          break;
+        case 'action_scanner':
+          setIsScannerOpen(true);
+          break;
+        case 'action_new_product':
+          setEditingProductId(null);
+          setIsProductModalOpen(true);
+          break;
+        case 'action_new_person':
+          setEditingPersonId(null);
+          setIsPersonModalOpen(true);
+          break;
+        case 'action_send_sms':
+          setIsComposeOpen(true);
+          break;
+        case 'action_sync':
+          setIsSyncModalOpen(true);
+          break;
+        default:
+          break;
+      }
+    }
+  }, [
+    setActiveTab,
+    setSettingsTab,
+    setIsCalculatorOpen,
+    setIsScannerOpen,
+    setEditingProductId,
+    setIsProductModalOpen,
+    setEditingPersonId,
+    setIsPersonModalOpen,
+    setIsComposeOpen,
+    setIsSyncModalOpen,
+  ]);
+
+  const {
+    items: quickCodeItems,
+    isModalOpen: isQuickCodeModalOpen,
+    setIsModalOpen: setIsQuickCodeModalOpen,
+    hudState: quickCodeHudState,
+  } = useQuickCodeNavigator({
+    onExecute: handleQuickCodeExecute,
+    enabled: true,
+  });
+
+  useEffect(() => {
+    const isDark = storeSettings?.theme === "dark";
+    if (isDark) {
+      document.documentElement.classList.add("dark", "theme-dark");
+      document.body.classList.add("theme-dark");
+    } else {
+      document.documentElement.classList.remove("dark", "theme-dark");
+      document.body.classList.remove("theme-dark");
+    }
+    if (storeSettings?.theme && typeof window !== "undefined" && window.localStorage) {
+      try {
+        localStorage.setItem("app_theme", storeSettings.theme);
+      } catch (_) {}
+    }
+  }, [storeSettings?.theme]);
+
+  const appRoutes = (
+    <Routes>
+<Route path="/bulk_barcode_generator" element={<BulkBarcodeGenerator showNotification={showNotification} products={products} categories={productCategories} toPersianDigits={toPersianDigits} updateProduct={updateProduct} fetchProducts={fetchProducts} storeSettings={storeSettings}
+                             onViewAccountingDoc={(doc) => {
+                               setViewingAccountingDoc(doc);
+                               setIsAccountingDocModalOpen(true);
+                             }} />} />
+<Route path="/products" element={<ProductsTab
+                        {...appState}
+                        
+                        toPersianDigits={toPersianDigits}
+                        numToPersianWords={numToPersianWords}
+                        DatePicker={DatePicker}
+                        persian={persian}
+                        persian_fa={persian_fa}
+                        AIProductSearchModal={AIProductSearchModal} />} />
+<Route path="/online_pipe_pricing" element={<OnlinePipePricing 
+                        products={products}
+                        setProducts={setProducts}
+                        categories={productCategories}
+                        storeSettings={storeSettings}
+                        showNotification={showNotification}
+                        confirmAction={confirmAction}
+                        setActiveTab={setActiveTab} />} />
+<Route path="/newpipe_pricing" element={<NewpipePricing 
+                        products={products}
+                        setProducts={setProducts}
+                        categories={productCategories}
+                        storeSettings={storeSettings}
+                        showNotification={showNotification}
+                        confirmAction={confirmAction}
+                        setActiveTab={setActiveTab} />} />
+<Route path="/person_opening_balances" element={<PersonOpeningBalances 
+                        setActiveTab={setActiveTab}
+                        setLedgerPersonId={setLedgerPersonId}
+                        formatDateDisplay={formatDateDisplay}
+                        persons={persons}
+                        setPersons={setPersons}
+                        fetchPersons={fetchPersons}
+                        confirmAction={confirmAction}
+                    
+                        customAlert={customAlert}
+                        showNotification={showNotification}
+                        
+                        toPersianDigits={toPersianDigits}
+                        numToPersianWords={numToPersianWords}
+                        DatePicker={DatePicker}
+                        persian={persian}
+                        persian_fa={persian_fa}
+                        storeSettings={storeSettings}
+                        user={user}
+                         setIsOpeningBalanceModalOpen={setIsOpeningBalanceModalOpen} isOpeningBalanceModalOpen={isOpeningBalanceModalOpen} editingOpeningBalanceId={editingOpeningBalanceId} addPersonOpeningBalance={addPersonOpeningBalance} fetchPersonOpeningBalances={fetchPersonOpeningBalances} setSubmittingOpeningBalance={setSubmittingOpeningBalance} Select={Select} selectedOpeningBalancePersonId={selectedOpeningBalancePersonId} personOpeningBalances={personOpeningBalances} setSelectedOpeningBalancePersonId={setSelectedOpeningBalancePersonId} setOpeningBalanceAmount={setOpeningBalanceAmount} setOpeningBalanceType={setOpeningBalanceType} Info={Info} openingBalanceType={openingBalanceType} CurrencyInput={CurrencyInput} openingBalanceAmount={openingBalanceAmount} openingBalanceDate={openingBalanceDate} setOpeningBalanceDate={setOpeningBalanceDate} activeFinancialYear={activeFinancialYear} openingBalanceDescription={openingBalanceDescription} setOpeningBalanceDescription={setOpeningBalanceDescription} submittingOpeningBalance={submittingOpeningBalance} RefreshCw={RefreshCw}
+                      FileSpreadsheet={FileSpreadsheet}
+                        setEditingOpeningBalanceId={setEditingOpeningBalanceId}
+                        DateObject={DateObject}
+                        openingBalanceSearch={openingBalanceSearch}
+                        setOpeningBalanceSearch={setOpeningBalanceSearch}
+                        addCommas={addCommas}
+                        Edit2={Edit2}
+                        deletePersonOpeningBalance={deletePersonOpeningBalance}
+                        updatePersonOpeningBalance={updatePersonOpeningBalance} />} />
+<Route path="/persons" element={<PersonsManager
+                        filteredPersons={filteredPersons} personPageSize={personPageSize} personCurrentPage={personCurrentPage} calculatePersonBalance={calculatePersonBalance} formatNumber={formatNumber} personSearchTerm={personSearchTerm} setPersonSearchTerm={setPersonSearchTerm} selectedPersonGroup={selectedPersonGroup} setSelectedPersonGroup={setSelectedPersonGroup} personGroups={personGroups} selectedPersonRole={selectedPersonRole} setSelectedPersonRole={setSelectedPersonRole} personRoles={personRoles}
+  personCategories={appState.personCategories} personsViewMode={personsViewMode} setPersonsViewMode={setPersonsViewMode} setIsPersonModalOpen={setIsPersonModalOpen} setPersonCurrentPage={setPersonCurrentPage} getRoleBadgeClasses={getRoleBadgeClasses} getRoleName={getRoleName} handleEditPerson={handleEditPerson} setProfilePersonId={setProfilePersonId} setLedgerPersonId={setLedgerPersonId} setRawActiveTab={setRawActiveTab} handleDeletePerson={handleDeletePerson} setPrintingPersonLedger={setPrintingPersonLedger} fetchPersons={fetchPersons} activePersonsOnly={activePersonsOnly} clearDraft={clearDraft} handleGenerateMissingAccountingCodes={handleGenerateMissingAccountingCodes} isGeneratingCodes={isGeneratingCodes} setPersonIOAction={setPersonIOAction} setIsPersonIOModalOpen={setIsPersonIOModalOpen} setEditingPersonId={setEditingPersonId} setNewPersonType={setNewPersonType} setNewPersonTitle={setNewPersonTitle} setNewPersonAlias={setNewPersonAlias} setNewPersonFirstName={setNewPersonFirstName} setNewPersonLastName={setNewPersonLastName} setNewPersonCompanyName={setNewPersonCompanyName} setNewPersonFatherName={setNewPersonFatherName} setNewPersonNationalId={setNewPersonNationalId} setNewPersonAccountingCode={setNewPersonAccountingCode} setNewPersonAddress={setNewPersonAddress} setNewPersonImage={setNewPersonImage} setNewPersonPhone={setNewPersonPhone} setNewPersonContacts={setNewPersonContacts} setNewPersonRole={setNewPersonRole} newPersonTaxNumber={appState.newPersonTaxNumber} setNewPersonTaxNumber={appState.setNewPersonTaxNumber} newPersonRegistrationNumber={appState.newPersonRegistrationNumber} setNewPersonRegistrationNumber={appState.setNewPersonRegistrationNumber} newPersonRoles={appState.newPersonRoles} setNewPersonRoles={appState.setNewPersonRoles} newPersonCategories={appState.newPersonCategories} setNewPersonCategories={appState.setNewPersonCategories} duplicatePersonsWarning={appState.duplicatePersonsWarning} setDuplicatePersonsWarning={appState.setDuplicatePersonsWarning} setNewPersonInitialBalance={setNewPersonInitialBalance} setNewPersonInitialBalanceType={setNewPersonInitialBalanceType} setNewPersonCreditLimit={setNewPersonCreditLimit} successMsg={successMsg} getPersonDisplayName={getPersonDisplayName} toPersianDigits={toPersianDigits} storeSettings={storeSettings}  setCustomerId={setCustomerId} setReceiptPersonId={setReceiptPersonId} setPersonExtraId={setPersonExtraId} setPersonBankName={setPersonBankName} setPersonBankAcc={setPersonBankAcc} setPersonCard={setPersonCard} setPersonSheba={setPersonSheba} setPersonBankAccounts={setPersonBankAccounts} setPersonNotes={setPersonNotes} setIsPersonExtraModalOpen={setIsPersonExtraModalOpen} confirmAction={confirmAction} setPersonPageSize={setPersonPageSize} setActiveTab={setActiveTab} showNotification={showNotification} />} />
+<Route path="/create_person" element={<Navigate to="/persons" replace />} />
+<Route path="/person_groups" element={<PersonGroupsManager showNotification={showNotification} />} />
+<Route path="/person_categories" element={<PersonCategoriesManager showNotification={showNotification} />} />
+<Route path="/person_roles" element={<PersonRolesManager showNotification={showNotification} />} />
+<Route path="/specialists_directory" element={<SpecialistsDirectory
+  persons={persons}
+  transactions={transactions}
+  invoices={invoices}
+  storeSettings={storeSettings}
+  showNotification={showNotification}
+  fetchPersons={fetchPersons}
+  setProfilePersonId={setProfilePersonId}
+  setLedgerPersonId={setLedgerPersonId}
+  setActiveTab={setActiveTab}
+  setIsPersonModalOpen={setIsPersonModalOpen}
+  calculatePersonBalance={calculatePersonBalance}
+  formatNumber={formatNumber}
+  setReceiptPersonId={setReceiptPersonId}
+  setIsReceiptModalOpen={(open) => { if (open) setActiveTab("payment_create"); }}
+/>} />
+<Route path="/specialists" element={<SpecialistsDirectory
+  persons={persons}
+  transactions={transactions}
+  invoices={invoices}
+  storeSettings={storeSettings}
+  showNotification={showNotification}
+  fetchPersons={fetchPersons}
+  setProfilePersonId={setProfilePersonId}
+  setLedgerPersonId={setLedgerPersonId}
+  setActiveTab={setActiveTab}
+  setIsPersonModalOpen={setIsPersonModalOpen}
+  calculatePersonBalance={calculatePersonBalance}
+  formatNumber={formatNumber}
+  setReceiptPersonId={setReceiptPersonId}
+  setIsReceiptModalOpen={(open) => { if (open) setActiveTab("payment_create"); }}
+/>} />
+<Route path="/accounts" element={<AccountsManager
+                        setEditingAccountId={setEditingAccountId}
+                        setIsAccountModalOpen={setIsAccountModalOpen}
+                        successMsg={successMsg}
+                        accounts={accounts}
+                        formatNumber={formatNumber}
+                        handleEditAccount={handleEditAccount}
+                        confirmAction={confirmAction}
+                        handleDeleteAccount={handleDeleteAccount}
+                        toPersianDigits={toPersianDigits}
+                        storeSettings={storeSettings} />} />
+<Route path="/cashboxes" element={<CashboxesManager
+                        setEditingCashboxId={setEditingCashboxId}
+                        setNewCashboxBalance={setNewCashboxBalance}
+                        setIsCashboxModalOpen={setIsCashboxModalOpen}
+                        successMsg={successMsg}
+                        cashboxes={cashboxes}
+                        formatNumber={formatNumber}
+                        handleEditCashbox={handleEditCashbox}
+                        confirmAction={confirmAction}
+                    
+                        handleDeleteCashbox={handleDeleteCashbox}
+                        toPersianDigits={toPersianDigits}
+                        storeSettings={storeSettings} />} />
+<Route path="/warehouses" element={<WarehouseManager 
+                        showNotification={showNotification}
+                        warehouseSubTab={warehouseSubTab}
+                        setWarehouseSubTab={setWarehouseSubTab}
+                        warehouses={warehouses}
+                        products={products}
+                        setEditingWarehouseId={setEditingWarehouseId}
+                        setIsWarehouseModalOpen={setIsWarehouseModalOpen}
+                        setNewWarehouseName={setNewWarehouseName}
+                        setNewWarehouseManager={setNewWarehouseManager}
+                        setNewWarehouseLocation={setNewWarehouseLocation}
+                        setNewWarehouseIsActive={setNewWarehouseIsActive}
+                        recalculating={recalculating}
+                        handleRecalculateStocks={handleRecalculateStocks}
+                        handleEditWarehouse={handleEditWarehouse}
+                        confirmAction={confirmAction}
+                        handleDeleteWarehouse={handleDeleteWarehouse}
+                        whStockSearch={whStockSearch}
+                        setWhStockSearch={setWhStockSearch}
+                        warehouseStocks={warehouseStocks}
+                        formatNumber={formatNumber}
+                        invoices={invoices}
+                        persons={persons}
+                        productCategories={productCategories}
+                        storeSettings={storeSettings}
+                        formatCurrency={formatCurrency}
+                        setViewingInvoice={setViewingInvoice}
+                        setActiveTab={setActiveTab}
+                        handleDeleteInvoice={handleDeleteInvoice}
+                        handleVoidInvoice={handleVoidInvoice}
+                        handleEditInvoiceAction={handleEditInvoiceAction}
+                        handleApproveWarehouseReceipt={handleApproveWarehouseReceipt} />} />
+<Route path="/account_ledger" element={<AccountLedgerReport
+                        showNotification={showNotification}
+                        onNavigateToDoc={(docId: any) => {
+                          const doc = accountingDocuments.find(d => d.id.toString() === docId.toString());
+                          if (doc) {
+                             setViewingAccountingDoc(doc);
+                             setIsAccountingDocModalOpen(true);
+                          }
+                        }
+} />} />
+<Route path="/financial_report" element={<FinancialDashboard
+                        invoices={invoices}
+                        persons={persons}
+                        storeSettings={storeSettings}
+                        reportDateRange={reportDateRange}
+                        setReportDateRange={setReportDateRange}
+                        issuedChecks={issuedChecks}
+                        receivedChecks={receivedChecks}
+                        accounts={accounts}
+                        cashboxes={cashboxes}
+                        transactions={transactions}
+                        calculatePersonBalance={calculatePersonBalance}
+                        showNotification={showNotification}
+                        getPersonDisplayName={getPersonDisplayName}
+                        formatNumber={formatNumber}
+                        setActiveTab={setActiveTab}
+                        fetchData={fetchData}
+                        getDefaultExchangeRate={getDefaultExchangeRate}
+                        currentUser={user} />} />
+<Route path="/person_profile" element={<PersonProfileView formatCurrency={formatCurrency} 
+
+                        personId={profilePersonId}
+                        persons={persons}
+                        invoices={invoices}
+                        products={products}
+                        fetchPersons={fetchPersons}
+                        transactions={transactions}
+                        issuedChecks={issuedChecks}
+                        receivedChecks={receivedChecks}
+                        accountingDocuments={accountingDocuments}
+                        storeSettings={storeSettings}
+                        calculatePersonBalance={calculatePersonBalance}
+                        showNotification={showNotification}
+                        onBack={() => setActiveTab("persons")}
+                        onEdit={handleEditPerson}
+                        onViewExtraInfo={(p: any) => {
+                          setPersonExtraId(p.id);
+                          setPersonBankAccounts(p.bankAccounts || []);
+                          setPersonNotes(p.additionalNotes || "");
+                          setIsPersonExtraModalOpen(true);
+                        }}
+                        onViewLedger={(id) => {
+                          setLedgerPersonId(id);
+                          setActiveTab("person_ledger");
+                        }}
+                        onCreateSale={(id) => {
+                          setCustomerId(id);
+                          setActiveTab("sale_invoice_create");
+                        }}
+                        onCreatePurchase={(id) => {
+                          setCustomerId(id);
+                          setActiveTab("purchase_invoice_create");
+                        }}
+                        onCreateReceive={(id) => {
+                          setReceiptPersonId(id);
+                          setActiveTab("receipt_create");
+                        }}
+                        onCreatePay={(id) => {
+                          setReceiptPersonId(id);
+                          setActiveTab("payment_create");
+                        }}
+                        onCreateConsignment={(id) => {
+                          setCustomerId(id);
+                          setActiveTab("create_consignment");
+                        }}
+                        getPersonDisplayName={getPersonDisplayName}
+                        getRoleName={getRoleName}
+                        getRoleBadgeClasses={getRoleBadgeClasses}
+                        
+                        toPersianDigits={toPersianDigits}
+                        formatDateDisplay={formatDateDisplay} />} />
+<Route path="/person_ledger" element={<PersonLedger 
+                        persons={appState.allPersons?.length > 0 ? appState.allPersons : persons}
+                        setPersons={setPersons}
+                        fetchPersons={fetchPersons}
+                        fetchAllPersons={appState.fetchAllPersons}
+                        products={products}
+                        fetchProducts={fetchProducts}
+                        confirmAction={confirmAction}
+                    
+                        customAlert={customAlert}
+                        showNotification={showNotification}
+                        
+                        toPersianDigits={toPersianDigits}
+                        numToPersianWords={numToPersianWords}
+                        DatePicker={DatePicker}
+                        persian={persian}
+                        persian_fa={persian_fa}
+                        storeSettings={storeSettings}
+                        user={user}
+                        PersonLedgerActionsDropdown={PersonLedgerActionsDropdown} ledgerPersonId={ledgerPersonId} setActiveTab={setActiveTab} setCustomerId={setCustomerId} setReceiptPersonId={setReceiptPersonId} handleEditPerson={handleEditPerson} setIsPersonModalOpen={setIsPersonModalOpen} sendNotification={sendNotification} setPrintingPersonLedger={setPrintingPersonLedger} fetchInvoices={fetchInvoices} fetchTransactions={fetchTransactions} fetchAccountingDocuments={fetchAccountingDocuments} User={User} Select={Select} mapPersonToOption={mapPersonToOption} setLedgerPersonId={setLedgerPersonId} customPersonFilter={customPersonFilter} accountingDocuments={accountingDocuments} payslips={payslips} invoices={invoices} convertToGregorian={convertToGregorian} printingPersonLedger={printingPersonLedger} getPersonDisplayName={getPersonDisplayName} formatNumber={formatNumber} formatDateDisplay={formatDateDisplay} getRoleBadgeClasses={getRoleBadgeClasses} getRoleName={getRoleName} setLedgerTab={setLedgerTab} ledgerTab={ledgerTab} PersonNotesAndAttachments={PersonNotesAndAttachments} List={List} setViewingInvoice={setViewingInvoice} transactions={transactions} setViewingPayslip={setViewingPayslip} setPreviewReceiptData={setPreviewReceiptData} setPrintingTransaction={setPrintingTransaction} issuedChecks={issuedChecks} setViewingCheck={setViewingCheck} receivedChecks={receivedChecks} Calendar={Calendar} Tag={Tag} />} />
+<Route path="/debts_credits" element={<DebtsCreditsReport showNotification={showNotification} formatNumber={formatNumber} formatCurrency={formatCurrency} storeSettings={storeSettings} />} />
+<Route path="/debtors_showcase" element={<DebtorsShowcase persons={persons} accountingDocuments={accountingDocuments} storeSettings={storeSettings} formatNumber={formatNumber} />} />
+<Route path="/transfer" element={<motion.div
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                      >
+                        <FinancialTransfer showNotification={showNotification} />
+                      </motion.div>} />
+<Route path="/invoice_allocation" element={<motion.div
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                      >
+                        <InvoiceAllocation formatCurrency={formatCurrency}
+                          customAlert={customAlert}
+                          
+                          getDefaultExchangeRate={getDefaultExchangeRate} />
+                      </motion.div>} />
+<Route path="/quick_refund" element={<QuickRefund
+                        showNotification={showNotification}
+                        onComplete={() => {
+                          fetchDataSilent();
+                          fetchPersons();
+                          fetchAccounts();
+                          fetchCashboxes();
+                        }} />} />
+
+<Route path="/issued_checks_page" element={<IssuedChecksPage showNotification={showNotification} currentUser={user?.name || "کاربر سیستم"} setViewingCheck={setViewingCheck} onEditReceiptByCheck={handleEditReceiptByCheck} />} />
+<Route path="/issue_check_form" element={<motion.div
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="h-full overflow-y-auto"
+                      >
+                        <IssueCheckStandalone />
+                      </motion.div>} />
+
+<Route path="/received_checks_page" element={<ReceivedChecksPage showNotification={showNotification} currentUser={user?.name || "کاربر سیستم"} setViewingCheck={setViewingCheck} onDataChange={() => { fetchDataSilent(); fetchPersons(); }} />} />
+<Route path="/receive_check_form" element={<motion.div
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="h-full overflow-y-auto"
+                      >
+                        <ReceiveCheckStandalone
+                          showNotification={showNotification}
+                          setViewingCheck={setViewingCheck}
+                          onSuccess={() => {
+                            fetchDataSilent();
+                            fetchPersons();
+                          }}
+                        />
+                      </motion.div>} />
+
+
+<Route path="/check_card" element={<motion.div
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="h-full overflow-y-auto bg-gray-50/50"
+                      >
+                        <CheckCardPage 
+                             checkId={viewingCheck?.id || null} checkType={viewingCheck?._type || 'issued'}
+                             onClose={() => {
+                               setViewingCheck(null);
+                               setActiveTab('check_panel');
+                             }}
+                             showNotification={showNotification}
+                             currentUser={user?.name || 'سیستم'}
+                             storeSettings={storeSettings}
+                             onViewAccountingDoc={(doc) => {
+                               setViewingAccountingDoc(doc);
+                               setIsAccountingDocModalOpen(true);
+                             }}
+                           />
+                      </motion.div>} />
+
+<Route path="/checkbooks" element={<motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="h-full"><CheckbooksManager storeSettings={storeSettings} showNotification={showNotification} /></motion.div>} />
+<Route path="/check_panel" element={<motion.div
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="h-full"
+                      >
+                        <CheckManagement
+                          onEditReceiptByCheck={handleEditReceiptByCheck}
+                          showNotification={showNotification}
+                          currentUser={user?.name || "کاربر سیستم"}
+                        
+                          sendNotification={sendNotification}
+                          storeSettings={storeSettings}
+                          setViewingCheck={setViewingCheck} />
+                      </motion.div>} />
+<Route path="/due_reminders" element={<motion.div
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="h-full"
+                      >
+                        <CheckManagement
+                          activeTab="due_reminders"
+                          onEditReceiptByCheck={handleEditReceiptByCheck}
+                          showNotification={showNotification}
+                          currentUser={user?.name || "کاربر سیستم"}
+                        
+                          sendNotification={sendNotification}
+                          storeSettings={storeSettings}
+                          setViewingCheck={setViewingCheck} />
+                      </motion.div>} />
+<Route path="/check_due_reminders" element={<motion.div
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="h-full"
+                      >
+                        <CheckManagement
+                          activeTab="due_reminders"
+                          onEditReceiptByCheck={handleEditReceiptByCheck}
+                          showNotification={showNotification}
+                          currentUser={user?.name || "کاربر سیستم"}
+                        
+                          sendNotification={sendNotification}
+                          storeSettings={storeSettings}
+                          setViewingCheck={setViewingCheck} />
+                      </motion.div>} />
+
+<Route path="/loan/:id" element={<LoanCardPage showNotification={showNotification} userRole={user?.role} formatCurrency={formatCurrency} storeSettings={storeSettings} />} />
+<Route path="/loans_dashboard" element={<LoansManager activeTab="dashboard" showNotification={showNotification} persons={persons} accounts={accounts} loans={loans} setLoans={setLoans} installments={installments} setInstallments={setInstallments} currentUser={user?.name || "کاربر سیستم"} userRole={user?.role} setAccounts={setAccounts} transactions={transactions} setTransactions={setTransactions} storeSettings={storeSettings} />} />
+<Route path="/loans_list" element={<LoansManager activeTab="list" showNotification={showNotification} persons={persons} accounts={accounts} loans={loans} setLoans={setLoans} installments={installments} setInstallments={setInstallments} currentUser={user?.name || "کاربر سیستم"} userRole={user?.role} setAccounts={setAccounts} transactions={transactions} setTransactions={setTransactions} storeSettings={storeSettings} />} />
+<Route path="/loans_create" element={<LoansManager activeTab="create" showNotification={showNotification} persons={persons} accounts={accounts} loans={loans} setLoans={setLoans} installments={installments} setInstallments={setInstallments} currentUser={user?.name || "کاربر سیستم"} userRole={user?.role} setAccounts={setAccounts} transactions={transactions} setTransactions={setTransactions} storeSettings={storeSettings} />} />
+<Route path="/loans_payment" element={<LoansManager activeTab="payment" showNotification={showNotification} persons={persons} accounts={accounts} loans={loans} setLoans={setLoans} installments={installments} setInstallments={setInstallments} currentUser={user?.name || "کاربر سیستم"} userRole={user?.role} setAccounts={setAccounts} transactions={transactions} setTransactions={setTransactions} storeSettings={storeSettings} />} />
+<Route path="/loans_arrears" element={<LoansManager activeTab="arrears" showNotification={showNotification} persons={persons} accounts={accounts} loans={loans} setLoans={setLoans} installments={installments} setInstallments={setInstallments} currentUser={user?.name || "کاربر سیستم"} userRole={user?.role} setAccounts={setAccounts} transactions={transactions} setTransactions={setTransactions} storeSettings={storeSettings} />} />
+<Route path="/loans_reports" element={<LoansManager activeTab="reports" showNotification={showNotification} persons={persons} accounts={accounts} loans={loans} setLoans={setLoans} installments={installments} setInstallments={setInstallments} currentUser={user?.name || "کاربر سیستم"} userRole={user?.role} setAccounts={setAccounts} transactions={transactions} setTransactions={setTransactions} storeSettings={storeSettings} />} />
+<Route path="/loans_settings" element={<LoansManager activeTab="settings" showNotification={showNotification} persons={persons} accounts={accounts} loans={loans} setLoans={setLoans} installments={installments} setInstallments={setInstallments} currentUser={user?.name || "کاربر سیستم"} userRole={user?.role} setAccounts={setAccounts} transactions={transactions} setTransactions={setTransactions} storeSettings={storeSettings} />} />
+
+<Route path="/system_info" element={<SystemInfo />} />
+<Route path="/server_panel" element={<ServerManagementPanel />} />
+<Route path="/system_diagnostics" element={<SystemDiagnostics
+  persons={persons}
+  products={products}
+  invoices={invoices}
+  transactions={transactions}
+  warehouseStocks={warehouseStocks}
+  issuedChecks={issuedChecks}
+  receivedChecks={receivedChecks}
+  showNotification={showNotification}
+  storeSettings={storeSettings}
+/>} />
+<Route path="/unvouchered_financials" element={<SystemDiagnostics
+  persons={persons}
+  products={products}
+  invoices={invoices}
+  transactions={transactions}
+  warehouseStocks={warehouseStocks}
+  issuedChecks={issuedChecks}
+  receivedChecks={receivedChecks}
+  initialTab="unvouchered"
+  showNotification={showNotification}
+  storeSettings={storeSettings}
+/>} />
+<Route path="/users_manager" element={<UserManager />} />
+<Route path="/print_studio" element={<PrintStudioHub
+  storeSettings={storeSettings}
+  invoices={invoices}
+  persons={persons}
+  warehouses={warehouses}
+  transactions={transactions}
+  checks={[...(issuedChecks || []), ...(receivedChecks || [])]}
+  formatCurrency={formatCurrency}
+  showNotification={showNotification}
+  confirmAction={confirmAction}
+/>} />
+<Route path="/settings" element={<SettingsTab storeSettings={storeSettings} 
+                        
+                        user={user}
+                      settingsForm={settingsForm}
+                        setSettingsForm={setSettingsForm}
+                        CurrencyInput={CurrencyInput}
+                        AlertTriangle={AlertTriangle}
+                        AlertCircle={AlertCircle}
+                      confirmAction={confirmAction}
+                        handleSaveSettings={handleSaveSettings}
+                        submittingSettings={submittingSettings}
+                        Box={Box}
+                        settingsTab={settingsTab}
+                        setSettingsTab={setSettingsTab}
+                        successMsg={successMsg}
+                        Trash2={Trash2}
+                        Image={Image}
+                        handleLogoUpload={handleLogoUpload}
+                        Globe={Globe}
+                        CheckSquare={CheckSquare}
+                        productCategories={productCategories}
+                        ChevronDown={ChevronDown}
+                        Check={Check}
+                        X={X}
+                        setActiveTab={setActiveTab}
+                        setStoreSettings={setStoreSettings}
+                        showNotification={showNotification}
+                        activeFinancialYear={activeFinancialYear}
+                        activeStoreId={appState.activeStoreId} />} />
+<Route path="/inventory_report" element={<InventoryReport showNotification={showNotification} categories={productCategories} formatNumber={formatNumber} storeSettings={storeSettings} />} />
+<Route path="/order_list" element={<OrderList 
+                        formatCurrency={formatCurrency} 
+                        products={products}
+                        categories={productCategories}
+                        toPersianDigits={toPersianDigits}
+                        storeSettings={storeSettings}
+                        showNotification={showNotification}
+                        fetchProducts={fetchProducts}
+                        setIsProductModalOpen={setIsProductModalOpen}
+                        setIsFastProductModalOpen={setIsFastProductModalOpen}
+                        setActiveTab={setActiveTab}
+                        warehouses={warehouses}
+                      />} />
+<Route path="/kardex" element={<KardexReport />} />
+<Route path="/crm_dashboard" element={<CRMDashboard persons={persons} showNotification={showNotification} confirmAction={confirmAction} />} />
+<Route path="/sales_report" element={<SalesReport showNotification={showNotification} toPersianDigits={toPersianDigits} formatCurrency={formatCurrency} formatNumber={formatNumber} formatDateDisplay={formatDateDisplay} setViewingInvoice={setViewingInvoice} setActiveTab={setActiveTab} storeSettings={storeSettings} />} />
+<Route path="/analytical_dashboard" element={<AnalyticalDashboard showNotification={showNotification} />} />
+<Route path="/send_message" element={<SendMessageView showNotification={showNotification} persons={persons} personGroups={personGroups} />} />
+<Route path="/messaging_channels" element={<MessagingChannelsView showNotification={showNotification} />} />
+<Route path="/messaging_logs" element={<MessagingLogsView showNotification={showNotification} />} />
+<Route path="/sms_messages" element={<SmsMessagesManager showNotification={showNotification} />} />
+<Route path="/sms_templates" element={<SmsTemplatesView showNotification={showNotification} />} />
+<Route path="/sync_manager" element={<SyncManager confirmAction={confirmAction} />} />
+<Route path="/system_logs" element={<motion.div
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                      >
+                        <SystemLogs />
+                      </motion.div>} />
+<Route path="/database_logs" element={<motion.div
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                      >
+                        <DatabaseLogs />
+                      </motion.div>} />
+<Route path="/data_reconciliation" element={<DatabaseReconciliation />} />
+<Route path="/database" element={<DatabaseDashboard showNotification={showNotification} />} />
+<Route path="/businesses" element={<BusinessManager 
+  showNotification={showNotification}
+  availableStores={appState.availableStores} 
+  setAvailableStores={appState.setAvailableStores} 
+  onSelectStore={async (id: string) => {
+    sessionStorage.setItem("activeBusinessChosen", "true");
+    localStorage.setItem("activeBusinessChosen", "true");
+    appState.setIsStoreSelectionOpen(false);
+    await appState.switchBusiness(id);
+    setActiveTab("settings");
+  }}
+  onClose={() => setActiveTab("settings")}
+  user={user}
+  onSignOut={appState.signOut}
+/>} />
+<Route path="/personal_notes" element={<PersonalNotesManager storeSettings={storeSettings} />} />
+<Route path="/update" element={<SystemUpdatePage storeSettings={storeSettings} setActiveTab={setActiveTab} />} />
+<Route path="/quick_price_inquiry" element={<QuickPriceInquiry products={products}
+                       
+                        settings={storeSettings} />} />
+<Route path="/product_view" element={<div className="flex flex-col h-full gap-4">
+                        <motion.div
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className={`bg-white rounded-2xl shadow-sm border border-gray-100 shrink-0 ${viewingProduct ? 'p-4 mx-4 mt-4' : 'p-8 max-w-3xl mx-auto mt-10 w-full'}`}
+                        >
+                          <h2 className={`${viewingProduct ? 'text-lg mb-4' : 'text-2xl mb-6'} font-bold text-gray-800 flex items-center gap-2`}>
+                            <Package className={`${viewingProduct ? 'w-5 h-5' : 'w-8 h-8'} text-indigo-600`} />
+                            جستجوی پیشرفته کارت کالا
+                          </h2>
+                          <div className="relative">
+                            <SearchableSelect
+                              options={(products || []).map((p) => ({
+                                value: p.id,
+                                label: p.name,
+                                subLabel: formatProductStockDetails(p),
+                                badge: p.type === "service" ? "خدمات" : "کالا",
+                                searchStr: `${p.code || ""} ${p.barcode || ""}`,
+                              }))}
+                              value={viewingProduct ? viewingProduct.id.toString() : ""}
+                              onChange={(val) => {
+                                const p = products.find(
+                                  (prod) => prod.id.toString() === val,
+                                );
+                                if (p) setViewingProduct(p);
+                                else setViewingProduct(null);
+                              }}
+                              placeholder="جستجو کالا (نام، کد، بارکد)..."
+                              searchPlaceholder="نام، کد یا بارکد کالا را وارد کنید..." /></div>
+                          {!viewingProduct && (
+                            <div className="mt-8 text-center text-gray-500 text-sm">
+                              جهت مشاهده تاریخچه و گردش کالا، جستجو و انتخاب کنید
+                            </div>
+                          )}
+                        
+                        
+                        {viewingProduct && (
+                          <div className="flex-1 min-h-[500px]">
+                            <ProductCardModal
+                              product={viewingProduct}
+                              warehouses={warehouses}
+                              currency={storeSettings?.currency || "تومان"}
+                              isModal={false}
+                              persons={persons}
+                              storeSettings={storeSettings}
+                              onClose={() => {
+                                setViewingProduct(null);
+                              }} />
+                          </div>
+                        )}
+                      </motion.div>
+                      </div>} />
+<Route path="/checklist" element={<SystemChecklist />} />
+<Route path="/stocktaking" element={<StocktakingManager
+                        showNotification={showNotification}
+                        currentUser={user?.name}
+                        onNavigateToDocs={() =>
+                          setActiveTab("create_warehouse_doc")} />} />
+<Route path="/financial_years" element={<FinancialYearManager showNotification={showNotification} />} />
+<Route path="/chart_of_accounts" element={<ChartOfAccounts
+                        showNotification={showNotification}
+                        currentUser={user?.name} />} />
+<Route path="/accounting_docs_list" element={<AccountingDocsList
+                        showNotification={showNotification}
+                        onNavigateToCreate={() => {
+                          setEditingAccountingDoc(null);
+                          setActiveTab("accounting_doc_create");
+                        }}
+                        onNavigateToView={(doc: any) => {
+                          setViewingAccountingDoc(doc);
+                          setIsAccountingDocModalOpen(true);
+                        }}
+                        onNavigateToEdit={(doc: any) => {
+                          setEditingAccountingDoc(doc);
+                          setActiveTab("accounting_doc_create");
+                        }} />} />
+<Route path="/accounting_doc_create" element={<AccountingDocCreate
+                        showNotification={showNotification}
+                        initialDoc={editingAccountingDoc}
+                        onBack={() => {
+                          setEditingAccountingDoc(null);
+                          setActiveTab("accounting_docs_list");
+                        }} />} />
+
+<Route path="/order_templates" element={<OrderTemplatesManager showNotification={showNotification} />} />
+                          <Route path="/workplaces" element={<WorkplacesManager showNotification={showNotification} personsData={persons} />} />
+
+<Route path="/employee_profiles" element={<EmployeeProfilesManager personsData={persons} fetchPersons={fetchPersons} showNotification={showNotification} />} />
+<Route path="/employee_contracts" element={<ContractsManager personsData={persons} personGroups={personGroups} storeSettings={storeSettings} showNotification={showNotification} DatePicker={DatePicker} persian={persian} persian_fa={persian_fa} />} />
+<Route path="/employee_orders" element={<EmployeeOrdersManager personsData={persons} storeSettings={storeSettings} showNotification={showNotification} DatePicker={DatePicker} persian={persian} persian_fa={persian_fa} />} />
+<Route path="/daily_attendance" element={<DailyAttendanceManager personsData={persons} storeSettings={storeSettings} showNotification={showNotification} DatePicker={DatePicker} persian={persian} persian_fa={persian_fa} />} />
+<Route path="/monthly_attendance" element={<MonthlyAttendance personsData={persons} showNotification={showNotification} />} />
+<Route path="/payslips" element={<PayslipsManager personsData={persons} storeSettings={storeSettings} showNotification={showNotification} />} />
+<Route path="/accounting_verification" element={<AccountingVerification showNotification={showNotification} />} />
+<Route path="/accounting_opening_balances" element={<OpeningBalances showNotification={showNotification} onBack={() => setActiveTab("chart_of_accounts")} />} />
+<Route path="/product_last_prices" element={<ProductLastPricesView products={products} invoices={invoices} formatCurrency={formatCurrency} toPersianDigits={toPersianDigits} formatDateDisplay={formatDateDisplay} />} />
+<Route path="/rent_contracts" element={<RentContractsManager personsData={persons} storeSettings={storeSettings} showNotification={showNotification} DatePicker={DatePicker} persian={persian} persian_fa={persian_fa} />} />
+<Route path="/create_sale" element={<AnimatePresence mode="wait"><motion.div key="create_sale" initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }} transition={{ duration: 0.2 }} className="h-full flex flex-col">{renderTabContent()}</motion.div></AnimatePresence>} />
+<Route path="/create_purchase" element={<AnimatePresence mode="wait"><motion.div key="create_purchase" initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }} transition={{ duration: 0.2 }} className="h-full flex flex-col">{renderTabContent()}</motion.div></AnimatePresence>} />
+<Route path="/keyboard_receipt" element={<AnimatePresence mode="wait"><motion.div key="keyboard_receipt" initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }} transition={{ duration: 0.2 }} className="h-full flex flex-col">{renderTabContent()}</motion.div></AnimatePresence>} />
+<Route path="/create_receive_receipt" element={<AnimatePresence mode="wait"><motion.div key="create_receive_receipt" initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }} transition={{ duration: 0.2 }} className="h-full flex flex-col">{renderTabContent()}</motion.div></AnimatePresence>} />
+<Route path="/create_pay_receipt" element={<AnimatePresence mode="wait"><motion.div key="create_pay_receipt" initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }} transition={{ duration: 0.2 }} className="h-full flex flex-col">{renderTabContent()}</motion.div></AnimatePresence>} />
+<Route path="/create_warehouse_doc" element={<AnimatePresence mode="wait"><motion.div key="create_warehouse_doc" initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }} transition={{ duration: 0.2 }} className="h-full flex flex-col">{renderTabContent()}</motion.div></AnimatePresence>} />
+<Route path="/create_sale_return" element={<AnimatePresence mode="wait"><motion.div key="create_sale_return" initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }} transition={{ duration: 0.2 }} className="h-full flex flex-col">{renderTabContent()}</motion.div></AnimatePresence>} />
+<Route path="/create_purchase_return" element={<AnimatePresence mode="wait"><motion.div key="create_purchase_return" initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }} transition={{ duration: 0.2 }} className="h-full flex flex-col">{renderTabContent()}</motion.div></AnimatePresence>} />
+<Route path="/list_sale" element={<AnimatePresence mode="wait"><motion.div key="list_sale" initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }} transition={{ duration: 0.2 }} className="h-full flex flex-col">{renderTabContent()}</motion.div></AnimatePresence>} />
+<Route path="/list_purchase" element={<AnimatePresence mode="wait"><motion.div key="list_purchase" initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }} transition={{ duration: 0.2 }} className="h-full flex flex-col">{renderTabContent()}</motion.div></AnimatePresence>} />
+<Route path="/list_receive_receipt" element={<AnimatePresence mode="wait"><motion.div key="list_receive_receipt" initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }} transition={{ duration: 0.2 }} className="h-full flex flex-col">{renderTabContent()}</motion.div></AnimatePresence>} />
+<Route path="/list_pay_receipt" element={<AnimatePresence mode="wait"><motion.div key="list_pay_receipt" initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }} transition={{ duration: 0.2 }} className="h-full flex flex-col">{renderTabContent()}</motion.div></AnimatePresence>} />
+<Route path="/list_warehouse_docs" element={<AnimatePresence mode="wait"><motion.div key="list_warehouse_docs" initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }} transition={{ duration: 0.2 }} className="h-full flex flex-col">{renderTabContent()}</motion.div></AnimatePresence>} />
+<Route path="/list_sale_return" element={<AnimatePresence mode="wait"><motion.div key="list_sale_return" initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }} transition={{ duration: 0.2 }} className="h-full flex flex-col">{renderTabContent()}</motion.div></AnimatePresence>} />
+<Route path="/list_consignment" element={<AnimatePresence mode="wait"><motion.div key="list_consignment" initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }} transition={{ duration: 0.2 }} className="h-full flex flex-col">{renderTabContent()}</motion.div></AnimatePresence>} />
+<Route path="/create_consignment" element={<AnimatePresence mode="wait"><motion.div key="create_consignment" initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }} transition={{ duration: 0.2 }} className="h-full flex flex-col">{renderTabContent()}</motion.div></AnimatePresence>} />
+<Route path="/product_categories" element={<AnimatePresence mode="wait"><motion.div key="product_categories" initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }} transition={{ duration: 0.2 }} className="h-full flex flex-col">{renderTabContent()}</motion.div></AnimatePresence>} />
+<Route path="/" element={<Navigate to="/welcome_page" replace />} />
+  <Route path="*" element={<AnimatePresence mode="wait"><motion.div key={location.pathname} initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }} transition={{ duration: 0.2 }} className="h-full flex flex-col">{renderTabContent()}</motion.div></AnimatePresence>} />
+</Routes>
+  );
+
+
+
+  const isBusinessChosen = typeof window !== 'undefined' && Boolean(
+    window.sessionStorage?.getItem("activeBusinessChosen") === "true" && appState.activeStoreId
+  );
+
+  if (user && (!isBusinessChosen || appState.isStoreSelectionOpen)) {
+    return (
+      <BusinessManager 
+        showNotification={showNotification}
+        availableStores={appState.availableStores} 
+        setAvailableStores={appState.setAvailableStores} 
+        onSelectStore={async (id: string) => {
+          sessionStorage.setItem("activeBusinessChosen", "true");
+          localStorage.setItem("activeBusinessChosen", "true");
+          appState.setIsStoreSelectionOpen(false);
+          await appState.switchBusiness(id);
+          appState.setSystemModule("selector");
+          if (activeTab === "welcome_page") {
+            setActiveTab("financial_report");
+          }
+        }}
+        onClose={isBusinessChosen ? () => appState.setIsStoreSelectionOpen(false) : undefined}
+        user={user}
+        onSignOut={appState.signOut}
+      />
+    );
+  }
+
+if (loading || authLoading) {
+    const textStr = authLoading ? "در حال بررسی احراز هویت..." : "در حال بارگذاری اطلاعات و تنظیمات سیستم...";
+    return (
+      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center relative overflow-hidden" dir="rtl">
+        {/* Background elements */}
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-indigo-500/5 rounded-full blur-3xl" />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] bg-blue-500/10 rounded-full blur-3xl animate-pulse" />
+        
+        <div className="relative z-10 flex flex-col items-center">
+          {/* Animated Logo/Icon */}
+          <div className="relative w-24 h-24 mb-8">
+            <motion.div
+              className="absolute inset-0 border-4 border-indigo-200 rounded-2xl"
+              animate={{ rotate: 180, scale: [1, 1.1, 1] }}
+              transition={{ repeat: Infinity, duration: 3, ease: "easeInOut" }}
+            />
+            <motion.div
+              className="absolute inset-2 border-4 border-blue-400 rounded-xl"
+              animate={{ rotate: -180, scale: [1, 1.2, 1] }}
+              transition={{ repeat: Infinity, duration: 2.5, ease: "easeInOut" }}
+            />
+            <motion.div
+              className="absolute inset-4 bg-gradient-to-tr from-indigo-600 to-blue-500 rounded-lg flex items-center justify-center shadow-lg shadow-indigo-500/30"
+              animate={{ scale: [1, 0.9, 1] }}
+              transition={{ repeat: Infinity, duration: 2, ease: "easeInOut" }}
+            >
+              <LayoutDashboard className="w-6 h-6 text-white" />
+            </motion.div>
+          </div>
+
+          {/* Loading Text */}
+          <div className="flex flex-col items-center gap-3">
+            <h2 className="text-xl font-black text-slate-800 tracking-tight">
+              نرم‌افزار جامع مدیریت مالی
+            </h2>
+            <div className="flex items-center gap-3 bg-white px-5 py-2.5 rounded-2xl shadow-sm border border-slate-100">
+              <motion.div
+                 animate={{ rotate: 360 }}
+                 transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
+                 className="w-4 h-4 border-2 border-indigo-500 border-t-transparent rounded-full"
+              />
+              <span className="text-sm font-bold text-slate-500">{textStr}</span>
+            </div>
+
+            {loadingTimeoutExceeded && (
+              <motion.div 
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="mt-6 flex flex-col items-center gap-3 bg-white/95 backdrop-blur-md p-5 rounded-3xl border border-amber-200/90 shadow-xl max-w-sm text-center"
+              >
+                <div className="w-10 h-10 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center font-bold text-base">
+                  ⚠️
+                </div>
+                <div>
+                  <p className="text-xs font-black text-slate-800">آماده‌سازی دیتابیس کمی طول کشیده است</p>
+                  <p className="text-[11px] text-slate-500 mt-1 font-medium leading-relaxed">می‌توانید فوراً وارد میزکار شوید یا کسب‌وکار دیگری را انتخاب فرمایید:</p>
+                </div>
+                <div className="flex items-center gap-2 w-full pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (setLoading) setLoading(false);
+                      appState.setSystemModule("selector");
+                      setActiveTab("financial_report");
+                    }}
+                    className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black shadow-sm cursor-pointer transition-all active:scale-95"
+                  >
+                    ورود مستقیم به سیستم
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (setLoading) setLoading(false);
+                      appState.setIsStoreSelectionOpen(true);
+                    }}
+                    className="px-3 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer active:scale-95"
+                  >
+                    تغییر کسب‌وکار
+                  </button>
+                </div>
+              </motion.div>
+            )}
+          </div>
+        </div>
+
+        {/* Decorative progress bar */}
+        <div className="fixed bottom-0 left-0 right-0 h-1 bg-slate-100">
+          <motion.div 
+            className="h-full bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500"
+            initial={{ width: "0%" }}
+            animate={{ width: "100%" }}
+            transition={{ duration: 2.5, ease: "easeInOut", repeat: Infinity }}
+          />
+        </div>
+      </div>
+    );
+  }
+
+if (requiresInitSetup && user && !storeSettings?.storeName) {
+    return (
+      <div
+        className="min-h-screen bg-slate-50 flex items-center justify-center p-4 pt-10 pb-10"
+        dir="rtl"
+      >
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden max-w-xl w-full">
+          <div className="bg-slate-900 p-10 text-center text-white relative overflow-hidden">
+            <h1 className="text-2xl font-black mb-3 relative z-10 tracking-tight">
+              خوش آمدید
+            </h1>
+            <p className="text-slate-300 font-medium relative z-10 text-sm">
+              جهت ورود به سیستم، تنظیمات اولیه را تکمیل نمایید
+            </p>
+          </div>
+          <div className="p-8">
+            <div className="bg-amber-50 text-amber-800 p-4 rounded-xl text-sm font-bold flex items-start gap-3 mb-8 border border-amber-100 shadow-sm">
+              <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
+              <p className="leading-relaxed">
+                توجه: <strong>نوع تقویم</strong> و <strong>واحد پولی</strong> پس
+                از ثبت برای حفظ یکپارچگی پایگاه داده سیستم{" "}
+                <strong>غیرقابل تغییر</strong> خواهند بود.
+              </p>
+            </div>
+
+            <form onSubmit={handleSaveSettings} className="space-y-6">
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-2">
+                  نام مجموعه / شرکت
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={settingsForm.storeName}
+                  onChange={(e) =>
+                    setSettingsForm({
+                      ...settingsForm,
+                      storeName: e.target.value,
+                    })
+                  }
+                  className="w-full px-4 py-3 bg-slate-50/50 rounded-xl border border-slate-200 focus:ring-2 focus:ring-slate-800 focus:border-slate-800 focus:bg-white transition-colors font-semibold text-slate-900"
+                  placeholder="عنوان کسب و کار خود را وارد کنید..."
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-2">
+                  واحد پولی سیستم
+                </label>
+                <select
+                  value={settingsForm.currency}
+                  onChange={(e) =>
+                    setSettingsForm({
+                      ...settingsForm,
+                      currency: e.target.value,
+                    })
+                  }
+                  className="w-full px-4 py-3 bg-slate-50/50 rounded-xl border border-slate-200 focus:ring-2 focus:ring-slate-800 focus:border-slate-800 focus:bg-white transition-colors font-semibold text-slate-900"
+                >
+                  <option value="ریال">ریال</option>
+                  <option value="تومان">تومان</option>
+                  <option value="دلار">دلار (USD)</option>
+                  <option value="افغانی">افغانی</option>
+                  <option value="درهم">درهم (AED)</option>
+                  <option value="یورو">یورو (EUR)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-2">
+                  تاریخ و تقویم سیستم
+                </label>
+                <div className="grid grid-cols-2 gap-4">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setSettingsForm({
+                        ...settingsForm,
+                        calendarType: "jalali",
+                      })
+                    }
+                    className={`py-4 px-2 rounded-xl border flex items-center justify-center gap-2 font-bold transition-all ${settingsForm.calendarType !== "gregorian" ? "border-slate-800 bg-slate-800 text-white shadow-sm" : "border-slate-200 text-slate-500 hover:border-slate-300 bg-slate-50/50 hover:bg-slate-50"}`}
+                  >
+                    تقویم شمسی (جلالی)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setSettingsForm({
+                        ...settingsForm,
+                        calendarType: "gregorian",
+                      })
+                    }
+                    className={`py-4 px-2 rounded-xl border flex items-center justify-center gap-2 font-bold transition-all ${settingsForm.calendarType === "gregorian" ? "border-slate-800 bg-slate-800 text-white shadow-sm" : "border-slate-200 text-slate-500 hover:border-slate-300 bg-slate-50/50 hover:bg-slate-50"}`}
+                  >
+                    تقویم میلادی
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-2">
+                  فونت سیستم
+                </label>
+                <select
+                  value={settingsForm.fontFamily || "Vazirmatn"}
+                  onChange={(e) =>
+                    setSettingsForm({
+                      ...settingsForm,
+                      fontFamily: e.target.value,
+                    })
+                  }
+                  className="w-full px-4 py-3 bg-slate-50/50 rounded-xl border border-slate-200 focus:ring-2 focus:ring-slate-800 focus:border-slate-800 focus:bg-white transition-colors font-semibold text-slate-900"
+                >
+                  <option value="Vazirmatn">وزیرمتن (Vazirmatn)</option>
+                  <option value="IRANYekanXFaNum">
+                    ایران یکان (IRANYekanX)
+                  </option>
+                  <option value="Lalezar">لاله‌زار (Lalezar)</option>
+                  <option value="Readex Pro">ریدکس پرو (Readex Pro)</option>
+                  <option value="Cairo">قاهره (Cairo)</option>
+                  <option value="Amiri">امیری (Amiri)</option>
+                  <option value="Changa">چنگا (Changa)</option>
+                  <option value="Tahoma">تاهوما (Tahoma)</option>
+                </select>
+              </div>
+
+              <div className="pt-6 border-t border-slate-100 mt-2">
+                <button
+                  type="submit"
+                  disabled={submittingSettings}
+                  className="w-full py-4 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold transition-colors flex items-center justify-center gap-2 shadow-md active:scale-[0.98] focus:ring-4 focus:ring-slate-100"
+                >
+                  {submittingSettings ? (
+                    <RefreshCw className="w-5 h-5 animate-spin" />
+                  ) : (
+                    <CheckCircle className="w-5 h-5" />
+                  )}
+                  ثبت نهایی و ورود به سیستم
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  
+
+  const requiresProfileLink = user && ['admin', 'manager', 'employee'].includes(user.role) && user.isProfileRequired !== false && !user.personId;
+
+  if (requiresProfileLink) {
+    return <LinkPerson user={user} persons={persons || []} personRoles={appState.personRoles || []} personGroups={appState.personGroups || []} onPersonLinked={() => window.location.reload()} />
+  }
+
+  if (activeTab === "welcome_page") {
+    if (user && isBusinessChosen) {
+      if (isMobileScreen) {
+        setActiveTab("create_sale");
+      } else {
+        setActiveTab("financial_report");
+      }
+      return null;
+    }
+
+    const handleWelcomeEnter = (storeId?: string) => {
+      const targetStore = storeId || localStorage.getItem("activeStoreId") || "default";
+      appState.setActiveStoreId(targetStore);
+      localStorage.setItem("activeStoreId", targetStore);
+      sessionStorage.setItem("activeStoreId", targetStore);
+      sessionStorage.setItem("activeBusinessChosen", "true");
+      try {
+        document.cookie = `activeStoreId=${encodeURIComponent(targetStore)}; path=/; max-age=31536000; SameSite=Lax`;
+      } catch (_) {}
+      localStorage.removeItem("company_profile");
+      localStorage.removeItem("store_settings");
+      sessionStorage.removeItem("company_profile");
+      sessionStorage.removeItem("store_settings");
+
+      if (isMobileScreen) {
+        setActiveTab("create_sale");
+      } else {
+        setActiveTab("financial_report");
+      }
+    };
+    return <WelcomePage onLoginClick={handleWelcomeEnter} />;
+  }
+
+  return (
+    <>
+      {!isMobileScreen && (
+        <DebtorsNotification 
+          persons={persons} 
+          settings={storeSettings} 
+          accountingDocuments={accountingDocuments}
+          calculatePersonBalance={calculatePersonBalance} 
+          onOpenPersonProfile={(pid) => { 
+            setProfilePersonId(pid); 
+            setActiveTab("person_profile");
+          }} 
+          onOpenPersonLedger={(pid) => {
+            setLedgerPersonId(pid);
+            setActiveTab("person_ledger");
+          }}
+          onSendSms={(phone, text) => {
+            setIsComposeOpen(true);
+          }}
+          onOpenSettings={() => {
+            setSettingsTab("notifications");
+            setActiveTab("settings");
+          }}
+        />
+      )}
+          <AnimatePresence>
+            {notification && (
+              <motion.div
+                key="notification-toast"
+                initial={{ opacity: 0, y: 50, x: "-50%" }}
+                animate={{ opacity: 1, y: 0, x: "-50%" }}
+                exit={{ opacity: 0, y: 20, x: "-50%" }}
+                className={`fixed bottom-6 left-1/2 z-[99999] px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 font-bold text-sm ${
+                  notification.type === "success"
+                    ? "bg-emerald-600 text-white"
+                    : notification.type === "error"
+                      ? "bg-rose-600 text-white"
+                      : notification.type === "warning"
+                        ? "bg-amber-500 text-white"
+                        : "bg-slate-800 text-white"
+                }`}
+              >
+                {notification.type === "success" && (
+                  <CheckCircle className="w-5 h-5" />
+                )}
+                {notification.type === "error" && (
+                  <AlertCircle className="w-5 h-5" />
+                )}
+                {(notification.type === "info" ||
+                  notification.type === "warning") && <Info className="w-5 h-5" />}
+                {notification.message}
+              </motion.div>
+            )}
+          </AnimatePresence>
+          
+          
+
+          {/* Gmail style Compose Quick Action Modal */}
+          {isComposeOpen && (
+                    <div key="isComposeOpen-modal"
+                      className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center z-[200] p-4 print:hidden"
+              dir="rtl"
+            >
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95, y: 15 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                className="bg-white rounded-3xl w-full max-w-2xl shadow-2xl border border-slate-100 overflow-hidden flex flex-col font-sans"
+              >
+                {/* Modal Header */}
+                <div className="bg-[#f6f8fc] px-6 py-5 border-b border-slate-100 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-[#fdf2f2] text-[#b3261e] rounded-xl flex items-center justify-center shadow-xs">
+                      <svg
+                        className="w-6 h-6"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                        strokeWidth={2.5}
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M12 4v16m8-8H4"
+                        />
+                      </svg>
+                    </div>
+                    <div>
+                      <h3 className="text-base font-black text-slate-800">
+                        ایجاد سریع سند / تراکنش
+                      </h3>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        میانبرهای کاربردی برای ثبت سریع اطلاعات در بخش‌های مختلف
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsComposeOpen(false)}
+                    className="p-1.5 hover:bg-slate-200/50 text-slate-500 rounded-lg transition-colors cursor-pointer"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                {/* Modal Body */}
+                <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4 bg-white max-h-[70vh] overflow-y-auto">
+                  {/* Shortcut Item 1 */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      clearDraft();
+                      setActiveTab("create_sale");
+                      setIsComposeOpen(false);
+                    }}
+                    className="p-4 border border-slate-200 hover:border-[#b3261e]/40 hover:bg-rose-50/10 rounded-2xl text-right flex gap-4 transition-all hover:shadow-md hover:-translate-y-0.5 cursor-pointer"
+                  >
+                    <div className="w-11 h-11 bg-emerald-50 text-emerald-600 rounded-xl flex-shrink-0 flex items-center justify-center font-bold">
+                      📑
+                    </div>
+                    <div>
+                      <h4 className="font-extrabold text-sm text-slate-800">
+                        صدور فاکتور فروش کالا
+                      </h4>
+                      <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                        فروش کالا و خدمات به مشتریان با ثبت خودکار سند حسابداری و
+                        کاهش موجودی انبار.
+                      </p>
+                    </div>
+                  </button>
+
+                  {/* Shortcut Item 2 */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      clearDraft();
+                      setActiveTab("create_purchase");
+                      setIsComposeOpen(false);
+                    }}
+                    className="p-4 border border-slate-200 hover:border-[#b3261e]/40 hover:bg-rose-50/10 rounded-2xl text-right flex gap-4 transition-all hover:shadow-md hover:-translate-y-0.5 cursor-pointer"
+                  >
+                    <div className="w-11 h-11 bg-rose-50 text-rose-600 rounded-xl flex-shrink-0 flex items-center justify-center font-bold">
+                      🛒
+                    </div>
+                    <div>
+                      <h4 className="font-extrabold text-sm text-slate-800">
+                        ثبت فاکتور خرید کالا
+                      </h4>
+                      <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                        ثبت خرید کالا و خدمات از تامین‌کنندگان برای افزایش موجودی
+                        انبار.
+                      </p>
+                    </div>
+                  </button>
+
+                  {/* Shortcut Item 3 */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRawActiveTab("create_receive_receipt");
+                      setIsComposeOpen(false);
+                    }}
+                    className="p-4 border border-slate-200 hover:border-[#b3261e]/40 hover:bg-rose-50/10 rounded-2xl text-right flex gap-4 transition-all hover:shadow-md hover:-translate-y-0.5 cursor-pointer"
+                  >
+                    <div className="w-11 h-11 bg-teal-50 text-teal-600 rounded-xl flex-shrink-0 flex items-center justify-center font-bold">
+                      💵
+                    </div>
+                    <div>
+                      <h4 className="font-extrabold text-sm text-slate-800">
+                        ثبت سند دریافت وجه
+                      </h4>
+                      <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                        ثبت مبالغ دریافتی از مشتریان، صندوق یا بانک به صورت نقد یا
+                        چک.
+                      </p>
+                    </div>
+                  </button>
+
+                  {/* Shortcut Item 4 */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRawActiveTab("create_pay_receipt");
+                      setIsComposeOpen(false);
+                    }}
+                    className="p-4 border border-slate-200 hover:border-[#b3261e]/40 hover:bg-rose-50/10 rounded-2xl text-right flex gap-4 transition-all hover:shadow-md hover:-translate-y-0.5 cursor-pointer"
+                  >
+                    <div className="w-11 h-11 bg-amber-50 text-amber-600 rounded-xl flex-shrink-0 flex items-center justify-center font-bold">
+                      💸
+                    </div>
+                    <div>
+                      <h4 className="font-extrabold text-sm text-slate-800">
+                        ثبت سند پرداخت وجه
+                      </h4>
+                      <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                        ثبت پرداختی‌های نقد یا چک به تامین‌کنندگان، هزینه‌ها یا
+                        پرسنل.
+                      </p>
+                    </div>
+                  </button>
+
+                  {/* Shortcut Item - Keyboard Receipt */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRawActiveTab("keyboard_receipt");
+                      setIsComposeOpen(false);
+                    }}
+                    className="p-4 border border-slate-200 hover:border-amber-500/50 hover:bg-amber-50/20 rounded-2xl text-right flex gap-4 transition-all hover:shadow-md hover:-translate-y-0.5 cursor-pointer md:col-span-2"
+                  >
+                    <div className="w-11 h-11 bg-amber-50 text-amber-600 rounded-xl flex-shrink-0 flex items-center justify-center font-bold text-lg">
+                      ⌨️
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h4 className="font-extrabold text-sm text-slate-800">
+                          ثبت رسید سریع با کیبورد (بدون ماوس)
+                        </h4>
+                        <span className="text-[10px] font-black bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">
+                          سریع و آسان
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                        ثبت دریافت وجه، پرداخت وجه و حواله بین طرفین حساب با اعداد و کلیدهای میانبر کیبورد.
+                      </p>
+                    </div>
+                  </button>
+
+                  {/* Shortcut Item 5 */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveTab("transfer");
+                      setIsComposeOpen(false);
+                    }}
+                    className="p-4 border border-slate-200 hover:border-[#b3261e]/40 hover:bg-rose-50/10 rounded-2xl text-right flex gap-4 transition-all hover:shadow-md hover:-translate-y-0.5 cursor-pointer md:col-span-2"
+                  >
+                    <div className="w-11 h-11 bg-indigo-50 text-indigo-600 rounded-xl flex-shrink-0 flex items-center justify-center font-bold">
+                      🔄
+                    </div>
+                    <div>
+                      <h4 className="font-extrabold text-sm text-slate-800">
+                        انتقال وجه بین حساب‌ها
+                      </h4>
+                      <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                        جابجایی مبالغ نقدینگی بین حساب‌های بانکی و صندوق‌های مختلف
+                        کسب و کار با ثبت سند معین.
+                      </p>
+                    </div>
+                  </button>
+
+                  {/* Shortcut Item 6: Consignment Invoice */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveTab("create_consignment");
+                      setIsComposeOpen(false);
+                    }}
+                    className="p-4 border border-slate-200 hover:border-amber-500/50 hover:bg-amber-50/20 rounded-2xl text-right flex gap-4 transition-all hover:shadow-md hover:-translate-y-0.5 cursor-pointer md:col-span-2"
+                  >
+                    <div className="w-11 h-11 bg-amber-50 text-amber-600 rounded-xl flex-shrink-0 flex items-center justify-center font-bold text-lg">
+                      🛡️
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h4 className="font-extrabold text-sm text-slate-800">
+                          ثبت فاکتور امانی کالا (پرداختی / دریافتی)
+                        </h4>
+                        <span className="text-[10px] font-black bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">
+                          کد سریع ۲۴
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                        ثبت امانت پرداختی به همکاران یا امانت دریافتی از تامین‌کنندگان بدون اثر بر بدهکاری/بستانکاری تا زمان قطعی‌سازی.
+                      </p>
+                    </div>
+                  </button>
+                </div>
+              </motion.div>
+            </div>
+          )}
+          {isMobileScreen ? (
+            <Suspense fallback={
+              <div className="flex h-screen items-center justify-center bg-slate-50 dark:bg-slate-950 p-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+              </div>
+            }>
+              <MobilePortalLayout
+                storeSettings={storeSettings}
+                user={user}
+                persons={persons}
+                accounts={accounts}
+                cashboxes={cashboxes}
+                transactions={transactions}
+                personGroups={personGroups}
+                personRoles={personRoles}
+                fetchTransactions={appState.fetchTransactions}
+                fetchAccounts={appState.fetchAccounts}
+                fetchCashboxes={appState.fetchCashboxes}
+                fetchPersons={appState.fetchPersons}
+                calculatePersonBalance={appState.calculatePersonBalance}
+                showNotification={showNotification}
+                onLogout={signOut}
+              />
+            </Suspense>
+          ) : systemModule === "selector" ? (
+            <ModuleSelector
+              storeSettings={storeSettings}
+              invoices={invoices}
+              persons={persons}
+              products={products}
+              transactions={transactions}
+              issuedChecks={issuedChecks}
+              receivedChecks={receivedChecks}
+              onSelectModule={(sel) => {
+                setSystemModule(sel);
+                if (sel === "commerce") setActiveTab("analytical_dashboard");
+                else if (sel === "inventory") setActiveTab("inventory_report");
+                else if (sel === "accounting") setActiveTab("financial_report");
+                else if (sel === "admin") setActiveTab("settings");
+                else if (sel === "crm") setActiveTab("crm_dashboard");
+                else if (sel === "hr") setActiveTab("list_salary_payroll");
+                else if (sel === "reports_module")
+                  setActiveTab("analytical_dashboard");
+                else setActiveTab("financial_report");
+              }}
+            />
+          ) : storeSettings?.theme === "persian_admin_lte" ? (
+             <AdminLTELayout appState={appState}>
+                <Suspense fallback={<div className="flex h-full items-center justify-center p-8"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div></div>}>
+                    {user && activeTab !== "welcome_page" && !hasPagePermission(user, activeTab) ? (
+                      <AccessRestricted activeTab={activeTab} user={user} onGoHome={() => setActiveTab("welcome_page")} />
+                    ) : (
+                      appRoutes
+                    )}
+                </Suspense>
+             </AdminLTELayout>
+          ) : (
+            <div
+              className={`flex ${menuLayout === "horizontal" ? "flex-col h-screen" : "h-screen"} overflow-hidden ${isGmailTheme ? "theme-gmail bg-[#f6f8fc]" : `theme-${storeSettings?.theme || "classic"} ${storeSettings?.theme === "dark" ? "dark bg-[#0b0f19] text-slate-100" : "bg-gray-50/50 text-gray-800"}`} font-sans print:h-auto print:block print:overflow-visible main-app-layout-wrapper`}
+              dir="rtl"
+            >
+              {isGmailTheme && (
+                <style
+                  dangerouslySetInnerHTML={{
+                    __html: `
+              /* Gmail theme overrides */
+              .theme-gmail .bg-indigo-600 { background-color: #b3261e !important; }
+              .theme-gmail .hover\\:bg-indigo-700:hover { background-color: #8c1d18 !important; }
+              .theme-gmail .text-indigo-600 { color: #b3261e !important; }
+              .theme-gmail .text-indigo-800 { color: #8c1d18 !important; }
+              .theme-gmail .border-indigo-600 { border-color: #b3261e !important; }
+              .theme-gmail .bg-indigo-50 { background-color: #fce8e6 !important; }
+              .theme-gmail .text-indigo-300 { color: #b3261e !important; }
+              .theme-gmail .focus\\:ring-indigo-500:focus { --tw-ring-color: #b3261e !important; ring-color: #b3261e !important; }
+              .theme-gmail .focus\\:ring-indigo-600:focus { --tw-ring-color: #b3261e !important; ring-color: #b3261e !important; }
+              .theme-gmail .bg-indigo-600\\/20 { background-color: rgba(253, 232, 230, 0.7) !important; }
+              .theme-gmail .border-indigo-100 { border-color: #fce8e6 !important; }
+              .theme-gmail .border-indigo-200 { border-color: #f9d5d3 !important; }
+              .theme-gmail .text-indigo-500 { color: #b3261e !important; }
+              .theme-gmail .bg-indigo-600\\/10 { background-color: rgba(253, 232, 230, 0.4) !important; }
+              /* Custom overrides for cards and layouts inside Gmail theme */
+              .theme-gmail .bg-gradient-to-l.from-indigo-50.to-white { background-image: linear-gradient(to left, #fce8e6, #ffffff) !important; }
+              .theme-gmail .bg-gradient-to-r.from-indigo-500.to-indigo-600 { background-image: linear-gradient(to right, #b3261e, #8c1d18) !important; }
+              .theme-gmail .bg-gradient-to-br.from-indigo-500.to-indigo-600 { background-image: linear-gradient(to bottom right, #b3261e, #8c1d18) !important; }
+              .theme-gmail .from-indigo-600 { --tw-gradient-from: #b3261e !important; }
+              .theme-gmail .to-indigo-700 { --tw-gradient-to: #8c1d18 !important; }
+              .theme-gmail .text-indigo-700 { color: #b3261e !important; }
+              .theme-gmail .bg-indigo-100 { background-color: #fce8e6 !important; }
+              .theme-gmail .text-indigo-900 { color: #601410 !important; }
+              .theme-gmail .hover\\:text-indigo-500:hover { color: #b3261e !important; }
+              .theme-gmail .border-l-4.border-indigo-600 { border-left-color: #b3261e !important; }
+              .theme-gmail .border-r-4.border-indigo-600 { border-right-color: #b3261e !important; }
+              .theme-gmail .accent-indigo-600 { accent-color: #b3261e !important; }
+              .theme-gmail .bg-indigo-900 { background-color: #3f0c0a !important; }
+              `
+                  }}
+                />
+              )}
+              {storeSettings?.theme === "emerald" && (
+                <style
+                  dangerouslySetInnerHTML={{
+                    __html: `
+              /* Emerald theme overrides */
+              .theme-emerald .bg-indigo-600 { background-color: #059669 !important; }
+              .theme-emerald .hover\\:bg-indigo-700:hover { background-color: #047857 !important; }
+              .theme-emerald .text-indigo-600 { color: #059669 !important; }
+              .theme-emerald .text-indigo-800 { color: #064e3b !important; }
+              .theme-emerald .border-indigo-600 { border-color: #059669 !important; }
+              .theme-emerald .bg-indigo-50 { background-color: #ecfdf5 !important; }
+              .theme-emerald .text-indigo-300 { color: #6ee7b7 !important; }
+              .theme-emerald .focus\\:ring-indigo-500:focus, .theme-emerald .focus\\:ring-indigo-600:focus { --tw-ring-color: #059669 !important; ring-color: #059669 !important; }
+              .theme-emerald .bg-indigo-600\\/20 { background-color: rgba(16, 185, 129, 0.2) !important; }
+              .theme-emerald .border-indigo-100 { border-color: #d1fae5 !important; }
+              .theme-emerald .border-indigo-200 { border-color: #a7f3d0 !important; }
+              .theme-emerald .text-indigo-500 { color: #10b981 !important; }
+              .theme-emerald .bg-indigo-600\\/10 { background-color: rgba(16, 185, 129, 0.1) !important; }
+              .theme-emerald .bg-gradient-to-l.from-indigo-50.to-white { background-image: linear-gradient(to left, #ecfdf5, #ffffff) !important; }
+              .theme-emerald .bg-gradient-to-r.from-indigo-500.to-indigo-600 { background-image: linear-gradient(to right, #10b981, #059669) !important; }
+              .theme-emerald .from-indigo-600 { --tw-gradient-from: #059669 !important; }
+              .theme-emerald .to-indigo-700 { --tw-gradient-to: #047857 !important; }
+              .theme-emerald .text-indigo-700 { color: #047857 !important; }
+              .theme-emerald .bg-indigo-100 { background-color: #d1fae5 !important; }
+              .theme-emerald .text-indigo-900 { color: #064e3b !important; }
+              .theme-emerald .hover\\:text-indigo-500:hover { color: #10b981 !important; }
+              .theme-emerald .border-l-4.border-indigo-600 { border-left-color: #059669 !important; }
+              .theme-emerald .border-r-4.border-indigo-600 { border-right-color: #059669 !important; }
+              .theme-emerald .accent-indigo-600 { accent-color: #059669 !important; }
+              .theme-emerald .bg-indigo-900 { background-color: #064e3b !important; }
+              .theme-emerald .from-indigo-900 { --tw-gradient-from: #064e3b !important; }
+              .theme-emerald.bg-indigo-900 { background-color: #064e3b !important; }
+            `
+                  }}
+                />
+              )}
+              {storeSettings?.theme === "ocean" && (
+                <style
+                  dangerouslySetInnerHTML={{
+                    __html: `
+              /* Ocean theme overrides */
+              .theme-ocean .bg-indigo-600 { background-color: #0284c7 !important; }
+              .theme-ocean .hover\\:bg-indigo-700:hover { background-color: #0369a1 !important; }
+              .theme-ocean .text-indigo-600 { color: #0284c7 !important; }
+              .theme-ocean .text-indigo-800 { color: #075985 !important; }
+              .theme-ocean .border-indigo-600 { border-color: #0284c7 !important; }
+              .theme-ocean .bg-indigo-50 { background-color: #f0f9ff !important; }
+              .theme-ocean .text-indigo-300 { color: #7dd3fc !important; }
+              .theme-ocean .focus\\:ring-indigo-500:focus, .theme-ocean .focus\\:ring-indigo-600:focus { --tw-ring-color: #0284c7 !important; ring-color: #0284c7 !important; }
+              .theme-ocean .bg-indigo-600\\/20 { background-color: rgba(2, 132, 199, 0.2) !important; }
+              .theme-ocean .border-indigo-100 { border-color: #e0f2fe !important; }
+              .theme-ocean .border-indigo-200 { border-color: #bae6fd !important; }
+              .theme-ocean .text-indigo-500 { color: #0ea5e9 !important; }
+              .theme-ocean .bg-indigo-600\\/10 { background-color: rgba(2, 132, 199, 0.1) !important; }
+              .theme-ocean .bg-gradient-to-l.from-indigo-50.to-white { background-image: linear-gradient(to left, #f0f9ff, #ffffff) !important; }
+              .theme-ocean .bg-gradient-to-r.from-indigo-500.to-indigo-600 { background-image: linear-gradient(to right, #0ea5e9, #0284c7) !important; }
+              .theme-ocean .from-indigo-600 { --tw-gradient-from: #0284c7 !important; }
+              .theme-ocean .to-indigo-700 { --tw-gradient-to: #0369a1 !important; }
+              .theme-ocean .text-indigo-700 { color: #0369a1 !important; }
+              .theme-ocean .bg-indigo-100 { background-color: #e0f2fe !important; }
+              .theme-ocean .text-indigo-900 { color: #0c4a6e !important; }
+              .theme-ocean .hover\\:text-indigo-500:hover { color: #0ea5e9 !important; }
+              .theme-ocean .border-l-4.border-indigo-600 { border-left-color: #0284c7 !important; }
+              .theme-ocean .border-r-4.border-indigo-600 { border-right-color: #0284c7 !important; }
+              .theme-ocean .accent-indigo-600 { accent-color: #0284c7 !important; }
+              .theme-ocean .bg-indigo-900 { background-color: #0c4a6e !important; }
+              .theme-ocean .from-indigo-900 { --tw-gradient-from: #0c4a6e !important; }
+              .theme-ocean.bg-indigo-900 { background-color: #0c4a6e !important; }
+            `
+                  }}
+                />
+              )}
+              
+              {storeSettings?.theme === "hacker" && (
+                <style
+                  dangerouslySetInnerHTML={{
+                    __html: `
+              /* Hacker theme overrides */
+              body {
+                font-family: "JetBrains Mono", "Courier New", "IRANYekanXFaNum", monospace !important;
+                background-color: #000000 !important;
+                color: #00ff00 !important;
+                text-shadow: 0 0 2px rgba(0, 255, 0, 0.4);
+              }
+
+              body::after {
+                content: " ";
+                display: block;
+                position: fixed;
+                top: 0;
+                left: 0;
+                bottom: 0;
+                right: 0;
+                background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+                z-index: 9999;
+                background-size: 100% 2px, 3px 100%;
+                pointer-events: none;
+              }
+
+              .theme-hacker * {
+                border-radius: 0 !important;
+                border-color: #004400 !important;
+              }
+
+              .theme-hacker .bg-white, .theme-hacker .bg-slate-50, .theme-hacker .bg-gray-50, .theme-hacker .bg-slate-900, .theme-hacker .bg-slate-800 {
+                background-color: #020202 !important;
+                color: #00ff00 !important;
+              }
+              
+              .theme-hacker .text-slate-900, .theme-hacker .text-gray-900, .theme-hacker .text-slate-800, .theme-hacker .text-slate-700, .theme-hacker .text-gray-700, .theme-hacker .text-slate-600, .theme-hacker .text-gray-600, .theme-hacker .text-slate-500, .theme-hacker .text-gray-500 {
+                color: #00dd00 !important;
+              }
+              
+              .theme-hacker .text-indigo-600, .theme-hacker .text-indigo-700, .theme-hacker .text-indigo-800, .theme-hacker .text-indigo-900, .theme-hacker .text-blue-600, .theme-hacker .text-emerald-600, .theme-hacker .text-rose-600, .theme-hacker .text-amber-600 {
+                color: #00ff00 !important;
+              }
+
+              .theme-hacker .bg-indigo-600, .theme-hacker .bg-blue-600, .theme-hacker .bg-emerald-600, .theme-hacker .bg-rose-600 {
+                background-color: #005500 !important;
+                color: #00ff00 !important;
+                border: 1px solid #00ff00 !important;
+              }
+              
+              .theme-hacker .bg-indigo-50, .theme-hacker .bg-blue-50, .theme-hacker .bg-emerald-50, .theme-hacker .bg-rose-50, .theme-hacker .bg-amber-50, .theme-hacker .bg-gray-100, .theme-hacker .bg-slate-100 {
+                background-color: #001100 !important;
+                border-color: #004400 !important;
+              }
+
+              .theme-hacker input, .theme-hacker select, .theme-hacker textarea {
+                background-color: #000000 !important;
+                color: #00ff00 !important;
+                border: 1px solid #00aa00 !important;
+              }
+
+              .theme-hacker input:focus, .theme-hacker select:focus, .theme-hacker textarea:focus {
+                outline: none !important;
+                box-shadow: 0 0 8px rgba(0, 255, 0, 0.6) !important;
+                border-color: #00ff00 !important;
+              }
+
+              .theme-hacker button {
+                text-shadow: none !important;
+              }
+
+              .theme-hacker .shadow-sm, .theme-hacker .shadow, .theme-hacker .shadow-md, .theme-hacker .shadow-lg, .theme-hacker .shadow-xl, .theme-hacker .shadow-2xl {
+                box-shadow: 0 0 10px rgba(0, 255, 0, 0.1) !important;
+              }
+              
+              .theme-hacker svg {
+                color: #00ff00 !important;
+              }
+              
+              .theme-hacker table th {
+                background-color: #002200 !important;
+                color: #00ff00 !important;
+                border-color: #00ff00 !important;
+              }
+              
+              .theme-hacker table td {
+                border-color: #004400 !important;
+              }
+              
+              .theme-hacker tr:hover td {
+                background-color: #001100 !important;
+              }
+            `
+                  }}
+                />
+              )}
+              {storeSettings?.theme === "rose" && (
+                <style
+                  dangerouslySetInnerHTML={{
+                    __html: `
+              /* Rose theme overrides */
+              .theme-rose .bg-indigo-600 { background-color: #e11d48 !important; }
+              .theme-rose .hover\\:bg-indigo-700:hover { background-color: #be123c !important; }
+              .theme-rose .text-indigo-600 { color: #e11d48 !important; }
+              .theme-rose .text-indigo-800 { color: #881337 !important; }
+              .theme-rose .border-indigo-600 { border-color: #e11d48 !important; }
+              .theme-rose .bg-indigo-50 { background-color: #fff1f2 !important; }
+              .theme-rose .text-indigo-300 { color: #fda4af !important; }
+              .theme-rose .focus\\:ring-indigo-500:focus, .theme-rose .focus\\:ring-indigo-600:focus { --tw-ring-color: #e11d48 !important; ring-color: #e11d48 !important; }
+              .theme-rose .bg-indigo-600\\/20 { background-color: rgba(225, 29, 72, 0.2) !important; }
+              .theme-rose .border-indigo-100 { border-color: #ffe4e6 !important; }
+              .theme-rose .border-indigo-200 { border-color: #fecdd3 !important; }
+              .theme-rose .text-indigo-500 { color: #f43f5e !important; }
+              .theme-rose .bg-indigo-600\\/10 { background-color: rgba(225, 29, 72, 0.1) !important; }
+              .theme-rose .bg-gradient-to-l.from-indigo-50.to-white { background-image: linear-gradient(to left, #fff1f2, #ffffff) !important; }
+              .theme-rose .bg-gradient-to-r.from-indigo-500.to-indigo-600 { background-image: linear-gradient(to right, #f43f5e, #e11d48) !important; }
+              .theme-rose .from-indigo-600 { --tw-gradient-from: #e11d48 !important; }
+              .theme-rose .to-indigo-700 { --tw-gradient-to: #be123c !important; }
+              .theme-rose .text-indigo-700 { color: #be123c !important; }
+              .theme-rose .bg-indigo-100 { background-color: #ffe4e6 !important; }
+              .theme-rose .text-indigo-900 { color: #881337 !important; }
+              .theme-rose .hover\\:text-indigo-500:hover { color: #f43f5e !important; }
+              .theme-rose .border-l-4.border-indigo-600 { border-left-color: #e11d48 !important; }
+              .theme-rose .border-r-4.border-indigo-600 { border-right-color: #e11d48 !important; }
+              .theme-rose .accent-indigo-600 { accent-color: #e11d48 !important; }
+              .theme-rose .bg-indigo-900 { background-color: #881337 !important; }
+              .theme-rose .from-indigo-900 { --tw-gradient-from: #881337 !important; }
+              .theme-rose.bg-indigo-900 { background-color: #881337 !important; }
+            `
+                  }}
+                />
+              )}
+                <SidebarNavigation
+                  mode="sidebar"
+                  user={user}
+                  signOut={signOut}
+                  activeTab={activeTab}
+                  setActiveTab={setActiveTab}
+                  systemModule={systemModule}
+                  hasCheckedFinancialYears={hasCheckedFinancialYears}
+                  activeFinancialYear={activeFinancialYear}
+                  isGmailTheme={isGmailTheme}
+                  storeSettings={storeSettings}
+                  isSidebarOpen={isSidebarOpen}
+                  setIsSidebarOpen={setIsSidebarOpen}
+                  menuLayout={menuLayout}
+                  setIsComposeOpen={setIsComposeOpen}
+                  expandedGroups={expandedGroups}
+                  setExpandedGroups={setExpandedGroups}
+                />
+                        {/* Main Content Area */}
+              <div
+                className={`flex-1 flex flex-col w-full min-w-0 min-h-0 transition-all duration-300 overflow-hidden print:overflow-visible print:bg-white print:h-auto ${isGmailTheme ? "bg-white md:rounded-3xl md:border md:border-slate-200/80 md:m-3 md:shadow-xs" : ""}`}
+              >
+                {/* Top Header */}
+                <div
+                  className={`flex flex-col sticky top-0 z-[60] print:hidden ${isGmailTheme ? "bg-[#f6f8fc]" : "bg-white border-b border-gray-100 shadow-sm"}`}
+                >
+                  <div
+                    className={`flex flex-row items-center justify-between p-3 md:p-4 relative z-[70] ${
+                      isGmailTheme
+                        ? "bg-[#f6f8fc] border-none"
+                        : "bg-white/80 backdrop-blur-md border-b border-slate-200 shadow-xs"
+                    }`}
+                    dir="rtl"
+                  >
+                    <div className="flex items-center gap-2 md:gap-3">
+                      {/* Mobile Hamburger Menu Toggle Button */}
+                      <button
+                        type="button"
+                        onClick={() => setIsSidebarOpen(true)}
+                        className="flex md:hidden w-9 h-9 rounded-xl items-center justify-center text-slate-700 hover:bg-slate-100 active:scale-95 transition-all cursor-pointer bg-white border border-slate-200 shadow-2xs shrink-0"
+                        aria-label="منوی اصلی سیستم"
+                        title="منوی اصلی سیستم"
+                      >
+                        <Menu className="w-5 h-5 text-slate-700" />
+                      </button>
+                      <div className="font-extrabold text-slate-900 flex items-center gap-2">
+                        {storeSettings.logoUrl ? (
+                          <img
+                            src={storeSettings.logoUrl}
+                            className="w-7 h-7 rounded object-contain"
+                            alt="logo"
+                          />
+                        ) : (
+                          <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center text-white shadow-md shadow-indigo-600/20 relative overflow-hidden shrink-0">
+                            <div className="absolute inset-0 bg-white/20 transform -rotate-45 translate-x-4"></div>
+                            <Layers className="w-4 h-4 relative z-10" />
+                          </div>
+                        )}
+                        <HeaderBusinessSelector
+                          activeStoreId={(typeof window !== 'undefined' ? localStorage.getItem('activeStoreId') : null) || appState.activeStoreId || 'default'}
+                          availableStores={appState.availableStores}
+                          onSwitchBusiness={appState.switchBusiness}
+                          onOpenBusinessManager={() => appState.setIsStoreSelectionOpen(true)}
+                        />
+                      </div>
+                    </div>
+
+
+                    {/* Google style centered Search bar */}
+                    {isGmailTheme && (
+                      <div className="hidden lg:flex flex-1 max-w-xl mx-8 relative">
+                        <div className="absolute inset-y-0 right-0 pr-4 flex items-center pointer-events-none">
+                          <svg
+                            className="h-5 w-5 text-slate-400"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                            strokeWidth={2}
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                            />
+                          </svg>
+                        </div>
+                        <input
+                          type="text"
+                          placeholder="جستجو در میان اسناد، تراکنش‌ها، فاکتورها و اشخاص..."
+                          className="w-full pr-11 pl-4 py-2 bg-[#eaf1fb] hover:bg-[#e3ecf8] focus:bg-white text-slate-800 placeholder-slate-500 rounded-full outline-none focus:ring-2 focus:ring-[#b3261e]/30 border-none font-bold text-sm transition-all shadow-3xs"
+                        />
+                      </div>
+                    )}
+
+                    <div className="flex items-center gap-2 md:gap-3">
+                      
+                      {/* Professional Fast Module Switcher Button & Dropdown (Desktop Only) */}
+                      <div className="relative hidden md:block" ref={moduleMenuRef}>
+                        {(() => {
+                          const MODULE_CONFIGS = [
+                            {
+                              id: "all",
+                              name: "سامانه جامع و کامل",
+                              shortName: "همه بخش‌ها",
+                              tag: "دسترسی نامحدود",
+                              desc: "دسترسی آزاد به تمام منوها، فرم‌ها، گزارش‌ها و ابزارهای سیستم بدون محدودیت",
+                              features: ["تمام منوها", "کلیه گزارش‌ها", "مدیریت جامع"],
+                              icon: <LayoutGrid className="w-5 h-5" />,
+                              gradient: "from-indigo-600 to-violet-600",
+                              themeBorder: "hover:border-indigo-400 group-hover:ring-indigo-400/20",
+                              activeCardBg: "bg-gradient-to-br from-indigo-50/90 to-purple-50/60 border-indigo-400 ring-2 ring-indigo-500/20",
+                            },
+                            {
+                              id: "commerce",
+                              name: "بازرگانی و فروش",
+                              shortName: "فروش و خرید",
+                              tag: "عملیات تجاری",
+                              desc: "صدور و بایگانی فاکتورهای فروش و خرید، مرجوعی‌ها، نرخ‌نامه و گزارش سود و زیان",
+                              features: ["فاکتور فروش", "فاکتور خرید", "سود و زیان"],
+                              icon: <ShoppingCart className="w-5 h-5" />,
+                              gradient: "from-emerald-600 to-teal-600",
+                              themeBorder: "hover:border-emerald-400 group-hover:ring-emerald-400/20",
+                              activeCardBg: "bg-gradient-to-br from-emerald-50/90 to-teal-50/60 border-emerald-400 ring-2 ring-emerald-500/20",
+                            },
+                            {
+                              id: "accounting",
+                              name: "حسابداری و خزانه‌داری",
+                              shortName: "مالی و چک",
+                              tag: "مدیریت مالی",
+                              desc: "اسناد دوبل، دریافت و پرداخت وجه، کارتابل چک‌های دریافتی/پرداختی، بانک و صندوق",
+                              features: ["اسناد دوبل", "دریافت/پرداخت", "مدیریت چک‌ها"],
+                              icon: <Calculator className="w-5 h-5" />,
+                              gradient: "from-amber-600 to-orange-600",
+                              themeBorder: "hover:border-amber-400 group-hover:ring-amber-400/20",
+                              activeCardBg: "bg-gradient-to-br from-amber-50/90 to-orange-50/60 border-amber-400 ring-2 ring-amber-500/20",
+                            },
+                            {
+                              id: "inventory",
+                              name: "انبارداری و کالاها",
+                              shortName: "انبار و موجودی",
+                              tag: "لجستیک و کالا",
+                              desc: "کنترل موجودی انبارها، صدور رسید و حواله، کاردکس ریالی، انبارگردانی و بارکد",
+                              features: ["رسید/حواله انبار", "کاردکس کالا", "انبارگردانی"],
+                              icon: <Box className="w-5 h-5" />,
+                              gradient: "from-blue-600 to-cyan-600",
+                              themeBorder: "hover:border-blue-400 group-hover:ring-blue-400/20",
+                              activeCardBg: "bg-gradient-to-br from-blue-50/90 to-cyan-50/60 border-blue-400 ring-2 ring-blue-500/20",
+                            },
+                            {
+                              id: "crm",
+                              name: "ارتباط با مشتریان (CRM)",
+                              shortName: "CRM و اشخاص",
+                              tag: "مشتریان و مطالبات",
+                              desc: "بانک جامع طرف‌حساب‌ها، صورت‌حساب معین اشخاص، پیگیری مطالبات و ارسال پیامک",
+                              features: ["بانک اشخاص", "معین اشخاص", "ویترین مطالبات"],
+                              icon: <Users className="w-5 h-5" />,
+                              gradient: "from-purple-600 to-fuchsia-600",
+                              themeBorder: "hover:border-purple-400 group-hover:ring-purple-400/20",
+                              activeCardBg: "bg-gradient-to-br from-purple-50/90 to-fuchsia-50/60 border-purple-400 ring-2 ring-purple-500/20",
+                            },
+                            {
+                              id: "hr",
+                              name: "منابع انسانی و پرسنل",
+                              shortName: "حقوق و دستمزد",
+                              tag: "کارگزینی و حقوق",
+                              desc: "پرونده پرسنلی، قراردادهای کاری و اجاره، ثبت تردد روزانه، کارکرد و صدور فیش حقوقی",
+                              features: ["فیش حقوقی", "تردد روزانه", "قراردادها"],
+                              icon: <Clock className="w-5 h-5" />,
+                              gradient: "from-rose-600 to-pink-600",
+                              themeBorder: "hover:border-rose-400 group-hover:ring-rose-400/20",
+                              activeCardBg: "bg-gradient-to-br from-rose-50/90 to-pink-50/60 border-rose-400 ring-2 ring-rose-500/20",
+                            },
+                            {
+                              id: "reports_module",
+                              name: "گزارشات و هوش تجاری",
+                              shortName: "هوش تجاری",
+                              tag: "گزارشات تحلیلی",
+                              desc: "داشبورد تحلیلی عملکرد دوره‌ها، ترازنامه مالی، تراز آزمایشی، گردش انبار و سودآوری",
+                              features: ["داشبورد تحلیلی", "ترازنامه مالی", "تراز آزمایشی"],
+                              icon: <BarChart3 className="w-5 h-5" />,
+                              gradient: "from-teal-600 to-emerald-600",
+                              themeBorder: "hover:border-teal-400 group-hover:ring-teal-400/20",
+                              activeCardBg: "bg-gradient-to-br from-teal-50/90 to-emerald-50/60 border-teal-400 ring-2 ring-teal-500/20",
+                            },
+                            {
+                              id: "admin",
+                              name: "تنظیمات و امنیت سیستم",
+                              shortName: "مدیریت سیستم",
+                              tag: "سیستمی و امنیت",
+                              desc: "تنظیمات فروشگاه و فاکتور، مدیریت کاربران و دسترسی‌ها، لاگ‌ها و پشتیبان‌گیری",
+                              features: ["کاربران و دسترسی", "پشتیبان‌گیری", "پایش سلامت"],
+                              icon: <Settings className="w-5 h-5" />,
+                              gradient: "from-slate-700 to-slate-900",
+                              themeBorder: "hover:border-slate-400 group-hover:ring-slate-400/20",
+                              activeCardBg: "bg-gradient-to-br from-slate-100 to-slate-200/70 border-slate-400 ring-2 ring-slate-400/20",
+                            },
+                          ];
+
+                          const activeModule = MODULE_CONFIGS.find((m) => m.id === systemModule) || MODULE_CONFIGS[0];
+
+                          const filteredModules = MODULE_CONFIGS.filter((m) => {
+                            if (!moduleSearchQuery.trim()) return true;
+                            const q = moduleSearchQuery.trim().toLowerCase();
+                            return (
+                              m.name.toLowerCase().includes(q) ||
+                              m.shortName.toLowerCase().includes(q) ||
+                              m.tag.toLowerCase().includes(q) ||
+                              m.desc.toLowerCase().includes(q) ||
+                              m.features.some((f) => f.toLowerCase().includes(q))
+                            );
+                          });
+
+                          return (
+                            <>
+                              {/* Trigger Button */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setIsModuleMenuOpen(!isModuleMenuOpen);
+                                  setModuleSearchQuery("");
+                                }}
+                                className={`group relative flex items-center gap-2.5 px-3 py-1.5 md:px-3.5 md:py-2 rounded-2xl transition-all duration-200 cursor-pointer border shadow-2xs hover:shadow-md active:scale-98 select-none ${
+                                  isModuleMenuOpen
+                                    ? "bg-white border-indigo-300 ring-2 ring-indigo-500/20 shadow-md"
+                                    : "bg-white/95 hover:bg-white border-slate-200/90 hover:border-indigo-200"
+                                }`}
+                                title="تغییر محیط کاری تخصصی (Workspaces)"
+                              >
+                                {/* Dynamic Icon with themed gradient & glow */}
+                                <div
+                                  className={`w-8 h-8 rounded-xl bg-gradient-to-br ${activeModule.gradient} text-white flex items-center justify-center shadow-xs shadow-indigo-600/20 group-hover:scale-105 transition-transform shrink-0`}
+                                >
+                                  {React.cloneElement(activeModule.icon as React.ReactElement<any>, {
+                                    className: "w-4 h-4 text-white",
+                                  })}
+                                </div>
+
+                                {/* Text Information */}
+                                <div className="flex flex-col text-right min-w-0">
+                                  <div className="flex items-center gap-1.5 text-[10px] font-extrabold text-slate-400">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                    <span>بخش کاری:</span>
+                                  </div>
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-xs font-black text-slate-800 truncate">
+                                      {activeModule.name}
+                                    </span>
+                                    <span className="hidden xl:inline text-[9px] px-1.5 py-0.5 rounded-md font-bold bg-slate-100 text-slate-600 border border-slate-200/60">
+                                      {activeModule.tag}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                {/* Chevron Indicator */}
+                                <div className="mr-0.5 text-slate-400 group-hover:text-slate-600 transition-colors">
+                                  <ChevronDown
+                                    className={`w-3.5 h-3.5 transition-transform duration-300 ${
+                                      isModuleMenuOpen ? "rotate-180 text-indigo-600" : ""
+                                    }`}
+                                  />
+                                </div>
+                              </button>
+
+                              {/* Dropdown Popover */}
+                              <AnimatePresence>
+                                {isModuleMenuOpen && (
+                                  <motion.div
+                                    initial={{ opacity: 0, y: 12, scale: 0.96 }}
+                                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                                    exit={{ opacity: 0, y: 8, scale: 0.96 }}
+                                    transition={{ duration: 0.16, ease: "easeOut" }}
+                                    className="absolute left-0 top-full mt-2.5 w-[92vw] sm:w-[580px] md:w-[640px] bg-white/98 backdrop-blur-2xl rounded-3xl shadow-2xl border border-slate-200/90 overflow-hidden z-[120] flex flex-col font-sans text-right"
+                                    dir="rtl"
+                                  >
+                                    {/* Popover Header */}
+                                    <div className="px-5 py-3.5 bg-gradient-to-r from-slate-50 via-indigo-50/40 to-purple-50/20 border-b border-slate-100 flex items-center justify-between">
+                                      <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-md shadow-indigo-600/20 shrink-0">
+                                          <LayoutGrid className="w-5 h-5" />
+                                        </div>
+                                        <div>
+                                          <h3 className="text-sm font-black text-slate-800 flex items-center gap-2">
+                                            <span>انتخاب محیط کاری تخصصی</span>
+                                            <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700">
+                                              {MODULE_CONFIGS.length} بخش
+                                            </span>
+                                          </h3>
+                                          <p className="text-[11px] text-slate-500 font-medium mt-0.5">
+                                            فرم‌ها و منوها متناسب با حوزه فعالیت شما فیلتر می‌شوند
+                                          </p>
+                                        </div>
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={() => setIsModuleMenuOpen(false)}
+                                        className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 rounded-xl transition-colors cursor-pointer"
+                                      >
+                                        <X className="w-4 h-4" />
+                                      </button>
+                                    </div>
+
+                                    {/* Popover Search Bar */}
+                                    <div className="px-4 py-2.5 border-b border-slate-100 bg-slate-50/50">
+                                      <div className="relative">
+                                        <input
+                                          type="text"
+                                          value={moduleSearchQuery}
+                                          onChange={(e) => setModuleSearchQuery(e.target.value)}
+                                          placeholder="جستجوی بخش کاری (فروش، خرید، انبار، حسابداری، CRM...)"
+                                          className="w-full pr-9 pl-7 py-2 text-xs font-bold bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 text-slate-800 placeholder-slate-400 shadow-3xs"
+                                        />
+                                        <Search className="w-3.5 h-3.5 absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                                        {moduleSearchQuery && (
+                                          <button
+                                            type="button"
+                                            onClick={() => setModuleSearchQuery("")}
+                                            className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+                                          >
+                                            <X className="w-3 h-3" />
+                                          </button>
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    {/* Grid of Modules */}
+                                    <div className="p-3.5 grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-[390px] overflow-y-auto custom-scrollbar">
+                                      {filteredModules.map((item) => {
+                                        const isActive = systemModule === item.id;
+                                        return (
+                                          <button
+                                            key={item.id}
+                                            type="button"
+                                            onClick={() => {
+                                              setSystemModule(item.id as any);
+                                              setIsModuleMenuOpen(false);
+                                            }}
+                                            className={`text-right p-3 rounded-2xl border transition-all duration-200 flex flex-col justify-between cursor-pointer group relative ${
+                                              isActive
+                                                ? item.activeCardBg
+                                                : `bg-white hover:bg-slate-50/90 border-slate-200/80 ${item.themeBorder} hover:shadow-xs hover:-translate-y-0.5`
+                                            }`}
+                                          >
+                                            <div>
+                                              <div className="flex items-center justify-between gap-2 mb-2">
+                                                <div className="flex items-center gap-2.5 min-w-0">
+                                                  <div
+                                                    className={`w-9 h-9 rounded-xl bg-gradient-to-br ${item.gradient} text-white flex items-center justify-center shrink-0 shadow-xs group-hover:scale-105 transition-transform`}
+                                                  >
+                                                    {React.cloneElement(item.icon as React.ReactElement<any>, {
+                                                      className: "w-4 h-4 text-white",
+                                                    })}
+                                                  </div>
+                                                  <div className="min-w-0">
+                                                    <h4 className="text-xs font-black text-slate-800 truncate">
+                                                      {item.name}
+                                                    </h4>
+                                                    <span className="text-[10px] font-bold text-slate-400">
+                                                      {item.tag}
+                                                    </span>
+                                                  </div>
+                                                </div>
+                                                {isActive ? (
+                                                  <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-indigo-600 text-white flex items-center gap-1 shadow-xs shrink-0">
+                                                    <Check className="w-3 h-3" />
+                                                    فعال
+                                                  </span>
+                                                ) : (
+                                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                                                    انتخاب
+                                                  </span>
+                                                )}
+                                              </div>
+
+                                              <p className="text-[11px] text-slate-500 font-medium leading-relaxed mb-2.5 line-clamp-2">
+                                                {item.desc}
+                                              </p>
+                                            </div>
+
+                                            {/* Feature Chips */}
+                                            <div className="flex items-center gap-1 flex-wrap pt-2 border-t border-slate-100">
+                                              {item.features.map((feat, idx) => (
+                                                <span
+                                                  key={idx}
+                                                  className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-slate-100/90 text-slate-600 border border-slate-200/50"
+                                                >
+                                                  {feat}
+                                                </span>
+                                              ))}
+                                            </div>
+                                          </button>
+                                        );
+                                      })}
+
+                                      {filteredModules.length === 0 && (
+                                        <div className="col-span-1 sm:col-span-2 text-center py-8 text-slate-400 text-xs font-bold flex flex-col items-center gap-2">
+                                          <Search className="w-6 h-6 opacity-30" />
+                                          <span>هیچ بخشی با «{moduleSearchQuery}» پیدا نشد</span>
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    {/* Popover Footer */}
+                                    <div className="p-3 bg-slate-50 border-t border-slate-100 flex items-center justify-between gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setSystemModule("selector");
+                                          setIsModuleMenuOpen(false);
+                                        }}
+                                        className="flex-1 py-2 px-3 rounded-xl bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-black transition-all flex items-center justify-center gap-1.5 shadow-3xs cursor-pointer hover:text-indigo-600"
+                                      >
+                                        <LayoutDashboard className="w-3.5 h-3.5 text-indigo-600" />
+                                        <span>داشبورد گرافیکی انتخاب بخش‌ها</span>
+                                      </button>
+
+                                      {systemModule !== "all" && (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setSystemModule("all");
+                                            setIsModuleMenuOpen(false);
+                                          }}
+                                          className="py-2 px-3 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-black transition-all flex items-center gap-1 cursor-pointer border border-indigo-100 shrink-0"
+                                          title="بازگشت به نمایش تمام منوها"
+                                        >
+                                          <RefreshCw className="w-3.5 h-3.5" />
+                                          <span>نمایش کامل</span>
+                                        </button>
+                                      )}
+                                    </div>
+                                  </motion.div>
+                                )}
+                              </AnimatePresence>
+                            </>
+                          );
+                        })()}
+                      </div>
+
+                      
+                      {/* Quick Tools & Shortcuts Dropdown */}
+                      <div className="relative" ref={quickToolsRef}>
+                        <button
+                          type="button"
+                          onClick={() => setIsQuickToolsOpen(!isQuickToolsOpen)}
+                          className={`h-10 px-3 border rounded-xl transition-all cursor-pointer flex items-center gap-2 text-xs font-black shadow-3xs active:scale-95 ${
+                            isQuickToolsOpen
+                              ? "bg-indigo-50 border-indigo-200 text-indigo-700"
+                              : "bg-white border-slate-200 text-slate-700 hover:text-indigo-600 hover:bg-slate-50"
+                          }`}
+                          title="ابزارهای سریع و دستیار سیستم"
+                        >
+                          <div className="relative flex items-center">
+                            <Sparkles className="w-4 h-4 text-indigo-600" />
+                            {syncQueueLength > 0 && (
+                              <span className="absolute -top-1.5 -right-2 bg-rose-500 text-white text-[9px] font-black w-3.5 h-3.5 flex items-center justify-center rounded-full animate-pulse shadow-sm shadow-rose-500/40">
+                                {syncQueueLength}
+                              </span>
+                            )}
+                          </div>
+                          <span className="hidden sm:inline">ابزارها</span>
+                          <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform duration-200 ${isQuickToolsOpen ? "rotate-180 text-indigo-600" : ""}`} />
+                        </button>
+
+                        <AnimatePresence>
+                          {isQuickToolsOpen && (
+                            <motion.div
+                              initial={{ opacity: 0, y: 8, scale: 0.96 }}
+                              animate={{ opacity: 1, y: 0, scale: 1 }}
+                              exit={{ opacity: 0, y: 8, scale: 0.96 }}
+                              transition={{ duration: 0.15 }}
+                              className="absolute left-0 top-full mt-2 w-72 bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden z-[100] p-2 flex flex-col gap-1"
+                            >
+                              <div className="px-3 py-2 border-b border-slate-100 flex items-center justify-between">
+                                <span className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                                  <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                                  ابزارهای سریع و میانبرها
+                                </span>
+                                <span className="text-[10px] text-slate-400 font-bold">دستیار هوشمند</span>
+                              </div>
+
+                              {/* 1. Calculator */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setIsQuickToolsOpen(false);
+                                  setIsCalculatorOpen(true);
+                                }}
+                                className="w-full text-right p-2.5 rounded-xl transition-all cursor-pointer hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 flex items-center justify-between group"
+                              >
+                                <div className="flex items-center gap-2.5">
+                                  <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white transition-colors flex items-center justify-center shrink-0">
+                                    <Calculator className="w-4 h-4" />
+                                  </div>
+                                  <div>
+                                    <div className="text-xs font-bold text-slate-800 group-hover:text-indigo-700">ماشین‌حساب پیشرفته</div>
+                                    <div className="text-[10px] text-slate-400">محاسبات سریع و درصدگیری مالی</div>
+                                  </div>
+                                </div>
+                              </button>
+
+                              {/* 2. Quick Code Alt + K */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setIsQuickToolsOpen(false);
+                                  setIsQuickCodeModalOpen(true);
+                                }}
+                                className="w-full text-right p-2.5 rounded-xl transition-all cursor-pointer hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 flex items-center justify-between group"
+                              >
+                                <div className="flex items-center gap-2.5">
+                                  <div className="w-8 h-8 rounded-lg bg-slate-100 text-slate-600 group-hover:bg-indigo-600 group-hover:text-white transition-colors flex items-center justify-center shrink-0">
+                                    <Keyboard className="w-4 h-4" />
+                                  </div>
+                                  <div>
+                                    <div className="text-xs font-bold text-slate-800 group-hover:text-indigo-700">شماره‌گیر سریع کیبورد</div>
+                                    <div className="text-[10px] text-slate-400">دسترسی فوق‌سریع با کدهای ۲ رقمی</div>
+                                  </div>
+                                </div>
+                                <span className="text-[10px] font-mono font-black px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200" dir="ltr">
+                                  Alt + K
+                                </span>
+                              </button>
+
+                              {/* 3. Sync Manager */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setIsQuickToolsOpen(false);
+                                  setRawActiveTab("sync_manager");
+                                }}
+                                className="w-full text-right p-2.5 rounded-xl transition-all cursor-pointer hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 flex items-center justify-between group"
+                              >
+                                <div className="flex items-center gap-2.5">
+                                  <div className={`w-8 h-8 rounded-lg transition-colors flex items-center justify-center shrink-0 ${
+                                    syncQueueLength > 0 ? "bg-rose-50 text-rose-600 group-hover:bg-rose-600 group-hover:text-white" : "bg-emerald-50 text-emerald-600 group-hover:bg-emerald-600 group-hover:text-white"
+                                  }`}>
+                                    {syncQueueLength > 0 ? <CloudOff className="w-4 h-4" /> : <RefreshCw className="w-4 h-4" />}
+                                  </div>
+                                  <div>
+                                    <div className="text-xs font-bold text-slate-800 group-hover:text-indigo-700">مرکز همگام‌سازی و آفلاین</div>
+                                    <div className="text-[10px] text-slate-400">
+                                      {syncQueueLength > 0 ? `${syncQueueLength} تغییر در صف ارسال` : "اطلاعات کاملاً همگام و برخط"}
+                                    </div>
+                                  </div>
+                                </div>
+                                {syncQueueLength > 0 ? (
+                                  <span className="bg-rose-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                                    {syncQueueLength}
+                                  </span>
+                                ) : (
+                                  <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                                )}
+                              </button>
+
+                              {/* 4. Changelog */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setIsQuickToolsOpen(false);
+                                  setIsChangelogModalOpen(true);
+                                }}
+                                className="w-full text-right p-2.5 rounded-xl transition-all cursor-pointer hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 flex items-center justify-between group"
+                              >
+                                <div className="flex items-center gap-2.5">
+                                  <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 group-hover:bg-amber-600 group-hover:text-white transition-colors flex items-center justify-center shrink-0">
+                                    <History className="w-4 h-4" />
+                                  </div>
+                                  <div>
+                                    <div className="text-xs font-bold text-slate-800 group-hover:text-indigo-700">تاریخچه نسخه‌ها و تغییرات</div>
+                                    <div className="text-[10px] text-slate-400">مشاهده امکانات و بروزرسانی‌ها</div>
+                                  </div>
+                                </div>
+                              </button>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </div>
+
+                      {/* Live Notifications */}
+                      <NotificationBell setActiveTab={setActiveTab} user={user} />
+
+                      {/* Quick Theme Toggle (Light / Ergonomic Slate Dark) */}
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const isCurrentlyDark = storeSettings?.theme === "dark" || (typeof document !== "undefined" && document.documentElement.classList.contains("dark"));
+                          const nextTheme = isCurrentlyDark ? "classic" : "dark";
+                          
+                          // 1. Immediately update DOM classes for zero flicker
+                          if (typeof document !== "undefined") {
+                            if (nextTheme === "dark") {
+                              document.documentElement.classList.add("dark", "theme-dark");
+                              document.body.classList.add("theme-dark");
+                            } else {
+                              document.documentElement.classList.remove("dark", "theme-dark");
+                              document.body.classList.remove("theme-dark");
+                            }
+                          }
+
+                          // 2. Immediately persist to localStorage
+                          if (typeof window !== "undefined" && window.localStorage) {
+                            try {
+                              localStorage.setItem("app_theme", nextTheme);
+                            } catch (_) {}
+                          }
+
+                          // 3. Update React state immediately
+                          const updated = { ...storeSettings, theme: nextTheme };
+                          setStoreSettings(updated);
+                          setSettingsForm(updated);
+
+                          if (typeof window !== "undefined" && window.localStorage) {
+                            try {
+                              localStorage.setItem("company_profile", JSON.stringify(updated));
+                            } catch (_) {}
+                          }
+
+                          // 4. Persist to server without allowing stale bounce
+                          try {
+                            await saveStoreSettings(updated);
+                          } catch (e) {
+                            console.error("Failed to save theme:", e);
+                          }
+                          showNotification(
+                            nextTheme === "dark"
+                              ? "تم تاریک اداری (Slate Dark) با موفقیت فعال شد"
+                              : "تم روشن با موفقیت فعال شد",
+                            "info"
+                          );
+                        }}
+                        className={`w-10 h-10 border rounded-xl transition-all cursor-pointer shadow-3xs active:scale-95 flex items-center justify-center ${
+                          storeSettings?.theme === "dark"
+                            ? "bg-amber-400/10 border-amber-400/30 text-amber-300 hover:bg-amber-400/20 shadow-amber-500/10"
+                            : "bg-white border-slate-200 text-slate-600 hover:text-indigo-600 hover:bg-indigo-50"
+                        }`}
+                        title={storeSettings?.theme === "dark" ? "تغییر به تم روشن" : "تغییر به تم تاریک اداری (Slate Dark)"}
+                      >
+                        {storeSettings?.theme === "dark" ? (
+                          <Sun className="w-5 h-5 text-amber-400" />
+                        ) : (
+                          <Moon className="w-5 h-5 text-slate-600" />
+                        )}
+                      </button>
+
+                      {/* User Profile & Settings Menu */}
+                      <div className="relative" ref={headerMenuRef}>
+                        <button
+                          type="button"
+                          onClick={() => setIsHeaderMenuOpen(!isHeaderMenuOpen)}
+                          className={`w-10 h-10 border rounded-xl transition-all cursor-pointer flex items-center justify-center shadow-3xs active:scale-95 ${
+                            isHeaderMenuOpen
+                              ? "bg-indigo-50 border-indigo-200 text-indigo-700"
+                              : "bg-white border-slate-200 text-slate-600 hover:text-indigo-700 hover:bg-indigo-50"
+                          }`}
+                          title="حساب کاربری و تنظیمات سیستم"
+                        >
+                          <Settings className={`w-5 h-5 transition-transform duration-500 ${isHeaderMenuOpen ? "rotate-90 text-indigo-600" : ""}`} />
+                        </button>
+                        
+                        <AnimatePresence>
+                          {isHeaderMenuOpen && (
+                            <motion.div
+                              initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                              animate={{ opacity: 1, y: 0, scale: 1 }}
+                              exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                              transition={{ duration: 0.15 }}
+                              className="absolute left-0 top-full mt-2 w-64 bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden z-[100] flex flex-col"
+                            >
+                              {user && (
+                                <div className="p-3.5 border-b border-slate-100 bg-slate-50/70">
+                                  <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 bg-indigo-600 text-white rounded-xl flex items-center justify-center font-black shadow-sm shrink-0">
+                                      {(() => {
+                                        const p = user.personId ? persons?.find(x => String(x.id) === String(user.personId)) : null;
+                                        const dName = p ? p.name : user.name;
+                                        return dName?.charAt(0) || <User className="w-5 h-5" />;
+                                      })()}
+                                    </div>
+                                    <div className="flex flex-col min-w-0 flex-1">
+                                      <div className="text-xs font-black text-slate-800 truncate">
+                                        {(() => {
+                                           const p = user.personId ? persons?.find(x => String(x.id) === String(user.personId)) : null;
+                                           return p ? p.name : user.name;
+                                        })()}
+                                      </div>
+                                      <div className="text-[10px] font-bold text-indigo-600 mt-0.5">
+                                        {user.role === "admin" ? "مدیر ارشد سیستم" : user.role === "accountant" ? "حسابدار مالی" : user.role === "cashier" ? "صندوق‌دار" : "کاربر مجاز"}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+
+                              <div className="p-2 border-b border-slate-100 flex flex-col gap-0.5">
+                                <div className="px-2.5 py-1 text-[10px] font-black text-slate-400">مدیریت و تنظیمات</div>
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setIsHeaderMenuOpen(false);
+                                    setIsProfileModalOpen(true);
+                                  }}
+                                  className="w-full text-right px-2.5 py-2 rounded-xl transition-all cursor-pointer font-bold gap-2.5 flex items-center text-xs hover:bg-slate-100 text-slate-700"
+                                >
+                                  <User className="w-4 h-4 text-slate-500" />
+                                  <span>پروفایل و مشخصات کاربری</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setIsHeaderMenuOpen(false);
+                                    setActiveTab("settings");
+                                  }}
+                                  className="w-full text-right px-2.5 py-2 rounded-xl transition-all cursor-pointer font-bold gap-2.5 flex items-center text-xs hover:bg-indigo-50 text-slate-700 hover:text-indigo-700"
+                                >
+                                  <Settings className="w-4 h-4 text-indigo-600" />
+                                  <span>تنظیمات عمومی سامانه</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    setIsHeaderMenuOpen(false);
+                                    const newVal = menuLayout === "vertical" ? "horizontal" : "vertical";
+                                    setMenuLayout(newVal);
+                                    const updated = { ...storeSettings, menuLayout: newVal };
+                                    setStoreSettings(updated);
+                                    setSettingsForm(updated);
+                                    try { await saveStoreSettings(updated); } catch(e){}
+                                  }}
+                                  className="w-full text-right px-2.5 py-2 rounded-xl transition-all cursor-pointer font-bold gap-2.5 flex items-center text-xs hover:bg-slate-100 text-slate-700"
+                                >
+                                  {menuLayout === "vertical" ? <LayoutList className="w-4 h-4 text-slate-500" /> : <GripHorizontal className="w-4 h-4 text-slate-500" />}
+                                  <span>{menuLayout === "vertical" ? "تغییر چیدمان به منوی افقی" : "تغییر چیدمان به منوی عمودی"}</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    setIsHeaderMenuOpen(false);
+                                    const newVal = !isFullWidth;
+                                    setIsFullWidth(newVal);
+                                    const updated = { ...storeSettings, isFullWidth: newVal };
+                                    setStoreSettings(updated);
+                                    setSettingsForm(updated);
+                                    try { await saveStoreSettings(updated); } catch(e){}
+                                  }}
+                                  className={`w-full text-right px-2.5 py-2 rounded-xl transition-all cursor-pointer font-bold gap-2.5 flex items-center text-xs ${isFullWidth ? "text-indigo-700 bg-indigo-50 font-black" : "hover:bg-slate-100 text-slate-700"}`}
+                                >
+                                  {isFullWidth ? <Minimize className="w-4 h-4 text-indigo-600" /> : <Maximize className="w-4 h-4 text-slate-500" />}
+                                  <span>{isFullWidth ? "نمایش در عرض استاندارد" : "حالت تمام‌صفحه گسترده"}</span>
+                                </button>
+                              </div>
+
+                              {user && (
+                                <div className="p-2 bg-slate-50/50">
+                                  <button
+                                    type="button"
+                                    onClick={() => { setIsHeaderMenuOpen(false); signOut(); }}
+                                    className="w-full py-2 px-2.5 rounded-xl text-xs font-bold text-rose-600 hover:bg-rose-50 hover:text-rose-700 transition-colors flex items-center gap-2 cursor-pointer"
+                                  >
+                                    <LogOut className="w-4 h-4 text-rose-500" />
+                                    <span>خروج از حساب کاربری</span>
+                                  </button>
+                                </div>
+                              )}
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="hidden md:block relative z-[60]">
+                  <SidebarNavigation
+                    mode="horizontal"
+                    user={user}
+                    signOut={signOut}
+                    activeTab={activeTab}
+                    setActiveTab={setActiveTab}
+                    systemModule={systemModule}
+                    hasCheckedFinancialYears={hasCheckedFinancialYears}
+                    activeFinancialYear={activeFinancialYear}
+                    isGmailTheme={isGmailTheme}
+                    storeSettings={storeSettings}
+                    isSidebarOpen={isSidebarOpen}
+                    setIsSidebarOpen={setIsSidebarOpen}
+                    menuLayout={menuLayout}
+                    setIsComposeOpen={setIsComposeOpen}
+                    expandedGroups={expandedGroups}
+                    setExpandedGroups={setExpandedGroups}
+                  />
+    </div>
+                </div>
+                {/* Standard Navigation Breadcrumb & Context Header */}
+                {(() => {
+                  let matchedGroup = null;
+                  let matchedItem = null;
+                  for (const g of allSidebarGroups) {
+                    const itm = g.items.find(i => i.id === activeTab);
+                    if (itm) {
+                      matchedGroup = g;
+                      matchedItem = itm;
+                      break;
+                    }
+                  }
+                  if (!matchedGroup || !matchedItem) return null;
+                  return (
+                    <div className="hidden md:flex items-center justify-between px-6 py-2.5 bg-white/80 backdrop-blur-xs border-b border-slate-200/60 text-xs no-print select-none shadow-3xs">
+                      <div className="flex items-center gap-2">
+                        <span className="flex items-center gap-1.5 text-slate-500 font-bold">
+                          <span className="p-1 rounded-md bg-slate-100 text-slate-600">{matchedGroup.icon}</span>
+                          <span>{matchedGroup.label}</span>
+                        </span>
+                        <span className="text-slate-300">/</span>
+                        <span className="flex items-center gap-1.5 text-slate-900 font-extrabold">
+                          <span className="p-1 rounded-md bg-indigo-50 text-indigo-600">{matchedItem.icon}</span>
+                          <span>{matchedItem.label}</span>
+                        </span>
+                        {matchedItem.badge && (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full font-black bg-indigo-50 text-indigo-700 border border-indigo-200/50">
+                            {matchedItem.badge}
+                          </span>
+                        )}
+                      </div>
+                      {matchedItem.description && (
+                        <div className="hidden lg:block text-[11px] text-slate-400 font-medium">
+                          {matchedItem.description}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+                <main className="flex-1 overflow-y-auto min-h-0 p-3 pb-32 md:p-8 md:pb-8 bg-slate-50/50 print:overflow-visible print:bg-white print:p-0">
+                  <div
+                    className={`mx-auto transition-all duration-300 print:max-w-none print:w-full print:px-0 ${isFullWidth || activeTab === "person_profile" || activeTab === "person_ledger" || activeTab === "product_card" ? "max-w-full xl:px-4" : "max-w-6xl"}`}
+                  >
+                    <Suspense fallback={<div className="flex h-full items-center justify-center p-8"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div></div>}>
+                    {user && activeTab !== "welcome_page" && !hasPagePermission(user, activeTab) ? (
+                      <AccessRestricted activeTab={activeTab} user={user} onGoHome={() => setActiveTab("welcome_page")} />
+                    ) : (
+                      appRoutes
+                    )}
+                    </Suspense>
+                  </div>
+                </main>
+
+                {/* Streamlined System Status Bar (Footer) */}
+                {(() => {
+                  const activeStoreIdVal = (typeof window !== 'undefined' ? localStorage.getItem('activeStoreId') : null) || 'default';
+                  const activeStoreObj = appState.availableStores.find(s => s.id === activeStoreIdVal);
+                  const activeStoreName = activeStoreObj?.name || storeSettings.storeName || "کسب‌وکار اصلی";
+                  const dbTypeLabel = activeStoreObj?.db_type === 'postgres' ? 'PostgreSQL' : 'محلی (SQLite/JSON)';
+
+                  return (
+                    <footer className="border-t border-slate-200/80 bg-white/95 backdrop-blur-md px-4 sm:px-6 py-1.5 flex flex-wrap items-center justify-between gap-3 text-[11px] text-slate-600 no-print z-40 select-none shadow-3xs" dir="rtl">
+                      {/* Right: Live Connection, Database & Financial Year */}
+                      <div className="flex items-center gap-2.5 sm:gap-3">
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                          <span className="font-bold text-slate-700">سامانه آنلاین و پایدار</span>
+                        </div>
+                        <span className="text-slate-300">|</span>
+                        <div className="flex items-center gap-1.5 text-slate-500">
+                          <Database className="w-3.5 h-3.5 text-indigo-500" />
+                          <span className="hidden sm:inline">پایگاه داده:</span>
+                          <span className="font-bold text-slate-800">{dbTypeLabel}</span>
+                        </div>
+                        <span className="text-slate-300 hidden md:inline">|</span>
+                        <div className="hidden md:flex items-center gap-1.5 text-slate-500">
+                          <Calendar className="w-3.5 h-3.5 text-indigo-500" />
+                          <span>سال مالی:</span>
+                          <span className="font-bold text-slate-800">{activeFinancialYear?.name || "سال مالی جاری"}</span>
+                        </div>
+                      </div>
+
+                      {/* Center: Current Business Name Info (Minimal) */}
+                      <div className="hidden xl:flex items-center gap-1.5 text-slate-500 text-xs">
+                        <Store className="w-3.5 h-3.5 text-indigo-600" />
+                        <span>کسب‌وکار فعال:</span>
+                        <span className="font-black text-slate-900 bg-indigo-50/80 text-indigo-900 px-2.5 py-0.5 rounded-lg border border-indigo-100">
+                          {activeStoreName}
+                        </span>
+                      </div>
+
+                      {/* Left: Currency, Shortcut Tip, Version */}
+                      <div className="flex items-center gap-2.5 sm:gap-3">
+                        <div className="hidden sm:flex items-center gap-1 text-slate-500">
+                          <span className="font-bold text-slate-700">{storeSettings.currency || "تومان"}</span>
+                          <span className="text-slate-400">({storeSettings.calendarType === "gregorian" ? "میلادی" : "خورشیدی"})</span>
+                        </div>
+                        <span className="text-slate-300 hidden sm:inline">|</span>
+                        <div className="hidden lg:flex items-center gap-1 text-slate-400" title="کلید دسترسی سریع کیبورد">
+                          <span>راهنما:</span>
+                          <span className="font-mono font-bold text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 text-[10px]" dir="ltr">
+                            Alt + K
+                          </span>
+                        </div>
+                        <span className="text-slate-300 hidden lg:inline">|</span>
+                        <div className="font-mono font-bold text-slate-500 text-[10px]" dir="ltr">
+                          v{appVersion?.version || "2.5"}
+                        </div>
+                      </div>
+                    </footer>
+                  );
+                })()}
+</div>
+</div>
+)}
+<LiveAdminAlertToast user={user} setActiveTab={setActiveTab} />
+<Suspense fallback={null}><SalePaymentModal
+      isOpen={appState.isSalePaymentModalOpen}
+      onClose={() => appState.setIsSalePaymentModalOpen(false)}
+      payload={appState.salePaymentModalPayload}
+      saveInvoiceData={appState.saveInvoiceData}
+      accounts={appState.accounts}
+      cashboxes={appState.cashboxes}
+      transactions={appState.transactions}
+      formatCurrency={appState.formatCurrency}
+      addCommas={(val) => {
+        return val.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+      }}
+      persons={appState.persons}
+      setViewingInvoice={appState.setViewingInvoice}
+      calculatePersonBalance={appState.calculatePersonBalance}
+      storeSettings={appState.storeSettings}
+      showNotification={appState.showNotification}
+  /></Suspense>
+  <PricingWizardModal
+            pricingWizardInvoice={pricingWizardInvoice} setPricingWizardInvoice={setPricingWizardInvoice} pricingWizardItems={pricingWizardItems} setPricingWizardItems={setPricingWizardItems} products={products} storeSettings={storeSettings} toPersianDigits={toPersianDigits} formatDateDisplay={formatDateDisplay} formatNumber={formatNumber} setSuccessMsg={setSuccessMsg} fetchProducts={fetchProducts} updateProduct={updateProduct} List={List}
+          />
+          {isAccountingDocModalOpen && viewingAccountingDoc && (
+            <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-gray-900/50 backdrop-blur-sm" dir="rtl">
+              <div className="bg-white rounded-3xl w-full max-w-5xl h-[90vh] overflow-hidden flex flex-col shadow-2xl relative">
+                 <button onClick={() => setIsAccountingDocModalOpen(false)} className="absolute top-4 left-4 z-50 p-2 bg-slate-100 hover:bg-slate-200 rounded-full transition-colors">
+                   <X className="w-5 h-5 text-slate-600" />
+                 </button>
+                 <div className="flex-1 overflow-y-auto w-full">
+                   <AccountingDocView
+                      doc={viewingAccountingDoc}
+                      storeSettings={storeSettings}
+                      onBack={() => setIsAccountingDocModalOpen(false)}
+                   />
+                 </div>
+              </div>
+            </div>
+          )}
+          <FastProductCreateModal
+            isOpen={isFastProductModalOpen}
+            onClose={() => setIsFastProductModalOpen(false)}
+            onSave={handleFastSaveProduct}
+          />
+          <BulkProductImportModal products={products}
+            isOpen={isBulkImportOpen}
+            onClose={() => setIsBulkImportOpen(false)}
+           
+            onImport={handleBulkImportItems}
+            isPurchase={
+              activeTab === "create_purchase" ||
+              (activeTab === "create_warehouse_doc" &&
+                invoiceType === "warehouse_receipt")
+            }
+            getLastPriceForProduct={getLastPriceForProduct}
+          />
+          {isProfileModalOpen && (
+            <ProfileModal onClose={() => setIsProfileModalOpen(false)} />
+          )}
+
+          {!isMobileScreen && (
+            <Suspense fallback={null}>
+              <ScreensaverManager
+                persons={persons}
+                accountingDocuments={accountingDocuments}
+                storeSettings={storeSettings}
+                formatNumber={formatNumber}
+              />
+            </Suspense>
+          )}
+          {submitting && !previewInvoiceData && (
+            <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-sm z-[99999] flex flex-col items-center justify-center p-8 text-center cursor-wait select-none" dir="rtl">
+              <div className="w-16 h-16 relative flex items-center justify-center mb-6">
+                <div className="absolute inset-0 rounded-full border-4 border-indigo-500/20"></div>
+                <div className="absolute inset-0 rounded-full border-4 border-t-indigo-500 animate-spin"></div>
+                <RefreshCw className="w-6 h-6 text-indigo-400 animate-pulse" />
+              </div>
+              
+              <h3 className="text-lg font-black text-white mb-2">در حال ثبت اطلاعات فاکتور و بروزرسانی انبارها...</h3>
+              <p className="text-slate-400 text-xs max-w-xs leading-relaxed mb-6 font-bold">
+                لطفاً منتظر بمانید. تمامی اسناد فاکتور، حواله‌ها و رسیدهای انبار و تراکنش‌های مالی مرتبط به صورت یکپارچه و ایمن در حال محاسبه و ذخیره‌سازی است.
+              </p>
+
+              <div className="w-48 h-1.5 bg-slate-800 rounded-full overflow-hidden relative">
+                <div className="absolute h-full w-1/2 bg-indigo-500 rounded-full animate-loading-bar"></div>
+              </div>
+            </div>
+          )}
+
+
+    
+
+          {submittingReceipt && !previewReceiptData && (
+            <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-sm z-[99999] flex flex-col items-center justify-center p-8 text-center cursor-wait select-none" dir="rtl">
+              <div className="w-16 h-16 relative flex items-center justify-center mb-6">
+                <div className="absolute inset-0 rounded-full border-4 border-emerald-500/20"></div>
+                <div className="absolute inset-0 rounded-full border-4 border-t-emerald-500 animate-spin"></div>
+                <RefreshCw className="w-6 h-6 text-emerald-400 animate-pulse" />
+              </div>
+              
+              <h3 className="text-lg font-black text-white mb-2">در حال ثبت تراکنش مالی...</h3>
+              <p className="text-slate-400 text-xs max-w-xs leading-relaxed mb-6 font-bold">
+                لطفاً منتظر بمانید. سیستم در حال بررسی، تایید و ثبت نهایی اسناد و بروزرسانی حساب‌های مرتبط به صورت یکپارچه می‌باشد.
+              </p>
+              <div className="w-48 h-1.5 bg-slate-800 rounded-full overflow-hidden relative">
+                <div className="absolute h-full w-1/2 bg-emerald-500 rounded-full animate-loading-bar"></div>
+              </div>
+            </div>
+          )}
+
+          {isPersonModalOpen && (
+            <PersonFormModal
+              isOpen={isPersonModalOpen}
+              onClose={() => {
+                setIsPersonModalOpen(false);
+                setEditingPersonId(null);
+              }}
+              editingPersonId={editingPersonId}
+              persons={appState.allPersons?.length > 0 ? appState.allPersons : persons}
+              personGroups={personGroups}
+              personRoles={personRoles}
+  personCategories={appState.personCategories}
+              storeSettings={storeSettings}
+              activeTab={activeTab}
+              setReceiptPersonId={setReceiptPersonId}
+              setCustomerId={setCustomerId}
+              setSalaryPersonId={setSalaryPersonId}
+              deletePerson={deletePerson}
+              fetchPersons={fetchPersons}
+              setActiveTab={setActiveTab}
+              setLedgerPersonId={setLedgerPersonId}
+              onSuccess={(addedPerson) => {
+                fetchPersons?.();
+
+                setIsPersonModalOpen(false);
+                setEditingPersonId(null);
+              }}
+              showNotification={showNotification}
+              confirmAction={confirmAction}
+            />
+          )}
+
+          {isPersonIOModalOpen && (
+            <PersonIOModal
+              isOpen={isPersonIOModalOpen}
+              onClose={() => setIsPersonIOModalOpen(false)}
+              action={personIOAction}
+              setAction={setPersonIOAction}
+              persons={appState.allPersons?.length > 0 ? appState.allPersons : persons}
+              storeSettings={storeSettings}
+              addPerson={addPerson}
+              showNotification={showNotification}
+              confirmAction={confirmAction}
+              getRoleName={getRoleName}
+              fetchPersons={fetchPersons}
+            />
+          )}
+
+          {isProductModalOpen && (
+            <ProductFormModal
+              isOpen={isProductModalOpen}
+              onClose={() => {
+                setIsProductModalOpen(false);
+                setEditingProductId(null);
+                appState.setDuplicateProductId(null);
+              }}
+              editingProductId={editingProductId}
+              duplicateProductId={appState.duplicateProductId}
+              products={products}
+              productCategories={productCategories}
+              warehouses={warehouses}
+              storeSettings={storeSettings}
+              onSuccess={() => {
+                fetchProducts?.();
+                showNotification('اطلاعات کالا با موفقیت ثبت شد', 'success');
+                setIsProductModalOpen(false);
+                setEditingProductId(null);
+                appState.setDuplicateProductId(null);
+              }}
+              showNotification={showNotification}
+              confirmAction={confirmAction}
+              activeTab={activeTab}
+              handleFastAddProduct={handleFastAddProduct}
+            />
+          )}
+
+          {isAccountModalOpen && (
+            <AccountFormModal
+              isOpen={isAccountModalOpen}
+              onClose={() => {
+                setIsAccountModalOpen(false);
+                setEditingAccountId(null);
+              }}
+              editingAccountId={editingAccountId}
+              accounts={accounts}
+              storeSettings={storeSettings}
+              onSuccess={() => {
+                fetchAccounts?.();
+                showNotification('اطلاعات حساب با موفقیت ثبت شد', 'success');
+                setIsAccountModalOpen(false);
+                setEditingAccountId(null);
+              }}
+              showNotification={showNotification}
+              confirmAction={confirmAction}
+            />
+          )}
+
+          {isCashboxModalOpen && (
+            <CashboxFormModal
+              isOpen={isCashboxModalOpen}
+              onClose={() => {
+                setIsCashboxModalOpen(false);
+                setEditingCashboxId(null);
+              }}
+              editingCashboxId={editingCashboxId}
+              cashboxes={cashboxes}
+              storeSettings={storeSettings}
+              onSuccess={() => {
+                fetchCashboxes?.();
+                showNotification('اطلاعات صندوق با موفقیت ثبت شد', 'success');
+                setIsCashboxModalOpen(false);
+                setEditingCashboxId(null);
+              }}
+              showNotification={showNotification}
+              confirmAction={confirmAction}
+            />
+          )}
+
+          {isWarehouseModalOpen && (
+            <WarehouseFormModal
+              isOpen={isWarehouseModalOpen}
+              onClose={() => {
+                setIsWarehouseModalOpen(false);
+                setEditingWarehouseId(null);
+              }}
+              editingWarehouseId={editingWarehouseId}
+              warehouses={warehouses}
+              storeSettings={storeSettings}
+              onSuccess={() => {
+                fetchWarehouses?.();
+                showNotification('اطلاعات انبار با موفقیت ثبت شد', 'success');
+                setIsWarehouseModalOpen(false);
+                setEditingWarehouseId(null);
+              }}
+              showNotification={showNotification}
+              confirmAction={confirmAction}
+            />
+          )}
+
+          <CalculatorModal isOpen={isCalculatorOpen} onClose={() => setIsCalculatorOpen(false)} />
+        <SyncStatusModal isOpen={isSyncModalOpen} onClose={() => setIsSyncModalOpen(false)} />
+        <BackgroundSync />
+          <PreviewModals {...appState} />
+          <ExtraModals {...appState} />
+          <ConfirmModal confirmState={appState.confirmState} setConfirmState={appState.setConfirmState} />
+          <GlobalProcessingOverlay />
+
+          <QuickCodeHUD
+            hudState={quickCodeHudState}
+            isModalOpen={isQuickCodeModalOpen}
+            setIsModalOpen={setIsQuickCodeModalOpen}
+            items={quickCodeItems}
+            onExecute={handleQuickCodeExecute}
+            onOpenSettings={() => {
+              setSettingsTab('quick_codes');
+              setActiveTab('settings');
+            }}
+          />
+        </>
+      );
+      }

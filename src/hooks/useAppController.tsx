@@ -1,0 +1,8452 @@
+import { exportToExcel, formatDecimalForExcel } from "../utils/exportUtils";
+import { autoGenerateRentCommitments, settleRentInstallmentWithPayment } from "../services/hrService";
+import { hasPagePermission, getPageTitle } from "../utils/permissionUtils";
+import { suspendAppDataChanged, resumeAppDataChanged, invalidateCache, getAuthHeaders, batchLocalData } from "../services/coreService";
+import { syncBusinessDataToIndexedDb } from "../services/indexedDbService";
+import CustomDatePicker from "../components/ui/CustomDatePicker";
+import { SystemUpdatePage } from "../components/admin/SystemUpdatePage";
+import { PersonalNotesManager } from "../components/notes/PersonalNotesManager";
+import FastStocktakingMobile from "../components/inventory/FastStocktakingMobile";
+import PricingWizardModal from '../components/modals/PricingWizardModal';
+import ReceiptsList from '../components/financial/ReceiptsList';
+import InvoicesList from '../components/invoices/InvoicesList';
+import CurrencyInput from '../components/common/CurrencyInput';
+import FastBarcodeScanner from '../components/common/FastBarcodeScanner';
+import PersonLedgerActionsDropdown from '../components/persons/PersonLedgerActionsDropdown';
+import ChangelogModal from '../components/ChangelogModal';
+import changelogData from '../data/changelog.json';
+import KeyboardReceiptPage from '../components/financial/KeyboardReceiptPage';
+import ReceiveReceiptModal from "../components/financial/ReceiveReceiptModal";
+import PayReceiptModal from "../components/financial/PayReceiptModal";
+import AccountsManager from "../components/accounts/AccountsManager";
+import CashboxesManager from "../components/accounts/CashboxesManager";
+import PersonsManager from "../components/persons/PersonsManager";
+import DebtorsNotification from "../components/DebtorsNotification";
+import BeautifulLoading from "../components/BeautifulLoading";
+import DataReconciliation from "../components/DataReconciliation";
+import { useStore } from '../store';
+import React, { useState, useEffect, useMemo, useRef } from "react";
+import { globalDateFormatter } from "../utils/dateFormatter";
+import { renderSmsTemplate } from "../utils/smsTemplateRenderer";
+import { startAppProcessing, updateAppProcessing, stopAppProcessing } from "../utils/processingHelper";
+import { calculateAllWarehouseStocks } from "../utils/stockLogic";
+import { useLocation, useNavigate } from "react-router-dom";
+import ProductsTab from "../components/products/ProductsTab";
+import PersonOpeningBalances from "../components/persons/PersonOpeningBalances";
+import { useRealtimeSync } from "./useRealtimeSync";
+import PersonLedger from "../components/persons/PersonLedger";
+import SettingsTab from "../components/admin/SettingsTab";
+import SidebarNavigation from "../components/SidebarNavigation";
+import MobileRestrictedMenu from "../components/MobileRestrictedMenu";
+import MinimalMobilePersonModal from "../components/modals/MinimalMobilePersonModal";
+import WarehouseManager from '../components/warehouses/WarehouseManager';
+import PersonGroupsManager from "../components/persons/PersonGroupsManager";
+import PersonRolesManager from "../components/persons/PersonRolesManager";
+import WarehouseDocCreate from '../components/warehouses/WarehouseDocCreate';
+import SaleInvoiceCreate from '../components/invoices/SaleInvoiceCreate';
+import CalculatorModal from "../components/modals/CalculatorModal";
+import SaleReturnInvoiceCreate from '../components/invoices/SaleReturnInvoiceCreate';
+import PurchaseInvoiceCreate from '../components/invoices/PurchaseInvoiceCreate';
+import PurchaseReturnInvoiceCreate from '../components/invoices/PurchaseReturnInvoiceCreate';
+import ConsignmentInvoiceCreate from '../components/invoices/ConsignmentInvoiceCreate';
+import SalesReport from '../components/reports/SalesReport';
+import { getUnitRatioDirection, getPriceForSelectedUnit, convertQuantityToBaseUnit, convertPriceToBaseUnit } from "../utils/unitConversion";
+import Barcode from "react-barcode";
+import {
+  Building,
+  ScanLine,
+  Shield,
+  Key,
+  Maximize,
+  Minimize,
+  Tag,
+  Plus,
+  Trash2,
+  Edit2,
+  Image,
+  Save,
+  FileText,
+  User,
+  ShoppingCart,
+  Calculator,
+  CheckCircle,
+  AlertCircle,
+  AlertTriangle,
+  Info,
+  FilePlus,
+  Calendar,
+  List,
+  Receipt,
+  Search,
+  DollarSign,
+  Package,
+  X,
+  Zap,
+  RefreshCw,
+  Menu,
+  Github,
+  CreditCard,
+  Wallet,
+  Store,
+  Settings,
+  TrendingUp,
+  TrendingDown,
+  BarChart3,
+  ChevronDown,
+  ChevronUp,
+  Printer,
+  Eye,
+  ListTodo,
+  CheckSquare,
+  LogOut,
+  LogIn,
+  Database,
+  ArrowDownToLine,
+  ArrowUpFromLine,
+  FileSpreadsheet,
+  Users,
+  BookOpen,
+  ClipboardList,
+  Activity,
+  Clock,
+  History,
+  ArrowRightLeft,
+  Percent,
+  LayoutList,
+  GripHorizontal,
+  Box,
+  CornerDownLeft,
+  CornerUpRight,
+  Banknote,
+  PackagePlus,
+  Copy,
+  LayoutDashboard,
+  Layers,
+  Phone,
+  MapPin,
+  PlusCircle,
+  MinusCircle,
+  Barcode as BarcodeIcon,
+  LayoutGrid,
+  Table,
+  Download,
+  Globe,
+  Bell,
+  Sparkles,
+  Ban,
+  Pencil,
+  Check,
+} from "lucide-react";
+import * as XLSX from "xlsx";
+import { playAudioFeedback } from "../utils/audio";
+import { motion, AnimatePresence } from "motion/react";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip as RechartsTooltip,
+  Legend,
+  ResponsiveContainer,
+  Line,
+  ComposedChart,
+  Cell,
+} from "recharts";
+import {
+  addCommas,
+  removeCommas,
+  numberToWords,
+  getBaseValueInToman,
+  getDefaultExchangeRate,
+  showInvoiceCurrency,
+  numToPersianWords,
+  toPersianDigits,
+  formatDateDisplay, convertToGregorian, customPersonFilter,
+  setGlobalStoreSettings,
+  formatNumber as formatNumberUtil,
+} from "../utils/format";
+import html2pdf from "html2pdf.js";
+import DateObject from "react-date-object";
+import persian from "react-date-object/calendars/persian";
+import persian_fa from "react-date-object/locales/persian_fa";
+import ProductFormModal from "../components/modals/ProductFormModal";
+import PersonFormModal from "../components/modals/PersonFormModal";
+import AccountFormModal from "../components/modals/AccountFormModal";
+import CashboxFormModal from "../components/modals/CashboxFormModal";
+import WarehouseFormModal from "../components/modals/WarehouseFormModal";
+import SmsPanel from "../components/admin/SmsPanel";
+import Select from "react-select";
+import { useAuth } from "../context/AuthContext";
+import {
+  generateId,
+  getUsers,
+  addUser,
+  updateUser,
+  deleteUser,
+  getCheckbooks,
+  addCheckbook,
+  updateCheckbook,
+  deleteCheckbook,
+  getIssuedChecks,
+  addIssuedCheck,
+  updateIssuedCheck,
+  deleteIssuedCheck,
+  getReceivedChecks,
+  addReceivedCheck,
+  updateReceivedCheck,
+  deleteReceivedCheck,
+  getLocalData,
+  saveLocalData,
+  getStoreSettings,
+  saveStoreSettings,
+  getSmsMessages,
+  addSmsMessage,
+  generateCiteableMessageId,
+  deleteSmsMessage,
+  getPersonGroups,
+  addPersonGroup,
+  updatePersonGroup,
+  deletePersonGroup,
+  getPersonRoles,
+  getPersonCategories,
+  addPersonRole,
+  updatePersonRole,
+  deletePersonRole,
+  getPersons,
+  addPerson,
+  updatePerson,
+  deletePerson,
+  getPersonOpeningBalances,
+  addPersonOpeningBalance,
+  updatePersonOpeningBalance,
+  deletePersonOpeningBalance,
+  getProducts,
+  addProduct,
+  updateProduct,
+  deleteProduct,
+  getProductCategories,
+  addProductCategory,
+  updateProductCategory,
+  deleteProductCategory,
+  getAccounts,
+  addAccount,
+  updateAccount,
+  deleteAccount,
+  getCashboxes,
+  addCashbox,
+  updateCashbox,
+  deleteCashbox,
+  getWarehouses,
+  addWarehouse,
+  updateWarehouse,
+  deleteWarehouse,
+  getInvoices,
+  getInventoryTransactions,
+  addInvoice,
+  syncInvoiceAccountingDocument,
+  generateDocNumber,
+  updateDocCounter,
+  updateInvoice,
+  deleteInvoice,
+  voidInvoice,
+  getTransactions,
+  addTransaction,
+  getPayslips,
+  addPayslip,
+  updateTransaction,
+  deleteTransaction,
+  getWarehouseStocks,
+  getProductPriceHistory,
+  updateProductPriceHistory,
+  recalculateAllWarehouseStocks,
+  getFinancialYears,
+  getActiveFinancialYear,
+  addFinancialYear,
+  closeFinancialYear,
+  getAccountingDocuments,
+  addAccountingDocument,
+  deleteAccountingDocument,
+  getLedgerAccounts,
+  addSystemLog,
+  getLoans,
+  getInstallments,
+} from "../services/dataService";
+import ModuleSelector from "../components/ui/ModuleSelector";
+import DatabaseReconciliation from "../components/admin/DatabaseReconciliation";
+import DatabaseDashboard from "../components/admin/DatabaseDashboard";
+import SystemChecklist from "../components/admin/SystemChecklist";
+import SystemLogs from "../components/admin/SystemLogs";
+import DatabaseLogs from "../components/admin/DatabaseLogs";
+import GroupPriceUpdateWizard from "../components/modals/GroupPriceUpdateWizard";
+import ProductPriceChangeModal from "../components/modals/ProductPriceChangeModal";
+import PrintBarcodeModal from "../components/modals/PrintBarcodeModal";
+import ProductCardModal from "../components/modals/ProductCardModal";
+import ProductLastPricesView from "../components/reports/ProductLastPricesView";
+import QuickPriceInquiry from "../components/inventory/QuickPriceInquiry";
+import CheckManagement from "../components/financial/CheckManagement";
+import PersonNotesAndAttachments from "../components/financial/PersonNotesAndAttachments";
+import InvoiceAllocation from "../components/financial/InvoiceAllocation";
+import SearchableSelect from "../components/ui/SearchableSelect";
+import BarcodeScannerModal from "../components/modals/BarcodeScannerModal";
+import EditReceiptModal from "../components/modals/EditReceiptModal";
+import FinancialTransfer from "../components/financial/FinancialTransfer";
+import QuickRefund from "../components/financial/QuickRefund";
+import UserManager from "../components/admin/UserManager";
+import ProfileModal from "../components/profile/advanced/AdvancedProfileModal";
+import InventoryReport from "../components/reports/InventoryReport";
+import KardexReport from "../components/reports/KardexReport";
+import CRMDashboard from "../components/crm/CRMDashboard";
+import SystemDiagnostics from "../components/admin/SystemDiagnostics";
+import StocktakingManager from "../components/inventory/StocktakingManager";
+import AnalyticalDashboard from "../components/reports/AnalyticalDashboard";
+import FinancialDashboard from "../components/reports/FinancialDashboard";
+import DebtsCreditsReport from "../components/reports/DebtsCreditsReport";
+import LoansManager from "../components/loans/LoansManager";
+import ChartOfAccounts from "../components/accounting/ChartOfAccounts";
+import AccountingDocsList from "../components/accounting/AccountingDocsList";
+import AccountingDocCreate from "../components/accounting/AccountingDocCreate";
+import AccountingDocView from "../components/accounting/AccountingDocView";
+import AccountingAutoSync from "../components/accounting/AccountingAutoSync";
+import AccountingVerification from "../components/accounting/AccountingVerification";
+import OpeningBalances from "../components/accounting/OpeningBalances";
+import FinancialYearManager from "../components/accounting/FinancialYearManager";
+import WarehousePrintTemplate from "../components/print/WarehousePrintTemplate";
+import InvoicePrintTemplate from "../components/print/InvoicePrintTemplate";
+import AIProductSearchModal from "../components/products/AIProductSearchModal";
+import BulkProductImportModal from "../components/products/BulkProductImportModal";
+import FastProductCreateModal from "../components/products/FastProductCreateModal";
+import PersonProfileView from "../components/persons/PersonProfileView";
+import PersonIOModal from "../components/modals/PersonIOModal";
+import ProductCategoriesView from "../components/products/ProductCategoriesView";
+import {
+  Person,
+  PersonGroup,
+  Product,
+  Account,
+  Cashbox,
+  Warehouse,
+  InvoiceItem,
+  WarehouseStock,
+} from "../types";
+import appVersion from "../version.json";
+import OrderList from "../components/inventory/OrderList";
+const DatePicker = CustomDatePicker;
+
+
+
+
+export function useAppController() {
+const isFastStocktaking = window.location.hash.startsWith('#fast-stocktaking');
+
+if (isFastStocktaking) { /* handled in App.tsx */ }
+
+  const { activeStoreId, setActiveStoreId, availableStores, setAvailableStores, isStoreSelectionOpen, setIsStoreSelectionOpen } = useStore();
+  const [activeFinancialYear, setActiveFinancialYearState] =
+    useState<any>(null);
+
+const [hasCheckedFinancialYears, setHasCheckedFinancialYears] =
+    useState(false);
+
+const [isComposeOpen, setIsComposeOpen] = useState(false);
+
+const fetchFinancialYearInfo = async () => {
+    try {
+      const years = await getFinancialYears();
+      const active = years.find((y: any) => y.status === "open") || null;
+      setActiveFinancialYearState(active);
+      setHasCheckedFinancialYears(true);
+    } catch (e) {
+      console.error("fetchFinancialYearInfo error", e);
+    }
+  };
+
+const [priceChangeProduct, setPriceChangeProduct] = useState<any>(null);
+
+const [historyProductId, setHistoryProductId] = useState<string | null>(null);
+
+  const [confirmState, setConfirmState] = useState<{
+    isOpen: boolean;
+    message: string;
+    title?: string;
+    confirmText?: string;
+    cancelText?: string;
+    type?: 'danger' | 'warning' | 'success' | 'info';
+    confirmButtonClass?: string;
+    details?: React.ReactNode;
+    onConfirm: () => Promise<void> | void;
+    loading?: boolean;
+  }>({ isOpen: false, message: "", onConfirm: () => {} });
+
+  const confirmAction = (
+    message: string,
+    onConfirm: () => Promise<void> | void,
+    details?: React.ReactNode,
+    options?: {
+      title?: string;
+      confirmText?: string;
+      cancelText?: string;
+      type?: 'danger' | 'warning' | 'success' | 'info';
+      confirmButtonClass?: string;
+    }
+  ) => {
+    setConfirmState({
+      isOpen: true,
+      message,
+      onConfirm,
+      details,
+      loading: false,
+      title: options?.title,
+      confirmText: options?.confirmText,
+      cancelText: options?.cancelText,
+      type: options?.type,
+      confirmButtonClass: options?.confirmButtonClass,
+    });
+  };
+
+const { user, loading: authLoading, signIn, signOut } = useAuth();
+
+
+// Removed activeStoreId state
+// Removed availableStores state
+// Removed isStoreSelectionOpen state
+
+useEffect(() => {
+  fetch('/api/databases', { headers: getAuthHeaders() }).then(r => r.json()).then(d => {
+    if (d.success && Array.isArray(d.databases)) setAvailableStores(d.databases);
+  }).catch(() => {});
+}, []);
+
+  const location = useLocation();
+  const navigate = useNavigate();
+  const activeTab = location.pathname.substring(1) || "welcome_page";
+  const setRawActiveTab = (tab: string) => navigate("/" + tab);
+
+
+// Hash routing replaced by React Router
+
+const setActiveTab = (tab: any, force: boolean = false) => {
+    if (tab === activeTab) return;
+
+    if (tab !== "welcome_page" && user && !hasPagePermission(user, tab)) {
+      showNotification(`دسترسی به بخش «${getPageTitle(tab)}» برای شما مجاز نیست.`, "warning");
+      return;
+    }
+
+    if (!force) {
+      const isInvoiceTab =
+        activeTab === "create_sale" ||
+        activeTab === "create_purchase" ||
+        activeTab === "create_warehouse_doc";
+      if (isInvoiceTab && items && (items || []).length > 0) {
+        confirmAction(
+          "فاکتور/سند در حال ثبت است. در صورت خروج از این صفحه، اطلاعات وارد شده حذف خواهد شد. آیا مطمئن هستید؟",
+          () => {
+            setItems([]);
+            setCustomerId("");
+            setInvoicePaidAmount(0);
+            setOverallDiscountPercent(0);
+            setRawActiveTab(tab);
+          },
+        );
+        return;
+      }
+
+      const isReceiptTab =
+        activeTab === "create_receive_receipt" ||
+        activeTab === "create_pay_receipt";
+      if (
+        isReceiptTab &&
+        receiptLinkedInvoices &&
+        Object.keys(receiptLinkedInvoices).length > 0
+      ) {
+        confirmAction(
+          "رسید در حال ثبت است. در صورت خروج از این صفحه، اطلاعات وارد شده حذف خواهد شد. آیا مطمئن هستید؟",
+          () => {
+            setReceiptLinkedInvoices({});
+            setReceiptPersonId("");
+            setReceiptAmount("");
+            setRawActiveTab(tab);
+          },
+        );
+        return;
+      }
+    }
+
+    setRawActiveTab(tab);
+  };
+
+const [systemModule, setSystemModule] = useState<"sales" | "purchase" | "accounting" | "selector" | "crm" | "hr" | "reports_module" | "all" | "commerce" | "inventory" | "admin">("selector");
+
+const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+const [isCalculatorOpen, setIsCalculatorOpen] = useState(false);
+
+const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+
+const [isChangelogModalOpen, setIsChangelogModalOpen] = useState(false);
+
+const [isFullWidth, setIsFullWidth] = useState<boolean>(false);
+
+const [menuLayout, setMenuLayout] = useState<"vertical" | "horizontal">("vertical");
+
+const [expandedGroups, setExpandedGroups] = useState<{ [key: string]: boolean }>({
+        sales_operations: true,
+        purchase_operations: false,
+        receipts_payments: false,
+        checks_management: false,
+        loans_management: false,
+        base_info: false,
+        reports: true,
+        settings: false,
+      });
+
+const [userSettingsLoaded, setUserSettingsLoaded] = useState(false);
+
+useEffect(() => {
+    if (user?.id) {
+      
+      try {
+        const localSettingsStr = localStorage.getItem('user_settings_' + user.id);
+        if (localSettingsStr) {
+          const settings = JSON.parse(localSettingsStr);
+          if (settings.systemModule) setSystemModule(settings.systemModule);
+          if (settings.isFullWidth !== undefined) setIsFullWidth(settings.isFullWidth);
+          if (settings.menuLayout) setMenuLayout(settings.menuLayout);
+          if (settings.expandedGroups) setExpandedGroups(settings.expandedGroups);
+        }
+      } catch(e) {}
+      setUserSettingsLoaded(true);
+    } else {
+      setUserSettingsLoaded(false);
+    }
+  }, [user?.id]);
+
+useEffect(() => {
+    if (user?.id && userSettingsLoaded) {
+      localStorage.setItem('user_settings_' + user.id, JSON.stringify({
+        systemModule,
+        isFullWidth,
+        menuLayout,
+        expandedGroups
+      }));
+    }
+  }, [user?.id, userSettingsLoaded, systemModule, isFullWidth, menuLayout, expandedGroups]);
+
+useEffect(() => {
+    setLastCreatedReceipt(null);
+    setAutoSaveInvoiceId(null);
+    if (editingInvoiceId) return; // Prevent overwriting title/type when editing
+    if (activeTab === "create_sale") {
+      setInvoiceType("sale");
+      setInvoiceTitle("فاکتور فروش کالا");
+    } else if (activeTab === "create_sale_return") {
+      setInvoiceType("sale_return");
+      setInvoiceTitle("فاکتور برگشت از فروش");
+    } else if (activeTab === "create_purchase_return") {
+      setInvoiceType("purchase_return");
+      setInvoiceTitle("فاکتور برگشت از خرید");
+    } else if (activeTab === "create_purchase") {
+      setInvoiceType("purchase");
+      setInvoiceTitle("فاکتور خرید کالا");
+    } else if (activeTab === "create_warehouse_doc") {
+      setInvoiceType("warehouse_receipt");
+      setInvoiceTitle("اسناد انبار (ورود/خروج)");
+      setWarehouseWizardStep(1);
+      setWarehouseOperationType("purchase_invoice");
+    }
+  }, [activeTab]);
+
+const [persons, setPersons] = useState<Person[]>([]);
+const [allPersons, setAllPersons] = useState<Person[]>([]);
+
+const [personOpeningBalances, setPersonOpeningBalances] = useState<any[]>([]);
+
+const [isOpeningBalanceModalOpen, setIsOpeningBalanceModalOpen] =
+    useState(false);
+
+const [editingOpeningBalanceId, setEditingOpeningBalanceId] = useState<
+    string | null
+  >(null);
+
+const [selectedOpeningBalancePersonId, setSelectedOpeningBalancePersonId] =
+    useState("");
+
+const [openingBalanceAmount, setOpeningBalanceAmount] = useState("");
+
+const [openingBalanceType, setOpeningBalanceType] = useState<
+    "debtor" | "creditor"
+  >("debtor");
+
+const [openingBalanceDate, setOpeningBalanceDate] = useState<any>(
+    new Date(),
+  );
+
+const [openingBalanceDescription, setOpeningBalanceDescription] =
+    useState("");
+
+const [openingBalanceSearch, setOpeningBalanceSearch] = useState("");
+
+const [submittingOpeningBalance, setSubmittingOpeningBalance] =
+    useState(false);
+
+const [personGroups, setPersonGroups] = useState<PersonGroup[]>([]);
+
+const [personRoles, setPersonRoles] = useState<any[]>([]);
+  const [personCategories, setPersonCategories] = useState<any[]>([]);
+
+const [products, setProducts] = useState<Product[]>([]);
+
+const [invoices, setInvoices] = useState<any[]>([]);
+
+const [inventoryTransactions, setInventoryTransactions] = useState<any[]>([]);
+
+const [editingInvoiceId, setEditingInvoiceId] = useState<string | null>(null);
+
+const [accounts, setAccounts] = useState<Account[]>([]);
+
+const [cashboxes, setCashboxes] = useState<Cashbox[]>([]);
+
+const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+
+const [warehouseStocks, setWarehouseStocks] = useState<WarehouseStock[]>([]);
+
+const [loans, setLoans] = useState<import("../types").Loan[]>([]);
+
+const [installments, setInstallments] = useState<
+    import("../types").Installment[]
+  >([]);
+
+const [warehouseSubTab, setWarehouseSubTab] = useState<"list" | "stocks">(
+    "list",
+  );
+
+const [recalculating, setRecalculating] = useState(false);
+
+const [personSearchTerm, setPersonSearchTerm] = useState("");
+
+const [productSearchTerm, setProductSearchTerm] = useState("");
+
+const [selectedProductIds, setSelectedProductIds] = useState<(string | number)[]>([]);
+
+const [whStockSearch, setWhStockSearch] = useState("");
+
+const [selectedProductCategory, setSelectedProductCategory] =
+    useState<string>("all");
+
+const [selectedPersonGroup, setSelectedPersonGroup] = useState<string>("all");
+
+const [selectedPersonRole, setSelectedPersonRole] = useState<string>("all");
+
+const [personCurrentPage, setPersonCurrentPage] = useState<number>(1);
+
+const [personPageSize, setPersonPageSize] = useState<number>(20);
+
+const [personsViewMode, setPersonsViewMode] = useState<"list" | "table">(
+    "table",
+  );
+
+const [productCurrentPage, setProductCurrentPage] = useState<number>(1);
+
+const [productPageSize, setProductPageSize] = useState<number>(20);
+
+const [invoiceCurrentPage, setInvoiceCurrentPage] = useState<number>(1);
+
+const [invoicePageSize, setInvoicePageSize] = useState<number>(20);
+
+const [newPersonGroupName, setNewPersonGroupName] = useState("");
+
+const [newPersonGroupColor, setNewPersonGroupColor] = useState("indigo");
+
+const [editingPersonGroupId, setEditingPersonGroupId] = useState<
+    string | null
+  >(null);
+
+const [newPersonRoleName, setNewPersonRoleName] = useState("");
+
+const [newPersonRoleCode, setNewPersonRoleCode] = useState("");
+
+const [editingPersonRoleId, setEditingPersonRoleId] = useState<string | null>(
+    null,
+  );
+
+const getRoleName = (roleId?: string) => {
+    if (!roleId) return "نامشخص";
+    const role = personRoles.find((r) => r.id === roleId);
+    return role
+      ? role.name
+      : roleId === "customer"
+        ? "مشتری"
+        : roleId === "supplier"
+          ? "تامین کننده"
+          : roleId === "employee"
+            ? "کارمند"
+            : "نامشخص";
+  };
+
+const getRoleBadgeClasses = (roleId?: string) => {
+    const role = personRoles.find((r) => r.id === roleId);
+    if (role && role.color) return role.color;
+    return roleId === "customer"
+      ? "bg-emerald-50 text-emerald-800 border-emerald-100"
+      : roleId === "supplier"
+        ? "bg-orange-50 text-orange-850 border-orange-100"
+        : "bg-purple-50 text-purple-800 border-purple-100";
+  };
+
+  const formatPersonName = (person: any, personsList?: any[]): string => {
+    if (!person) return "نامشخص";
+    if (typeof person === "string" || typeof person === "number") {
+      const list = personsList || persons || [];
+      const found = list.find((p: any) => p && String(p.id) === String(person));
+      if (found) return formatPersonName(found);
+      return "نامشخص";
+    }
+    if (person.alias?.trim()) return person.alias.trim();
+    if (person.name?.trim()) return person.name.trim();
+    const fullName = `${person.firstName || ''} ${person.lastName || ''}`.trim();
+    if (fullName) return fullName;
+    if (person.companyName?.trim()) return person.companyName.trim();
+    if (person.title?.trim()) return person.title.trim();
+    return "نامشخص";
+  };
+
+  const mapPersonToOption = (p: any) => {
+    const displayName = formatPersonName(p);
+    return {
+      value: p.id.toString(),
+      label:
+        (p.personCode ? "[" + p.personCode + "] " : "") +
+        (displayName !== "نامشخص" ? displayName : "طرف‌حساب") +
+        " (" +
+        getRoleName(p.role) +
+        ")",
+      imageUrl: p.imageUrl,
+      searchStr: `${displayName} ${p.alias || ""} ${p.name || ""} ${p.title || ""} ${p.firstName || ""} ${p.lastName || ""} ${p.phone || ""} ${p.nationalId || ""} ${p.personCode || ""} ${p.companyName || ""} ${p.fatherName || ""} ${(Array.isArray(p.tags) ? p.tags.join(" ") : "")}`,
+    };
+  };
+
+  const activePersonsOnly = useMemo(() => {
+    const source = (allPersons && allPersons.length > 0) ? allPersons : persons;
+    return (source || []).filter((p) => p.isActive !== false);
+  }, [allPersons, persons]);
+
+const filteredPersons = (persons || []).filter((p) => {
+    // 0. Role Filter
+    if (selectedPersonRole !== "all" && p.role !== selectedPersonRole) {
+      return false;
+    }
+
+    // 1. Group Filter
+    if (selectedPersonGroup !== "all") {
+      if (selectedPersonGroup === "none") {
+        if (p.group && p.group.trim() !== "") return false;
+      } else {
+        if (p.group !== selectedPersonGroup) return false;
+      }
+    }
+
+    // 2. Search Filter
+    if (!personSearchTerm) return true;
+    const terms = personSearchTerm.toLowerCase().split(" ").filter(Boolean);
+    const grp = personGroups.find((g) => g.id === p.group);
+    const searchable =
+      `${p.name || ""} ${p.alias || ""} ${p.firstName || ""} ${p.lastName || ""} ${p.phone || ""} ${p.nationalId || ""} ${p.personCode || ""} ${p.accountingCode || ""} ${p.companyName || ""} ${p.fatherName || ""} ${p.taxNumber || ""} ${(p as any).mobile || ""} ${grp?.name || ""} ${(Array.isArray(p.tags) ? p.tags.join(" ") : "")}`.toLowerCase();
+    return terms.every((term) => searchable.includes(term));
+  });
+
+useEffect(() => {
+    setPersonCurrentPage(1);
+  }, [personSearchTerm, selectedPersonGroup, personPageSize]);
+
+useEffect(() => {
+    setProductCurrentPage(1);
+  }, [productSearchTerm, selectedProductCategory, productPageSize]);
+
+const [transactions, setTransactions] = useState<any[]>([]);
+
+const [payslips, setPayslips] = useState<any[]>([]);
+
+const [accountingDocuments, setAccountingDocuments] = useState<any[]>([]);
+
+const [checkbooks, setCheckbooks] = useState<any[]>([]);
+
+const [issuedChecks, setIssuedChecks] = useState<any[]>([]);
+
+const [receivedChecks, setReceivedChecks] = useState<any[]>([]);
+
+const [smsMessages, setSmsMessages] = useState<any[]>([]);
+
+const [storeSettings, setStoreSettings] = useState<any>(() => {
+    let cachedProfile: any = {};
+    let savedTheme = 'classic';
+    if (typeof window !== 'undefined' && window.localStorage) {
+      try {
+        const stored = localStorage.getItem('number_format_config') || localStorage.getItem('company_profile');
+        if (stored) cachedProfile = JSON.parse(stored);
+        savedTheme = localStorage.getItem('app_theme') || cachedProfile.theme || 'classic';
+      } catch (_) {}
+    }
+    return {
+      storeName: "فروشگاه پیش‌فرض",
+      address: "",
+      phone: "",
+      logoUrl: "",
+      currency: "تومان",
+      isSetup: false,
+      fontFamily: "Vazirmatn",
+      theme: savedTheme,
+      dateFormat: "YYYY/MM/DD",
+      dateSeparator: "/",
+      dateYearFormat: "YYYY",
+      dateShowTime: true,
+      dateTimeFormat: "24",
+      calendarType: "jalali",
+      use_decimals: cachedProfile.use_decimals ?? false,
+      decimal_places: cachedProfile.decimal_places ?? 2,
+    };
+  });
+
+const isGmailTheme = storeSettings?.theme === "gmail";
+
+const [loading, setLoading] = useState(false);
+
+const [requiresInitSetup, setRequiresInitSetup] = useState(false);
+
+const sendNotification = async (
+    message: string,
+    personPhone: string,
+    method?: string,
+    extraMeta?: {
+      recipientName?: string;
+      recipientId?: string | number;
+      source?: string;
+      status?: string;
+      priority?: number;
+    }
+  ) => {
+    const cleanPhone = String(personPhone || "").trim().replace(/\s+/g, "");
+    if (!cleanPhone && !extraMeta?.recipientName) return;
+
+    const isSent = Boolean(method && method !== "none" && (method === "sms" || method === "gsm"));
+    const status = extraMeta?.status || (isSent ? "sent" : "queued");
+
+    const msgObj = {
+      id: generateCiteableMessageId(smsMessages),
+      recipientNumber: cleanPhone,
+      recipientName: extraMeta?.recipientName || "مشتری/مخاطب",
+      recipientId: extraMeta?.recipientId ? String(extraMeta.recipientId) : null,
+      recipientType: "contact",
+      messageBody: message,
+      messageLength: (message || "").length,
+      partsCount: Math.ceil(((message || "").length) / 70) || 1,
+      status: status,
+      providerId: isSent ? (method || "sms_default") : null,
+      source: extraMeta?.source || "panel",
+      priority: extraMeta?.priority ?? 0,
+      cost: 0,
+      currency: storeSettings?.currency || "IRR",
+      sentAt: isSent ? new Date().toISOString() : null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      // Backwards compatibility keys
+      recipient: cleanPhone,
+      message: message,
+      provider: method || "panel",
+      timestamp: Date.now(),
+    };
+
+    await addSmsMessage(msgObj);
+    setSmsMessages((prev) => [...prev, msgObj]);
+
+    if (isSent) {
+      setTimeout(() => {
+        let icon = "📱";
+        if (method === "whatsapp") icon = "🟢";
+        if (method === "gsm") icon = "📡";
+        setSuccessMsg(
+          icon + " پیامک/اطلاع‌رسانی به " + (cleanPhone || extraMeta?.recipientName) + " ارسال شد.",
+        );
+      }, 1000);
+    } else {
+      setSuccessMsg(
+        "پیامک به شماره " + (cleanPhone || extraMeta?.recipientName) + " در جدول پیام‌ها ثبت شد (آماده ارسال با انتخاب کانال).",
+      );
+    }
+  };
+
+const [receiptNumber, setReceiptNumber] = useState("");
+
+const [receiptPersonId, setReceiptPersonId] = useState<string | number | "">(
+    "",
+  );
+
+const [receiptPersonSearchText, setReceiptPersonSearchText] = useState("");
+
+const [isReceiptPersonDropdownOpen, setIsReceiptPersonDropdownOpen] =
+    useState(false);
+
+const [printingTransaction, setPrintingTransaction] = useState<any>(null);
+
+const [receiptDate, setReceiptDate] = useState<Date | any>(new Date());
+
+const [receiptAmount, setReceiptAmount] = useState<string>("");
+
+const [receiptResourceType, setReceiptResourceType] = useState<
+    "bank" | "cashbox" | "person"
+  >("bank");
+
+const [receiptTargetPersonId, setReceiptTargetPersonId] = useState<string | number | "">("");
+const [receiptTransferDirection, setReceiptTransferDirection] = useState<"from_first_to_second" | "from_second_to_first">("from_first_to_second");
+
+const [receiptMethod, setReceiptMethod] = useState<"cash" | "check">("cash");
+
+const [receiptCheckNumber, setReceiptCheckNumber] = useState("");
+
+const [receiptCheckDueDate, setReceiptCheckDueDate] = useState<Date | any>(
+    new Date(),
+  );
+
+const [receiptCheckBankName, setReceiptCheckBankName] = useState("");
+
+const [receiptCheckbookId, setReceiptCheckbookId] = useState<
+    string | number | ""
+  >("");
+
+const [receiptResourceId, setReceiptResourceId] = useState<
+    string | number | ""
+  >("");
+
+const [receiptDescription, setReceiptDescription] = useState<string>("");
+
+const [receiptNote, setReceiptNote] = useState<string>("");
+
+const [receiptLinkedInvoices, setReceiptLinkedInvoices] = useState<
+    Record<string, number>
+  >({});
+
+const [submittingReceipt, setSubmittingReceipt] = useState<boolean>(false);
+
+const receiptSuccessMsg = false;
+
+const [salaryPersonId, setSalaryPersonId] = useState<string | number | "">(
+    "",
+  );
+
+const [salaryDate, setSalaryDate] = useState<any>(new Date());
+
+const [salaryPeriodMonth, setSalaryPeriodMonth] = useState<string>("1");
+
+const [salaryPeriodYear, setSalaryPeriodYear] = useState<string>("1403");
+
+const [salaryBaseAmount, setSalaryBaseAmount] = useState<string>("");
+
+const [salaryHousingAllowance, setSalaryHousingAllowance] =
+    useState<string>("");
+
+const [salaryGroceryAllowance, setSalaryGroceryAllowance] =
+    useState<string>("");
+
+const [salaryOtherAllowances, setSalaryOtherAllowances] =
+    useState<string>("");
+
+const [salaryInsuranceDeduction, setSalaryInsuranceDeduction] =
+    useState<string>("");
+
+const [salaryTaxDeduction, setSalaryTaxDeduction] = useState<string>("");
+
+const [salaryOtherDeductions, setSalaryOtherDeductions] =
+    useState<string>("");
+
+const [salaryDescription, setSalaryDescription] = useState<string>("");
+
+const [salaryResourceId, setSalaryResourceId] = useState<
+    string | number | ""
+  >("");
+
+const salarySuccessMsg = false;
+
+const [submittingSalary, setSubmittingSalary] = useState<boolean>(false);
+
+const [viewingPayslip, setViewingPayslip] = useState<any | null>(null);
+
+const [printingPersonLedger, setPrintingPersonLedger] = useState<any | null>(
+    null,
+  );
+
+const [printingBarcodeProduct, setPrintingBarcodeProduct] = useState<
+    any | null
+  >(null);
+
+const [ledgerPersonId, setLedgerPersonId] = useState<string | number | "">(
+    "",
+  );
+
+const [profilePersonId, setProfilePersonId] = useState<string | number | "">(
+    "",
+  );
+
+const [ledgerTab, setLedgerTab] = useState<
+    "transactions" | "detailed" | "items" | "checks" | "drafts" | "notes"
+  >("transactions");
+
+const [drawerPersonId, setDrawerPersonId] = useState<string | number | "">(
+    "",
+  );
+
+const [reportDateRange, setReportDateRange] = useState<Date[]>([]);
+
+const [viewingInvoice, setViewingInvoice] = useState<any>(null);
+
+const [viewingCheck, setViewingCheckState] = useState<any>(null);
+   const setViewingCheck = (val: any) => {
+     setViewingCheckState(val);
+     if (val) setActiveTab('check_card');
+   };
+
+const [viewingAccountingDoc, setViewingAccountingDoc] = useState<any>(null);
+
+const [isAccountingDocModalOpen, setIsAccountingDocModalOpen] = useState(false);
+
+const [editingAccountingDoc, setEditingAccountingDoc] = useState<any>(null);
+
+const [pricingWizardInvoice, setPricingWizardInvoice] = useState<any>(null);
+
+const [pricingWizardItems, setPricingWizardItems] = useState<any[]>([]);
+
+const [pricingPrintMode, setPricingPrintMode] = useState<"list" | "labels">(
+    "list",
+  );
+
+const [invoiceSearchQuery, setInvoiceSearchQuery] = useState("");
+
+const [invoiceGroupMode, setInvoiceGroupMode] = useState<
+    "none" | "month" | "season"
+  >("none");
+
+const [previewInvoiceData, setPreviewInvoiceData] = useState<any>(null);
+
+const [previewReceiptData, setPreviewReceiptData] = useState<any>(null);
+
+const [editingReceipt, setEditingReceipt] = useState<any>(null);
+
+const [isEditReceiptModalOpen, setIsEditReceiptModalOpen] = useState(false);
+
+const [lastCreatedReceipt, setLastCreatedReceipt] = useState<any>(null);
+
+const [showProductBarcodesList, setShowProductBarcodesList] = useState(false);
+
+const [latestVersion, setLatestVersion] = useState<string | null>(null);
+
+const [latestCommits, setLatestCommits] = useState<any[]>([]);
+
+const [latestGithubSha, setLatestGithubSha] = useState<string | null>(null);
+
+const [checkingUpdateVersion, setCheckingUpdateVersion] = useState(false);
+
+const [hasPromptedUpdate, setHasPromptedUpdate] = useState(false);
+
+const [didConfirmUpdate, setDidConfirmUpdate] = useState(false);
+
+useEffect(() => {
+    if (!checkingUpdateVersion && !hasPromptedUpdate) {
+      const fetchLatestVersion = async () => {
+        setCheckingUpdateVersion(true);
+        try {
+          const timestamp = new Date().getTime();
+          const [resVer, resCom] = await Promise.all([
+            fetch(
+              `https://api.github.com/repos/bazyarlivecom/Store-accounting-system/releases/latest?t=${timestamp}`,
+              { cache: "no-store" },
+            ),
+            fetch(
+              `https://api.github.com/repos/bazyarlivecom/Store-accounting-system/commits?per_page=10&t=${timestamp}`,
+              { cache: "no-store" },
+            ),
+          ]);
+    
+          let fetchedVer = "Build 2.9.0";
+
+          if (resVer.ok) {
+            const data = await resVer.json();
+            fetchedVer = data.tag_name || data.name || "Build 2.9.0";
+            setLatestVersion(fetchedVer);
+          } else {
+            setLatestVersion("Build 2.9.0");
+          }
+          if (resCom.ok) {
+            const commits = await resCom.json();
+            if (commits.length > 0) {
+              setLatestGithubSha(commits[0].sha);
+              let currentLocalSha = localStorage.getItem("localCommitSha");
+              if (!currentLocalSha && commits.length > 2) {
+                currentLocalSha = commits[2].sha;
+                localStorage.setItem("localCommitSha", currentLocalSha);
+              }
+              const newCommits = [];
+              for (const c of commits) {
+                if (c.sha === currentLocalSha) break;
+                newCommits.push(c);
+              }
+              setLatestCommits(newCommits);
+            }
+          }
+        } catch (error) {
+          setLatestVersion("Build 2.9.0");
+        } finally {
+          setCheckingUpdateVersion(false);
+          setHasPromptedUpdate(true);
+        }
+      };
+      fetchLatestVersion();
+    }
+  }, [checkingUpdateVersion, hasPromptedUpdate]);
+
+const [invoiceType, setInvoiceType] = useState<
+    | "sale"
+    | "purchase"
+    | "warehouse_receipt"
+    | "warehouse_remittance"
+    | "proforma"
+    | "sale_return"
+    | "purchase_return"
+  >("sale");
+
+const [listFilter, setListFilter] = useState<any>("all");
+
+const [purchaseFilter, setPurchaseFilter] = useState<
+    "all" | "received" | "pending"
+  >("all");
+
+useEffect(() => {
+    setInvoiceCurrentPage(1);
+  }, [
+    activeTab,
+    invoiceGroupMode,
+    listFilter,
+    invoiceSearchQuery,
+    purchaseFilter,
+  ]);
+
+useEffect(() => {
+    // Reset filters when changing tabs to prevent them from affecting each other
+    setInvoiceSearchQuery("");
+    setListFilter("all");
+    setPurchaseFilter("all");
+  }, [activeTab]);
+
+const [invoiceMode, setInvoiceMode] = useState<"auto" | "manual">("auto");
+
+const [invoiceTitle, setInvoiceTitle] = useState("فاکتور فروش کالا");
+
+const [warehouseWizardStep, setWarehouseWizardStep] = useState(1);
+
+const [warehouseOperationType, setWarehouseOperationType] =
+    useState("purchase_invoice");
+
+const [deletePreviousDocs, setDeletePreviousDocs] = useState(false);
+
+const [invoiceDescription, setInvoiceDescription] = useState("");
+
+const [invoiceNote, setInvoiceNote] = useState("");
+
+const [invoiceWarehouseId, setInvoiceWarehouseId] = useState<
+    string | number | ""
+  >("");
+
+const [invoiceCurrency, setInvoiceCurrency] = useState<string>(() => {
+  return storeSettings?.currency || "تومان";
+});
+
+useEffect(() => {
+  if (storeSettings?.currency && !editingInvoiceId) {
+    setInvoiceCurrency(storeSettings.currency);
+  }
+}, [storeSettings?.currency, editingInvoiceId]);
+
+const defaultSalesWarehouse = useMemo(() => {
+  if (!Array.isArray(warehouses) || warehouses.length === 0) return null;
+  return (
+    warehouses.find((w: any) => (w.isDefault || w.isDefaultSales) && w.isActive !== false) ||
+    warehouses.find((w: any) => w.isActive !== false) ||
+    warehouses[0]
+  );
+}, [warehouses]);
+
+useEffect(() => {
+  if (!editingInvoiceId && (!invoiceWarehouseId || !warehouses.some(w => String(w.id) === String(invoiceWarehouseId)))) {
+    if (defaultSalesWarehouse?.id) {
+      setInvoiceWarehouseId(defaultSalesWarehouse.id);
+    }
+  }
+}, [defaultSalesWarehouse, editingInvoiceId, invoiceWarehouseId, warehouses]);
+
+const [exchangeRate, setExchangeRate] = useState<number>(1);
+
+const [exchangeRateInput, setExchangeRateInput] = useState<string>("1");
+
+const [invoiceNumber, setInvoiceNumber] = useState("");
+
+const [sellerInvoiceNumber, setSellerInvoiceNumber] = useState("");
+
+const [date, setDate] = useState<Date | any>(new Date());
+const [invoiceDueDate, setInvoiceDueDate] = useState<Date | any | null>(null);
+
+const [customerId, setCustomerId] = useState<string | number | "">("");
+const [driverPersonId, setDriverPersonId] = useState<string | number | "">("");
+const [driverName, setDriverName] = useState("");
+const [driverPhone, setDriverPhone] = useState("");
+
+const [receiverPersonId, setReceiverPersonId] = useState<string | number | "">("");
+const [receiverName, setReceiverName] = useState("");
+const [receiverPhone, setReceiverPhone] = useState("");
+
+const [vehiclePlateNumber, setVehiclePlateNumber] = useState("");
+const [shippingAddress, setShippingAddress] = useState("");
+
+const [sourceInvoiceId, setSourceInvoiceId] = useState<string | number | "">(
+    "",
+  );
+
+const [items, setItems] = useState<InvoiceItem[]>([]);
+
+const [overallDiscountPercent, setOverallDiscountPercent] =
+    useState<number>(0);
+
+const [invoicePaymentStatus, setInvoicePaymentStatus] = useState<
+    "paid" | "unpaid" | "partial"
+  >("unpaid");
+const [invoicePaymentAccountId, setInvoicePaymentAccountId] = useState<string>("");
+const [invoicePaidAmount, setInvoicePaidAmount] = useState<number>(0);
+
+const [hasDraft, setHasDraft] = useState<boolean>(false);
+
+const [receiptHasDraft, setReceiptHasDraft] = useState<boolean>(false);
+
+const [autoSaveInvoiceId, setAutoSaveInvoiceId] = useState<string | null>(
+    null,
+  );
+
+const autoSaveDbTimer = useRef<any>(null);
+
+const isAutoSavingDb = useRef<boolean>(false);
+
+const [submitting, setSubmitting] = useState(false);
+const [salePaymentModalPayload, setSalePaymentModalPayload] = useState<any>(null);
+const [isSalePaymentModalOpen, setIsSalePaymentModalOpen] = useState(false);
+
+
+const [transferProposal, setTransferProposal] = useState<{
+    show: boolean;
+    items: {
+      productId: string | number;
+      productName: string;
+      unit: string;
+      required: number;
+      availableInTarget: number;
+      deficit: number;
+      remainingDeficit: number;
+      transfers: {
+        fromWarehouseId: string | number;
+        fromWarehouseName: string;
+        toWarehouseId: string | number;
+        toWarehouseName: string;
+        qty: number;
+      }[];
+    }[];
+    payload: any;
+  } | null>(null);
+
+useEffect(() => {
+    const isReceiptOpen = activeTab === "create_receive_receipt" || activeTab === "create_pay_receipt";
+    if (isReceiptOpen) {
+      if (receiptPersonId || receiptAmount) {
+         if (!receiptNumber) {
+             const docType = activeTab === "create_receive_receipt" ? "receive_receipt" : "pay_receipt";
+             generateDocNumber(docType).then(num => {
+                 setReceiptNumber(num);
+                 updateDocCounter(docType, num);
+             });
+         }
+      }
+      
+      const draft = {
+        receiptNumber,
+        receiptPersonId,
+        receiptDate,
+        receiptAmount,
+        receiptResourceType,
+        receiptMethod,
+        receiptCheckNumber,
+        receiptCheckDueDate,
+        receiptCheckBankName,
+        receiptCheckbookId,
+        receiptResourceId,
+        receiptDescription,
+        receiptNote,
+        receiptLinkedInvoices,
+        activeTab
+      };
+      
+      if (receiptPersonId || receiptAmount || receiptDescription || receiptNote) {
+        localStorage.setItem("receipt_draft", JSON.stringify(draft));
+        setReceiptHasDraft(true);
+      } else {
+        localStorage.removeItem("receipt_draft");
+        setReceiptHasDraft(false);
+      }
+    }
+  }, [
+    receiptPersonId,
+    receiptDate,
+    receiptAmount,
+    receiptResourceType,
+    receiptMethod,
+    receiptCheckNumber,
+    receiptCheckDueDate,
+    receiptCheckBankName,
+    receiptCheckbookId,
+    receiptResourceId,
+    receiptDescription,
+    receiptNote,
+    receiptLinkedInvoices,
+    activeTab
+  ]);
+
+useEffect(() => {
+    if (localStorage.getItem("receipt_draft")) {
+      setReceiptHasDraft(true);
+    }
+  }, []);
+
+const restoreReceiptDraft = () => {
+    const d = localStorage.getItem("receipt_draft");
+    if (d) {
+      try {
+        const parsed = JSON.parse(d);
+        if (parsed.activeTab) setActiveTab(parsed.activeTab);
+        setReceiptPersonId(parsed.receiptPersonId || "");
+        setReceiptDate(parsed.receiptDate || new Date());
+        setReceiptAmount(parsed.receiptAmount || "");
+        setReceiptResourceType(parsed.receiptResourceType || "cashbox");
+        setReceiptMethod(parsed.receiptMethod || "cash");
+        setReceiptCheckNumber(parsed.receiptCheckNumber || "");
+        setReceiptCheckDueDate(parsed.receiptCheckDueDate || new Date());
+        setReceiptCheckBankName(parsed.receiptCheckBankName || "");
+        setReceiptCheckbookId(parsed.receiptCheckbookId || "");
+        setReceiptResourceId(parsed.receiptResourceId || "");
+        setReceiptDescription(parsed.receiptDescription || "");
+        setReceiptNote(parsed.receiptNote || "");
+        setReceiptLinkedInvoices(parsed.receiptLinkedInvoices || {});
+        
+        showNotification("پیشنویس رسید دریافت/پرداخت بازیابی شد.", "info");
+      } catch (e) {}
+    }
+  };
+
+const discardReceiptDraft = () => {
+    localStorage.removeItem("receipt_draft");
+    setReceiptHasDraft(false);
+    
+    // clear form
+    setReceiptPersonId("");
+    setReceiptAmount("");
+    setReceiptDescription("");
+    setReceiptNote("");
+    setReceiptLinkedInvoices({});
+    setReceiptMethod("cash");
+    setReceiptResourceType("cashbox");
+    showNotification("پیشنویس رسید حذف شد.", "info");
+  };
+
+useEffect(() => {
+    if (
+      [
+        "create_sale",
+        "create_purchase",
+        "create_warehouse_doc",
+        "create_sale_return",
+        "create_purchase_return",
+      ].includes(activeTab)
+    ) {
+      const draft = {
+        invoiceMode,
+        invoiceNumber,
+        sellerInvoiceNumber,
+        customerId,
+        sourceInvoiceId,
+        items,
+        overallDiscountPercent,
+        invoiceCurrency,
+        exchangeRate,
+        exchangeRateInput,
+        invoiceType,
+        invoiceTitle,
+        invoiceDescription,
+        invoiceNote,
+        invoiceDueDate,
+        activeTab,
+        autoSaveInvoiceId,
+      };
+      if ((items || []).length > 0 || customerId) {
+        localStorage.setItem("invoice_draft", JSON.stringify(draft));
+        setHasDraft(true);
+      } else {
+        localStorage.removeItem("invoice_draft");
+        setHasDraft(false);
+      }
+
+      // Auto-save to database as draft if person is selected and at least one item is present
+      if (
+        customerId &&
+        (items || []).length > 0 &&
+        !submitting &&
+        invoiceType &&
+        !editingInvoiceId
+      ) {
+        if (autoSaveDbTimer.current) clearTimeout(autoSaveDbTimer.current);
+        autoSaveDbTimer.current = setTimeout(async () => {
+          if (isAutoSavingDb.current) return;
+          isAutoSavingDb.current = true;
+          try {
+            const cleanItems = (items || []).filter(
+              (item) =>
+                item.productName ||
+                item.productId ||
+                (item.quantity > 0 && item.unitPrice > 0),
+            );
+
+            if (cleanItems.length === 0) {
+              isAutoSavingDb.current = false;
+              return;
+            }
+
+            const existingDraft = autoSaveInvoiceId
+              ? invoices.find((i) => i.id === autoSaveInvoiceId)
+              : null;
+            const payload = {
+              id: autoSaveInvoiceId || generateId(),
+              invoiceNumber:
+                existingDraft?.invoiceNumber ||
+                ((invoiceMode === "auto" && !invoiceNumber) ||
+                !invoiceNumber
+                  ? ""
+                  : invoiceNumber),
+              sellerInvoiceNumber: sellerInvoiceNumber || "",
+              title: invoiceTitle,
+              description: invoiceDescription,
+          note: invoiceNote,
+              warehouseId: invoiceWarehouseId,
+              type: invoiceType,
+              currency: invoiceCurrency,
+              date:
+                convertToGregorian(date),
+                              
+              customerId,
+              sourceInvoiceId,
+              items: cleanItems.map((item) => ({
+                ...item,
+                warehouseId: item.warehouseId || invoiceWarehouseId || "",
+              })),
+              overallDiscountPercent,
+              totalAmount: calculateFinalTotal(),
+              paymentStatus: invoicePaymentStatus,
+              paidAmount: Number(invoicePaidAmount) || 0,
+              isDraft: true,
+              status: "draft",
+            };
+
+            if (autoSaveInvoiceId) {
+              try {
+                await updateInvoice(autoSaveInvoiceId, payload);
+              } catch (updErr) {
+                console.warn("Auto-save update failed, recreating draft:", updErr);
+                const added = await addInvoice(payload);
+                setAutoSaveInvoiceId(added.id);
+                if (added.invoiceNumber) {
+                  setInvoiceNumber(added.invoiceNumber);
+                }
+              }
+            } else {
+              const added = await addInvoice(payload);
+              setAutoSaveInvoiceId(added.id);
+              if (added.invoiceNumber) {
+                setInvoiceNumber(added.invoiceNumber);
+              }
+            }
+
+            // Silent fetch to keep the list up to date in the background
+            const updatedInvoices = await getInvoices();
+            setInvoices(updatedInvoices);
+          } catch (e) {
+            console.error("Auto save to DB failed", e);
+          } finally {
+            isAutoSavingDb.current = false;
+          }
+        }, 1500);
+      }
+    }
+  }, [
+    items,
+    customerId,
+    invoiceNumber,
+    sellerInvoiceNumber,
+    sourceInvoiceId,
+    overallDiscountPercent,
+    invoiceCurrency,
+    exchangeRate,
+    invoiceMode,
+    invoiceType,
+    invoiceTitle,
+    invoiceDescription,
+    invoiceNote,
+        invoiceDueDate,
+        activeTab,
+    editingInvoiceId,
+    invoiceWarehouseId,
+    date,
+    invoicePaymentStatus,
+    invoicePaidAmount,
+    autoSaveInvoiceId,
+    submitting,
+  ]);
+
+useEffect(() => {
+    if (localStorage.getItem("invoice_draft")) {
+      setHasDraft(true);
+    }
+  }, []);
+
+const restoreDraft = () => {
+    const d = localStorage.getItem("invoice_draft");
+    if (d) {
+      try {
+        const parsed = JSON.parse(d);
+        if (parsed.activeTab) setActiveTab(parsed.activeTab);
+        setInvoiceMode(parsed.invoiceMode || "auto");
+        setInvoiceNumber(parsed.invoiceNumber || "");
+        setSellerInvoiceNumber(parsed.sellerInvoiceNumber || "");
+        setCustomerId(parsed.customerId || "");
+        setSourceInvoiceId(parsed.sourceInvoiceId || "");
+        setItems((parsed.items || []).map(i => ({ ...i, id: i.id || generateId() })));
+        setOverallDiscountPercent(parsed.overallDiscountPercent || 0);
+        setInvoiceCurrency(parsed.invoiceCurrency || "تومان");
+        setExchangeRate(parsed.exchangeRate || 1);
+        setExchangeRateInput(parsed.exchangeRateInput || "1");
+        setInvoiceDescription(parsed.invoiceDescription || "");
+        setInvoiceNote(parsed.invoiceNote || "");
+        const restoredDraftId = parsed.autoSaveInvoiceId;
+        if (restoredDraftId && (invoices || []).some((i: any) => String(i.id) === String(restoredDraftId))) {
+          setAutoSaveInvoiceId(restoredDraftId);
+        } else {
+          setAutoSaveInvoiceId(null);
+        }
+
+        // Timeout to let activeTab's effect finish, then override
+        setTimeout(() => {
+          setInvoiceType(parsed.invoiceType || "sale");
+          setInvoiceTitle(parsed.invoiceTitle || "");
+        }, 50);
+
+        showNotification("وضعیت ثبت نشده فاکتور، بازیابی شد.", "info");
+      } catch (e) {}
+    }
+  };
+
+const clearDraft = async () => {
+    localStorage.removeItem("invoice_draft");
+    setHasDraft(false);
+    setCustomerId("");
+    setDriverPersonId("");
+    setDriverName("");
+    setDriverPhone("");
+    setReceiverPersonId("");
+    setReceiverName("");
+    setReceiverPhone("");
+    setVehiclePlateNumber("");
+    setShippingAddress("");
+    setItems([]);
+    setOverallDiscountPercent(0);
+    setSourceInvoiceId("");
+    setSellerInvoiceNumber("");
+    setInvoicePaymentAccountId("");
+    if (invoiceMode === "manual") setInvoiceNumber("");
+    setEditingInvoiceId(null);
+    if (autoSaveInvoiceId) {
+      await deleteInvoice(autoSaveInvoiceId);
+      setAutoSaveInvoiceId(null);
+      const updatedInvoices = await getInvoices();
+      setInvoices(updatedInvoices);
+    }
+  };
+
+useEffect(() => {
+    if (hasCheckedFinancialYears && !activeFinancialYear) {
+      if (activeTab !== "financial_years" && activeTab !== "settings") {
+        setActiveTab("financial_years");
+      }
+    }
+  }, [hasCheckedFinancialYears, activeFinancialYear, activeTab]);
+
+useEffect(() => {
+    if (activeTab === "financial_years") {
+      fetchFinancialYearInfo();
+    }
+  }, [activeTab]);
+
+const [notification, setNotification] = useState<{
+    message: string;
+    type: "success" | "error" | "info" | "warning";
+  } | null>(null);
+
+const showNotification = (
+    message: string,
+    type: "success" | "error" | "info" | "warning" = "info",
+    skipAudio: boolean = false
+  ) => {
+    if (!skipAudio) {
+      playAudioFeedback(type);
+    }
+    setNotification({ message, type });
+    setTimeout(() => setNotification(null), 4000);
+  };
+
+const setSuccessMsg = (msg: string) =>
+    msg ? showNotification(msg, "success") : null;
+
+const setReceiptSuccessMsg = (msg: string) =>
+    msg ? showNotification(msg, "success") : null;
+
+const setSalarySuccessMsg = (msg: string) =>
+    msg ? showNotification(msg, "success") : null;
+
+const customAlert = (msg: string) => showNotification(msg, "error");
+
+const successMsg = false;
+
+const [isScannerOpen, setIsScannerOpen] = useState(false);
+
+const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
+
+const handleBulkImportItems = (importedItems: any[]) => {
+    if (!importedItems || importedItems.length === 0) return;
+
+    setItems((currentItems) => {
+      const newItems = [...currentItems];
+
+      importedItems.forEach((imported) => {
+        const { product, quantity, unitPrice, discountPercent } = imported;
+        if (!product) return;
+
+        // Check if exists
+        const existingItemIndex = newItems.findIndex(
+          (i) => i.productId?.toString() === product.id?.toString(),
+        );
+
+        if (
+          existingItemIndex > -1 &&
+          !storeSettings.allowDuplicateInvoiceRows
+        ) {
+          // Update existing
+          newItems[existingItemIndex].quantity += quantity;
+          if (unitPrice > 0) newItems[existingItemIndex].unitPrice = unitPrice;
+          if (discountPercent > 0)
+            newItems[existingItemIndex].discountPercent = discountPercent;
+
+          newItems[existingItemIndex].totalPrice = Math.max(
+            0,
+            newItems[existingItemIndex].quantity *
+              newItems[existingItemIndex].unitPrice *
+              (1 - newItems[existingItemIndex].discountPercent / 100),
+          );
+        } else {
+          // Add new
+          const pPrice = unitPrice > 0 ? unitPrice : product.price || 0;
+          const convertedPrice =
+            exchangeRate > 0 ? pPrice / exchangeRate : pPrice;
+          const unitPriceRounded = Number(convertedPrice.toFixed(4));
+
+          newItems.push({
+            id: generateId(),
+            productId: product.id.toString(),
+            productName: product.name,
+            quantity: quantity > 0 ? quantity : 1,
+            unitPrice: unitPriceRounded,
+            discountPercent: discountPercent || 0,
+            totalPrice:
+              unitPriceRounded *
+              (quantity > 0 ? quantity : 1) *
+              (1 - (discountPercent || 0) / 100),
+            selectedUnit: product.unit || "",
+            unitRatio: product.unitRatio || 1,
+            isSecondaryUnit: false,
+          });
+        }
+      });
+      return newItems;
+    });
+
+    showNotification(
+      `${toPersianDigits(importedItems.length)} کالا با موفقیت اضافه شد.`,
+      "success",
+    );
+  };
+
+const handleBarcodeScan = (code: string) => {
+    setIsScannerOpen(false);
+    const product = products.find((p) => p.isActive !== false && p.barcode === code);
+    if (product) {
+      playAudioFeedback("scan" as any);
+      handleFastAddProduct(String(product.id));
+      showNotification("کالا با موفقیت اضافه شد", "success", true);
+    } else {
+      playAudioFeedback("scan_error" as any);
+      showNotification("کالا با این بارکد یافت نشد", "error", true);
+    }
+  };
+
+
+const [productCategories, setProductCategories] = useState<any[]>([]);
+
+const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
+
+const [newCatName, setNewCatName] = useState("");
+
+const [newCatParentId, setNewCatParentId] = useState("");
+
+const [editingCategoryId, setEditingCategoryId] = useState<any>(null);
+
+const [newCatDesc, setNewCatDesc] = useState("");
+
+const [submittingProduct, setSubmittingProduct] = useState(false);
+
+const [submittingCategory, setSubmittingCategory] = useState(false);
+
+const [newCashboxBalance, setNewCashboxBalance] = useState("");
+
+const [newWarehouseName, setNewWarehouseName] = useState("");
+
+const [newWarehouseManager, setNewWarehouseManager] = useState("");
+
+const [newWarehouseLocation, setNewWarehouseLocation] = useState("");
+
+const [newWarehouseIsActive, setNewWarehouseIsActive] = useState(true);
+
+const handleSubmitPerson = async (e: any) => { e.preventDefault(); };
+
+const [isProductModalOpen, setIsProductModalOpen] = useState(false);
+
+const [isFastProductModalOpen, setIsFastProductModalOpen] = useState(false);
+
+const [isProductActionsMenuOpen, setIsProductActionsMenuOpen] =
+    useState(false);
+
+const [isGenerateBarcodesModalOpen, setIsGenerateBarcodesModalOpen] =
+    useState(false);
+
+const [isAIProductSearchOpen, setIsAIProductSearchOpen] = useState(false);
+
+const [barcodeFormat, setBarcodeFormat] = useState("prefix_serial");
+
+const [barcodePrefix, setBarcodePrefix] = useState("PRD-");
+
+const [barcodeLength, setBarcodeLength] = useState(6);
+
+const [barcodeStartNumber, setBarcodeStartNumber] = useState(1000);
+
+const [isGroupPriceModalOpen, setIsGroupPriceModalOpen] = useState(false);
+
+const [groupUpdateType, setGroupUpdateType] = useState<"category" | "single" | "selected">(
+    "category",
+  );
+
+const [groupUpdateTargetCategory, setGroupUpdateTargetCategory] =
+    useState<string>("all");
+
+const [groupUpdateTargetProduct, setGroupUpdateTargetProduct] =
+    useState<string>("");
+
+const [groupUpdateAmount, setGroupUpdateAmount] = useState<string>("");
+
+const [groupUpdateDate, setGroupUpdateDate] = useState<string>(new Date().toISOString().split('T')[0]);
+
+const [groupUpdatePriceTarget, setGroupUpdatePriceTarget] = useState<
+    "sell" | "buy" | "both"
+  >("sell");
+
+const [isPersonModalOpen, setIsPersonModalOpen] = useState(false);
+
+const [personLedgerActionsOpen, setPersonLedgerActionsOpen] = useState(false);
+
+const [openPersonActionsId, setOpenPersonActionsId] = useState<
+    string | number | null
+  >(null);
+
+const [newPersonType, setNewPersonType] = useState<"real" | "legal">("real");
+
+const [newPersonGender, setNewPersonGender] = useState<
+    "male" | "female" | "none"
+  >("none");
+
+const [newPersonTitle, setNewPersonTitle] = useState("");
+
+const [newPersonAlias, setNewPersonAlias] = useState("");
+
+const [newPersonFirstName, setNewPersonFirstName] = useState("");
+
+const [newPersonLastName, setNewPersonLastName] = useState("");
+
+const [newPersonCompanyName, setNewPersonCompanyName] = useState("");
+
+const [newPersonFatherName, setNewPersonFatherName] = useState("");
+
+const [newPersonNationalId, setNewPersonNationalId] = useState("");
+
+const [newPersonAddress, setNewPersonAddress] = useState("");
+
+const [newPersonImage, setNewPersonImage] = useState("");
+
+const [newPersonRole, setNewPersonRole] = useState<string>("");
+
+const [newPersonAccountingCode, setNewPersonAccountingCode] = useState("");
+
+const [newPersonPhone, setNewPersonPhone] = useState("");
+
+const [newPersonContacts, setNewPersonContacts] = useState<any[]>([]);
+
+const [newPersonGroup, setNewPersonGroup] = useState("");
+
+const [newPersonProvince, setNewPersonProvince] = useState("");
+
+const [newPersonCity, setNewPersonCity] = useState("");
+
+const [newPersonIsActive, setNewPersonIsActive] = useState(true);
+
+const [newPersonRegistrationDate, setNewPersonRegistrationDate] = useState<
+    Date | any
+  >(new Date());
+
+const [newPersonInitialBalance, setNewPersonInitialBalance] = useState("");
+
+const [newPersonInitialBalanceType, setNewPersonInitialBalanceType] =
+    useState<"debtor" | "creditor" | "settled">("settled");
+
+const [newPersonCreditLimit, setNewPersonCreditLimit] = useState("");
+  const [newPersonTaxNumber, setNewPersonTaxNumber] = useState("");
+  const [newPersonRegistrationNumber, setNewPersonRegistrationNumber] = useState("");
+  const [newPersonRoles, setNewPersonRoles] = useState<string[]>([]);
+  const [newPersonCategories, setNewPersonCategories] = useState<string[]>([]);
+  const [duplicatePersonsWarning, setDuplicatePersonsWarning] = useState<any[]>([]);
+  
+
+const [submittingPerson, setSubmittingPerson] = useState(false);
+
+const [personModalActiveTab, setPersonModalActiveTab] = useState<
+    "basic" | "contact" | "financial" | "settings"
+  >("basic");
+
+const [isPersonExtraModalOpen, setIsPersonExtraModalOpen] = useState(false);
+
+const [personExtraId, setPersonExtraId] = useState<string | number | null>(
+    null,
+  );
+
+const [personBankName, setPersonBankName] = useState("");
+
+const [personBankAcc, setPersonBankAcc] = useState("");
+
+const [personCard, setPersonCard] = useState("");
+
+const [personSheba, setPersonSheba] = useState("");
+
+const [personBankAccounts, setPersonBankAccounts] = useState<any[]>([]);
+
+const [personNotes, setPersonNotes] = useState("");
+
+const [isPersonIOModalOpen, setIsPersonIOModalOpen] = useState(false);
+
+const [personIOAction, setPersonIOAction] = useState<"import" | "export">("export");
+
+const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
+
+const [isCashboxModalOpen, setIsCashboxModalOpen] = useState(false);
+
+const [isWarehouseModalOpen, setIsWarehouseModalOpen] = useState(false);
+
+const [viewingProduct, setViewingProduct] = useState<any>(null);
+
+const [duplicateProductId, setDuplicateProductId] = useState<string | number | null>(null);
+const [editingProductId,
+    setEditingProductId] = useState<
+    string | number | null
+  >(null);
+
+const [editingPersonId, setEditingPersonId] = useState<
+    string | number | null
+  >(null);
+
+const [editingAccountId, setEditingAccountId] = useState<
+    string | number | null
+  >(null);
+
+const [editingCashboxId, setEditingCashboxId] = useState<
+    string | number | null
+  >(null);
+
+const [editingWarehouseId, setEditingWarehouseId] = useState<
+    string | number | null
+  >(null);
+
+const [settingsForm, setSettingsForm] = useState<any>({
+    storeName: "",
+    address: "",
+    phone: "",
+    logoUrl: "",
+    currency: "تومان",
+    fontFamily: "Vazirmatn",
+    theme: "classic",
+    allowNegativeStock: false,
+    requireWarehouse: false,
+    prefix_warehouse_receipt: "REC-",
+    prefix_warehouse_remittance: "REM-",
+    prefix_purchase: "PUR-",
+    prefix_sale: "INV-",
+    prefix_receive_receipt: "RD-",
+    prefix_pay_receipt: "PD-",
+    prefix_proforma: "PF-",
+    prefix_salary: "PAY-",
+    print_footer_note: "",
+    print_signature_1: "",
+    print_signature_2: "",
+    print_signature_3: "",
+    // SMS Notification Toggles by section
+    notify_on_purchase_invoice: false,
+    notify_on_sale_invoice: true,
+    notify_on_return_invoices: false,
+    notify_on_sale_return: false,
+    notify_on_purchase_return: false,
+    notify_on_receive: true,
+    notify_on_payment: true,
+    notify_on_warehouse_receipt: false,
+    notify_on_warehouse_remittance: false,
+    notify_on_invoice_due: true,
+    notify_on_receivable_check: true,
+    notify_on_payable_check: true,
+    notify_on_debtors: true,
+    notify_on_installment: true,
+  });
+
+const [submittingSettings, setSubmittingSettings] = useState(false);
+
+const [settingsTab, setSettingsTab] = useState<string>("general");
+
+const [smsPanelTab, setSmsPanelTab] = useState<"send_history" | "templates">(
+    "send_history",
+  );
+
+const fetchInventoryTransactions = async () => {
+    try {
+      const data = await getInventoryTransactions();
+      setInventoryTransactions(data as any);
+    } catch (error) {
+      console.error("Error fetching inventory transactions", error);
+    }
+  };
+
+const fetchInvoices = async (params?: { search?: string; page?: number; pageSize?: number; type?: string; sortBy?: string; sortOrder?: 'asc' | 'desc'; all?: boolean }) => {
+    try {
+      const data = await getInvoices({
+        search: params?.search ?? invoiceSearchQuery,
+        page: params?.page ?? invoiceCurrentPage,
+        pageSize: params?.pageSize ?? invoicePageSize,
+        type: params?.type,
+        sortBy: params?.sortBy,
+        sortOrder: params?.sortOrder,
+        all: params?.all
+      });
+      const patched = (data || []).map((inv: any) => {
+        if ((inv?.type === "warehouse_receipt" || inv?.type === "warehouse_remittance") && !inv.warehouseId) {
+          const itemWhId = inv.items?.find((it: any) => it?.warehouseId)?.warehouseId;
+          if (itemWhId) {
+            return { ...inv, warehouseId: itemWhId };
+          }
+        }
+        return inv;
+      });
+      setInvoices(patched as any);
+      await fetchInventoryTransactions();
+    } catch (error) {
+      console.error("Error fetching invoices", error);
+    }
+  };
+
+const fetchProducts = async () => {
+    try {
+      const data = await getProducts();
+      setProducts(data as any);
+
+      const cats = await getProductCategories();
+      setProductCategories(cats as any);
+    } catch (error) {
+      console.error("Error fetching products or categories", error);
+    }
+  };
+
+const handleExportProductsData = () => {
+    try {
+      const curr = storeSettings?.currency || "تومان";
+      const excelRows = (products || []).map((p: any, idx: number) => {
+        const catName = (productCategories || []).find((c: any) => c.id?.toString() === p.categoryId?.toString())?.name || "بدون دسته‌بندی";
+        const currentStock = calculateProductCurrentStock ? calculateProductCurrentStock(p.id) : (p.currentStock ?? 0);
+        return {
+          "ردیف": idx + 1,
+          "نام کالا / خدمات": p.name || "",
+          "کد کالا": p.code || "-",
+          "بارکد": p.barcode || "-",
+          "نوع": p.type === "service" ? "خدمات" : "کالا",
+          "دسته‌بندی": catName,
+          [`قیمت خرید (${curr})`]: formatDecimalForExcel(p.buyPrice || 0, storeSettings),
+          [`قیمت فروش (${curr})`]: formatDecimalForExcel(p.sellPrice || 0, storeSettings),
+          "موجودی فعلی": formatDecimalForExcel(currentStock, storeSettings),
+          "حداقل موجودی (نقطه سفارش)": formatDecimalForExcel(p.minStockLevel || 0, storeSettings),
+          "واحد اصلی": p.unit || "عدد",
+          "واحد فرعی": p.subUnit || "-",
+          "ضریب تبدیل": p.unitRatio ? formatDecimalForExcel(p.unitRatio, storeSettings) : "-",
+          "مکان در انبار": p.location || "-",
+          "توضیحات": p.description || ""
+        };
+      });
+
+      const filename = `لیست_کالاها_و_خدمات_${new Date().toLocaleDateString(storeSettings?.calendarType === "gregorian" ? "en-US" : "fa-IR").replace(/\//g, "-")}`;
+      exportToExcel({
+        filename,
+        sheetName: "کالاها و خدمات",
+        data: excelRows,
+        storeSettings
+      });
+
+      showNotification("خروجی اکسل کالاها و خدمات با موفقیت دریافت شد.", "success");
+    } catch (err) {
+      console.error("Error exporting products to excel:", err);
+      showNotification("خطا در صدور فایل اکسل کالاها", "error");
+    }
+  };
+
+const handleDownloadProductsTemplate = () => {
+    const templateData = [
+      {
+        "نام کالا/خدمات (الزامی)": "کالای نمونه",
+        "کد کالا": "1001",
+        بارکد: "1234567890123",
+        "نوع (product/service) (الزامی)": "product",
+        دسته‌بندی: "نوشیدنی‌ها",
+        "قیمت خرید (ریال)": 20000,
+        "قیمت فروش (ریال) (الزامی)": 25000,
+        "موجودی فعلی": 50,
+        "حداقل موجودی": 10,
+        "واحد اصلی (الزامی)": "عدد",
+        "واحد فرعی": "بسته",
+        "تعداد واحد اصلی در فرعی": 10,
+        توضیحات: "این یک کالای نمونه است",
+      },
+    ];
+    const worksheet = XLSX.utils.json_to_sheet(templateData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Template");
+    XLSX.writeFile(workbook, "products_import_template.xlsx");
+    showNotification(
+      "قالب استاندارد با موفقیت دانلود شد. لطفا اطلاعات را در این قالب وارد کرده و سپس درون‌ریزی کنید.", "success"
+    );
+  };
+
+const handleImportProductsData = () => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".xlsx, .xls";
+    input.onchange = (e: any) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = async (event: any) => {
+        try {
+          const data = new Uint8Array(event.target.result);
+          const workbook = XLSX.read(data, { type: "array" });
+          const firstSheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[firstSheetName];
+          const imported = XLSX.utils.sheet_to_json(worksheet);
+
+          if (!Array.isArray(imported) || imported.length === 0) {
+            customAlert("فایل نامعتبر یا خالی است.");
+            return;
+          }
+          if (
+            !confirm(
+              `تعداد ${imported.length} کالا آماده درون‌ریزی است. ادامه می‌دهید؟`,
+            )
+          )
+            return;
+
+          setSubmittingProduct(true);
+    startAppProcessing('شروع فرآیند ثبت کالا...');
+
+          let successCount = 0;
+          let skippedCount = 0;
+          let duplicateMsgs: string[] = [];
+          const currentProducts = [...products];
+
+          for (const p of imported as any[]) {
+            // Check if it's the standard template format
+            if (p["نام کالا/خدمات (الزامی)"] !== undefined) {
+              if (
+                !p["نام کالا/خدمات (الزامی)"] ||
+                !p["نوع (product/service) (الزامی)"] ||
+                !p["قیمت فروش (ریال) (الزامی)"] ||
+                !p["واحد اصلی (الزامی)"]
+              ) {
+                continue; // Skip invalid rows
+              }
+
+              // Duplicate checking before inserting
+              const pName = String(p["نام کالا/خدمات (الزامی)"]);
+              const pCode = p["کد کالا"] ? String(p["کد کالا"]) : "";
+              const pBarcode = p["بارکد"] ? String(p["بارکد"]) : "";
+
+              if (currentProducts.some((pr) => pr.name === pName)) {
+                duplicateMsgs.push(
+                  `نام تکراری: ${pName} - پیشنهاد: تغییر نام کالا`,
+                );
+                skippedCount++;
+                continue;
+              }
+              if (pCode && currentProducts.some((pr) => pr.code === pCode)) {
+                duplicateMsgs.push(
+                  `کد تکراری: ${pCode} (برای ${pName}) - پیشنهاد: تغییر کد`,
+                );
+                skippedCount++;
+                continue;
+              }
+              if (
+                pBarcode &&
+                currentProducts.some((pr) => pr.barcode === pBarcode)
+              ) {
+                duplicateMsgs.push(`بارکد تکراری: ${pBarcode} (برای ${pName})`);
+                skippedCount++;
+                continue;
+              }
+
+              // Handle category
+              let catId = "";
+              const catName = p["دسته‌بندی"];
+              if (catName) {
+                const existingCat = productCategories.find(
+                  (c) => c.name === catName,
+                );
+                if (existingCat) {
+                  catId = existingCat.id;
+                } else {
+                  // Create category if it doesn't exist
+                  const newCat = await addProductCategory({
+                    name: String(catName),
+                  });
+                  if (newCat) {
+                    catId = newCat.id;
+                    const fetchedCats = await getProductCategories();
+                    setProductCategories(fetchedCats as any); // refresh categories list
+                  }
+                }
+              }
+
+              const payload = {
+                name: pName,
+                code: pCode,
+                barcode: pBarcode,
+                type:
+                  p["نوع (product/service) (الزامی)"] === "service"
+                    ? "service"
+                    : "product",
+                categoryId: catId,
+                category: catName ? String(catName) : "",
+                purchasePrice: Number(p["قیمت خرید (ریال)"] || 0),
+                buyPrice: Number(p["قیمت خرید (ریال)"] || 0),
+                sellPrice: Number(p["قیمت فروش (ریال) (الزامی)"] || 0),
+                price: Number(p["قیمت فروش (ریال) (الزامی)"] || 0),
+                stock: Number(p["موجودی فعلی"] || 0),
+                minStock: Number(p["حداقل موجودی"] || 0),
+                unit: String(p["واحد اصلی (الزامی)"]),
+                secondaryUnit: p["واحد فرعی"] ? String(p["واحد فرعی"]) : "",
+                unitRatio: Number(p["تعداد واحد اصلی در فرعی"] || 1),
+                description: p["توضیحات"] ? String(p["توضیحات"]) : "",
+                isActive: true,
+              };
+              const newProd = await addProduct(payload as any);
+              currentProducts.push(newProd as any);
+              successCount++;
+            } else {
+              // Legacy/Exported format
+              const payload = { ...p };
+              delete payload.id;
+              delete payload.createdAt;
+              delete payload.updatedAt;
+
+              const pName = payload.name;
+              const pCode = payload.code;
+              const pBarcode = payload.barcode;
+
+              if (currentProducts.some((pr) => pr.name === pName)) {
+                duplicateMsgs.push(`نام تکراری: ${pName}`);
+                skippedCount++;
+                continue;
+              }
+              if (pCode && currentProducts.some((pr) => pr.code === pCode)) {
+                duplicateMsgs.push(`کد تکراری: ${pCode} (برای ${pName})`);
+                skippedCount++;
+                continue;
+              }
+              if (
+                pBarcode &&
+                currentProducts.some((pr) => pr.barcode === pBarcode)
+              ) {
+                duplicateMsgs.push(`بارکد تکراری: ${pBarcode} (برای ${pName})`);
+                skippedCount++;
+                continue;
+              }
+
+              const newProd = await addProduct(payload);
+              currentProducts.push(newProd as any);
+              successCount++;
+            }
+          }
+          
+          setSubmittingProduct(false);
+      stopAppProcessing();
+          let finalMsg = `${successCount} کالا با موفقیت درون‌ریزی شد.`;
+          if (skippedCount > 0) {
+            finalMsg +=
+              `
+
+تعداد ${skippedCount} کالا به دلیل تکراری بودن رد شدند:
+` +
+              duplicateMsgs.slice(0, 10).join("\n")
+            if (duplicateMsgs.length > 10) finalMsg += "\n...";
+          }
+          customAlert(finalMsg);
+        } catch (err) {
+          console.error(err);
+          customAlert("خطا در خواندن فایل اکسل!");
+          setSubmittingProduct(false);
+      stopAppProcessing();
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    };
+    input.click();
+  };
+
+const handleGenerateDemoData = async () => {
+    if (
+      !confirm(
+        "آیا از ایجاد اطلاعات نمونه (دسته‌بندی و کالا) اطمینان دارید؟ اطلاعات فعلی شما دست‌نخورده باقی می‌ماند.",
+      )
+    )
+      return;
+
+    setSubmittingProduct(true);
+    startAppProcessing('شروع فرآیند ثبت کالا...');
+    try {
+      const cat1 = await addProductCategory({
+        name: "نوشیدنی‌ها",
+        description: "انواع نوشیدنی‌های گرم و سرد",
+      });
+      const cat2 = await addProductCategory({
+        name: "تنقلات",
+        description: "چیپس، پفک، بیسکویت...",
+      });
+
+      await addProduct({
+        name: "نوشابه خانواده کوکاکولا",
+        type: "product",
+        categoryId: cat1.id,
+        category: "نوشیدنی‌ها",
+        price: 25000,
+        purchasePrice: 20000,
+        buyPrice: 20000,
+        sellPrice: 25000,
+        stock: 50,
+        unit: "بطری",
+        secondaryUnit: "باکس",
+        unitRatio: 6,
+      });
+
+      await addProduct({
+        name: "آب معدنی کوچک دماوند",
+        type: "product",
+        categoryId: cat1.id,
+        category: "نوشیدنی‌ها",
+        price: 5000,
+        purchasePrice: 3500,
+        buyPrice: 3500,
+        sellPrice: 5000,
+        stock: 120,
+        unit: "بطری",
+        secondaryUnit: "باکس",
+        unitRatio: 12,
+      });
+
+      await addProduct({
+        name: "چیپس نمکی مزمز",
+        type: "product",
+        categoryId: cat2.id,
+        category: "تنقلات",
+        price: 35000,
+        purchasePrice: 28000,
+        buyPrice: 28000,
+        sellPrice: 35000,
+        stock: 45,
+        unit: "بسته",
+        secondaryUnit: "کارتن",
+        unitRatio: 10,
+      });
+
+      
+    } catch (err) {
+      console.error("Error generating demo data", err);
+      customAlert("خطا در ایجاد دیتای نمونه");
+    } finally {
+      setSubmittingProduct(false);
+      stopAppProcessing();
+    }
+  };
+
+const handleFastSaveProduct = async (productData: any): Promise<boolean> => {
+    try {
+      const addedProduct = await addProduct(productData);
+
+      if (
+        ["create_sale", "create_purchase", "create_warehouse_doc"].includes(
+          activeTab,
+        )
+      ) {
+        handleFastAddProduct(addedProduct.id.toString(), addedProduct);
+        setNotification({
+          message: "کالا ثبت و به عنوان ردیف جدید به فاکتور اضافه شد.",
+          type: "info",
+        });
+        setTimeout(() => setNotification(null), 3000);
+      }
+
+      
+      return true;
+    } catch (error) {
+      console.error("Error fast saving product", error);
+      showNotification("خطا در ثبت سریع کالا.", "error");
+      return false;
+    }
+  };
+
+const handleSaveCategory = async () => {
+    if (!newCatName) return;
+
+    try {
+      if (editingCategoryId) {
+        await updateProductCategory(editingCategoryId, {
+          name: newCatName,
+          description: newCatDesc,
+          parentId: newCatParentId || null,
+        });
+        setSuccessMsg("گروه‌بندی با موفقیت ویرایش شد.");
+      } else {
+        const codechars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        let newCode = "";
+        for (let i = 0; i < 3; i++) {
+          newCode += codechars.charAt(
+            Math.floor(Math.random() * codechars.length),
+          );
+        }
+        await addProductCategory({
+          code: newCode,
+          name: newCatName,
+          description: newCatDesc,
+          parentId: newCatParentId || null,
+        });
+        setSuccessMsg("گروه‌بندی جدید ثبت شد.");
+      }
+      // re-fetch categories
+      const fetchedCats = await getProductCategories();
+      setProductCategories(fetchedCats as any);
+      setIsCategoryModalOpen(false);
+    } catch (err) {
+      console.error("Error saving category", err);
+    }
+  };
+
+const handleDeleteCategory = async (id: string) => {
+    if (!confirm("آیا از حذف این گروه‌بندی اطمینان دارید؟")) return;
+    try {
+      await deleteProductCategory(id);
+      setSuccessMsg("گروه‌بندی حذف شد.");
+      const fetchedCats = await getProductCategories();
+      setProductCategories(fetchedCats as any);
+    } catch (err) {
+      console.error("Error deleting category", err);
+    }
+  };
+
+const handleEditCategory = (cat: any) => {
+    setEditingCategoryId(cat.id);
+    setNewCatName(cat.name);
+    setNewCatDesc(cat.description || "");
+    setNewCatParentId(cat.parentId || "");
+    setIsCategoryModalOpen(true);
+  };
+
+const handleDeleteProduct = async (id: number | string) => {
+    const isUsedInInvoices = invoices.some(
+      (inv) =>
+        inv.items &&
+        inv.items.some(
+          (item: any) => item.productId?.toString() === id.toString(),
+        ),
+    );
+    if (isUsedInInvoices) {
+      customAlert("این کالا در فاکتورها استفاده شده است و قابل حذف نمی‌باشد.");
+      return;
+    }
+    if (!confirm("آیا از حذف این کالا اطمینان دارید؟")) return;
+    try {
+      await deleteProduct(id.toString());
+      
+    } catch (error) {
+      console.error("Error deleting product", error);
+    }
+  };
+
+
+  const handleGroupPriceUpdate = async (items: any[]) => {
+    try {
+      for (const item of items) {
+        await updateProduct(item.id.toString(), {
+          buyPrice: item.buyPrice,
+          price: item.price,
+        });
+      }
+      showNotification(`قیمت ${items.length} کالا با موفقیت بروزرسانی شد`, "success");
+      setIsGroupPriceModalOpen(false);
+      setSelectedProductIds([]);
+      
+    } catch (e) {
+      console.error(e);
+      showNotification("خطا در بروزرسانی گروهی قیمت", "error");
+    }
+  };
+
+  const handleGenerateBarcodes = async () => {
+
+    const productsToUpdate = (products || []).filter(
+      (p) => !p.barcode || p.barcode.trim() === "",
+    );
+    if (productsToUpdate.length === 0) {
+      showNotification("تمامی کالاها دارای بارکد هستند.", "success");
+      setIsGenerateBarcodesModalOpen(false);
+      return;
+    }
+
+    let currentNumber = Number(barcodeStartNumber) || 1000;
+
+    // To ensure unique barcodes with what's already existing:
+    const existingBarcodes = new Set(
+      (products || []).map((p) => p.barcode).filter(Boolean),
+    );
+
+    let updatedCount = 0;
+    setSubmittingProduct(true);
+    startAppProcessing('شروع فرآیند ثبت کالا...');
+    try {
+      for (const p of productsToUpdate) {
+        let newBarcode = "";
+        let attempts = 0;
+        do {
+          if (barcodeFormat === "prefix_serial") {
+            newBarcode = `${barcodePrefix}${String(currentNumber).padStart(Number(barcodeLength), "0")}`;
+            currentNumber++;
+          } else if (barcodeFormat === "numeric_only") {
+            newBarcode = `${String(currentNumber).padStart(Number(barcodeLength), "0")}`;
+            currentNumber++;
+          } else if (barcodeFormat === "date_prefix") {
+            const yy = new Date().getFullYear().toString().substring(2);
+            const mm = String(new Date().getMonth() + 1).padStart(2, "0");
+            newBarcode = `${yy}${mm}-${String(currentNumber).padStart(Number(barcodeLength), "0")}`;
+            currentNumber++;
+          } else if (barcodeFormat === "ean13") {
+            const prefix = (barcodePrefix || "626").replace(/[^0-9]/g, '');
+            const requiredSerialLength = 12 - prefix.length;
+            const serialStr = String(currentNumber).padStart(requiredSerialLength, "0").slice(0, requiredSerialLength);
+            const base12 = (prefix + serialStr).padStart(12, "0").slice(0, 12);
+            let sum = 0;
+            for (let i = 0; i < 12; i++) {
+                const digit = parseInt(base12[i], 10);
+                sum += (i % 2 === 0) ? digit : digit * 3;
+            }
+            const remainder = sum % 10;
+            const checksum = remainder === 0 ? 0 : 10 - remainder;
+            newBarcode = base12 + checksum.toString();
+            currentNumber++;
+          } else if (barcodeFormat === "random_alphanumeric") {
+            const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+            let randStr = "";
+            for (let i = 0; i < Number(barcodeLength); i++) {
+              randStr += chars.charAt(Math.floor(Math.random() * chars.length));
+            }
+            newBarcode = `${barcodePrefix}${randStr}`;
+          }
+          attempts++;
+          if (attempts > 1000) {
+            newBarcode += "-" + Math.floor(Math.random() * 1000);
+          }
+        } while (existingBarcodes.has(newBarcode));
+
+        existingBarcodes.add(newBarcode);
+        await updateProduct(p.id.toString(), { ...p, barcode: newBarcode });
+        updatedCount++;
+      }
+      showNotification(
+        `${updatedCount} کالا با موفقیت بارکدگذاری شدند.`,
+        "success",
+      );
+    } catch (e) {
+      console.error(e);
+      showNotification("خطا در بارکدگذاری کالاها", "error");
+    } finally {
+      setSubmittingProduct(false);
+      stopAppProcessing();
+      setIsGenerateBarcodesModalOpen(false);
+      fetchProducts();
+    }
+  };
+
+const fetchPersonGroups = async () => {
+    try {
+      const data = await getPersonGroups();
+      setPersonGroups(data as any);
+    } catch (error) {
+      console.error("Error fetching person groups", error);
+    }
+  };
+
+const fetchPersonRoles = async () => {
+    try {
+      const data = await getPersonRoles();
+      setPersonRoles(data as any);
+    } catch (error) {
+      console.error("Error fetching person roles", error);
+    }
+  };
+
+const fetchAllPersons = async () => {
+    try {
+      const data = await getPersons({ all: true });
+      setAllPersons(data as any);
+      return data;
+    } catch (error) {
+      console.error("Error fetching all persons", error);
+      return [];
+    }
+  };
+
+const fetchPersons = async (params?: { search?: string; page?: number; pageSize?: number; all?: boolean; paged?: boolean }) => {
+    try {
+      const isPaged = params?.paged === true;
+      const data = await getPersons({
+        search: params?.search ?? (isPaged ? personSearchTerm : undefined),
+        page: params?.page ?? (isPaged ? personCurrentPage : undefined),
+        pageSize: params?.pageSize ?? (isPaged ? personPageSize : undefined),
+        all: params?.all ?? (!isPaged),
+        paged: isPaged
+      });
+      setPersons(data as any);
+      if (!isPaged || allPersons.length === 0) {
+        setAllPersons(data as any);
+      }
+    } catch (error) {
+      console.error("Error fetching persons", error);
+    }
+  };
+
+const fetchPersonOpeningBalances = async () => {
+    try {
+      const data = await getPersonOpeningBalances();
+      setPersonOpeningBalances(data as any);
+    } catch (error) {
+      console.error("Error fetching person opening balances", error);
+    }
+  };
+
+const handleDeletePerson = async (id: number | string) => {
+    const isUsedInInvoices = invoices.some(
+      (inv) => inv.customerId?.toString() === id.toString(),
+    );
+    if (isUsedInInvoices) {
+      customAlert("این شخص در فاکتورها استفاده شده است و قابل حذف نمی‌باشد.");
+      return;
+    }
+    const isUsedInTransactions = transactions.some(
+      (tx) => tx.personId?.toString() === id.toString(),
+    );
+    if (isUsedInTransactions) {
+      customAlert(
+        "برای این شخص در تراکنش‌های مالی سابقه ثبت شده است و قابل حذف نمی‌باشد.",
+      );
+      return;
+    }
+    const isUsedInIssuedChecks = issuedChecks.some(
+      (chk) => chk.payeeId?.toString() === id.toString(),
+    );
+    const isUsedInReceivedChecks = receivedChecks.some(
+      (chk) => chk.payerId?.toString() === id.toString(),
+    );
+    if (isUsedInIssuedChecks || isUsedInReceivedChecks) {
+      customAlert("این شخص دارای چک ثبت شده است و قابل حذف نمی‌باشد.");
+      return;
+    }
+    if (!confirm("آیا از حذف این شخص اطمینان دارید؟")) return;
+    try {
+      await deletePerson(id.toString());
+      
+    } catch (error) {
+      console.error("Error deleting person", error);
+    }
+  };
+
+const [isGeneratingCodes, setIsGeneratingCodes] = useState(false);
+
+const handleGenerateMissingAccountingCodes = async () => {
+    setIsGeneratingCodes(true);
+    try {
+      const personsWithoutCode = (persons || []).filter(
+        (p) => !p.accountingCode || String(p.accountingCode).trim() === "",
+      );
+      if (personsWithoutCode.length === 0) {
+        customAlert("تمام اشخاص در حال حاضر دارای کد حسابداری هستند.");
+        setIsGeneratingCodes(false);
+        return;
+      }
+
+      let generated = 0;
+      for (const p of personsWithoutCode) {
+        await updatePerson(p.id as string, p);
+        generated++;
+      }
+
+      setSuccessMsg(`کد حسابداری برای ${generated} شخص با موفقیت صادر شد.`);
+      
+    } catch (error) {
+      console.error(error);
+      customAlert("خطا در صدور کدهای حسابداری");
+    } finally {
+      setIsGeneratingCodes(false);
+    }
+  };
+
+const fetchAccounts = async () => {
+    try {
+      const data = await getAccounts();
+      setAccounts(data as any);
+    } catch (error) {
+      console.error("Error fetching accounts", error);
+    }
+  };
+
+const handleDeleteAccount = async (id: number | string) => {
+    if (!confirm("آیا از حذف این حساب بانکی اطمینان دارید؟")) return;
+    try {
+      await deleteAccount(id.toString());
+      await fetchAccounts();
+    } catch (error) {
+      console.error("Error deleting account", error);
+    }
+  };
+
+const fetchCashboxes = async () => {
+    try {
+      const data = await getCashboxes();
+      setCashboxes(data as any);
+    } catch (error) {
+      console.error("Error fetching cashboxes", error);
+    }
+  };
+
+const fetchWarehouses = async () => {
+    try {
+      const data = await getWarehouses();
+      setWarehouses(data as any);
+
+      const stocks = await getWarehouseStocks();
+      setWarehouseStocks(stocks as any);
+    } catch (error) {
+      console.error("Error fetching warehouses", error);
+    }
+  };
+
+const fetchTransactions = async () => {
+    try {
+      const data = await getTransactions();
+      setTransactions(data as any);
+    } catch (error) {
+      console.error("Error fetching transactions", error);
+    }
+  };
+
+const fetchAccountingDocuments = async () => {
+    try {
+      const data = await getAccountingDocuments();
+      // Auto-cleanup any stray duplicate accounting documents created for person transfers touching account 11
+      const badDocs = (data || []).filter((d: any) => 
+        (d.sourceType === 'receipt' || d.sourceType === 'payment') &&
+        (d.description?.includes('حواله و انتقال') || d.description?.includes('از محل دریافت از طرف‌حساب')) &&
+        d.items?.some((i: any) => !i.detailedAccountId)
+      );
+      if (badDocs.length > 0) {
+        for (const bd of badDocs) {
+          try {
+            await deleteAccountingDocument(bd.id);
+          } catch (_) {}
+        }
+        const cleanedData = (data || []).filter((d: any) => !badDocs.some((bd: any) => String(bd.id) === String(d.id)));
+        setAccountingDocuments(cleanedData as any);
+        return;
+      }
+      setAccountingDocuments(data as any);
+    } catch (error) {
+      console.error("Error fetching accounting documents", error);
+    }
+  };
+
+const checkDebtThreshold = async (personId: string | number) => {
+    const isDebtorsSmsActive = (storeSettings?.notify_on_debtors ?? true) && (storeSettings?.smsDebtThresholdEnabled !== false);
+    if (
+      !isDebtorsSmsActive ||
+      storeSettings.smsDebtThresholdAmount === undefined ||
+      !storeSettings?.notify_method ||
+      storeSettings.notify_method === "none"
+    )
+      return;
+
+    try {
+      const allPersons = (persons && persons.length > 0) ? persons : await getPersons();
+      const allInvoices = invoices || [];
+      const allTransactions = transactions || [];
+      const allIssuedChecks = issuedChecks || [];
+      const allReceivedChecks = receivedChecks || [];
+
+      const person = allPersons.find(
+        (p: any) => p.id.toString() === personId.toString(),
+      );
+      if (!person || !person.phone) return;
+
+      let balance = 0;
+      if (person.initialBalance && person.initialBalanceType !== "settled") {
+        balance +=
+          person.initialBalanceType === "debtor"
+            ? person.initialBalance
+            : -person.initialBalance;
+      }
+
+      allInvoices
+        .filter(
+          (i: any) =>
+            i.customerId?.toString() === personId.toString() &&
+            i.type !== "warehouse_receipt" &&
+            i.type !== "warehouse_remittance" &&
+            i.type !== "proforma" &&
+            i.status !== "draft" && i.status !== "voided" && !i.isDeleted,
+        )
+        .forEach((inv: any) => {
+          const amount =
+            (inv.totalAmount || 0) *
+            getDefaultExchangeRate(
+              inv.currency,
+              storeSettings?.currency || "تومان",
+            );
+          if (inv.type === "sale") balance += amount;
+          else if (inv.type === "purchase") balance -= amount;
+          else if (inv.type === "sale_return") balance -= amount;
+          else if (inv.type === "purchase_return") balance += amount;
+        });
+
+      allTransactions
+        .filter(
+          (t: any) =>
+            t.personId?.toString() === personId.toString() &&
+            t.method !== "check",
+        )
+        .forEach((t: any) => {
+          if (t.type === "receive") balance -= t.amount || 0;
+          else if (t.type === "pay") balance += t.amount || 0;
+          else if (t.type === "salary") balance -= t.amount || 0;
+        });
+
+      allIssuedChecks
+        .filter(
+          (c: any) =>
+            c.payeeId?.toString() === personId.toString() &&
+            c.status !== "cancelled" &&
+            c.status !== "bounced" &&
+            c.status !== "cashed",
+        )
+        .forEach((c: any) => {
+          balance += c.amount || 0;
+        });
+
+      allReceivedChecks
+        .filter(
+          (c: any) =>
+            c.payerId?.toString() === personId.toString() &&
+            c.status !== "returned" &&
+            c.status !== "bounced" &&
+            c.status !== "cashed",
+        )
+        .forEach((c: any) => {
+          balance -= c.amount || 0;
+        });
+
+      if (balance > storeSettings.smsDebtThresholdAmount) {
+        const amt =
+          typeof formatNumber === "function"
+            ? formatNumber(balance)
+            : addCommas(balance);
+        let msg =
+          storeSettings.smsDebtThresholdMessage ||
+          "مشتری گرامی، مانده بدهی شما از سقف مجاز عبور کرده است. لطفا نسبت به تسویه حساب اقدام نمایید.";
+        msg = msg
+          .replace(/{name}/g, person.name)
+          .replace(/{amount}/g, String(amt))
+          .replace(/{date}/g, formatDateDisplay(new Date(), storeSettings?.calendarType));
+        sendNotification(msg, person.phone, storeSettings.notify_method);
+      }
+    } catch (err) {
+      console.error("Error checking debt threshold:", err);
+    }
+  };
+
+const handleSubmitReceipt = (type: "receive" | "pay", e: React.FormEvent, customData?: any) => {
+    e.preventDefault();
+    const isPersonTransfer = Boolean(
+      customData?.isPersonTransfer ||
+      receiptResourceType === "person" ||
+      customData?.method === "person_transfer" ||
+      customData?.paymentChannel === "person_transfer"
+    );
+
+    const targetPersonId = customData?.targetPersonId || receiptTargetPersonId || (receiptResourceType === "person" ? receiptResourceId : "");
+    const transferDirection = customData?.transferDirection || receiptTransferDirection || "from_first_to_second";
+
+    if (isPersonTransfer) {
+      if (!receiptPersonId) {
+        customAlert("لطفاً طرف‌حساب اصلی را انتخاب کنید.");
+        return;
+      }
+      if (!targetPersonId) {
+        customAlert("لطفاً طرف‌حساب دوم (مقابل) را انتخاب کنید.");
+        return;
+      }
+      if (String(receiptPersonId) === String(targetPersonId)) {
+        customAlert("طرف‌حساب مبدا و مقصد نمی‌توانند یک شخص باشند.");
+        return;
+      }
+      const numAmount = Number(String(receiptAmount || "").replace(/,/g, ""));
+      if (!numAmount || numAmount <= 0) {
+        customAlert("لطفاً مبلغ انتقال را به درستی وارد کنید.");
+        return;
+      }
+    } else if (receiptMethod === "cash") {
+      if (
+        !receiptPersonId ||
+        !receiptAmount ||
+        !receiptResourceType ||
+        !receiptResourceId
+      ) {
+        customAlert("لطفا تمام اطلاعات الزامی فرم را وارد کنید.");
+        return;
+      }
+    } else {
+      if (
+        !receiptPersonId ||
+        !receiptAmount ||
+        !receiptCheckNumber ||
+        !receiptCheckDueDate ||
+        (type === "receive" && !receiptCheckBankName) ||
+        (type === "pay" && !receiptCheckbookId)
+      ) {
+        customAlert("لطفا تمام اطلاعات الزامی فرم چک را وارد کنید.");
+        return;
+      }
+    }
+
+    if (type === "pay" && !isPersonTransfer) {
+      const person = persons.find(
+        (p) => p.id.toString() === receiptPersonId.toString(),
+      );
+      if (person && person.creditLimit && person.creditLimit > 0) {
+        const currentBalanceObj = calculatePersonBalance(receiptPersonId);
+        let currentDebt =
+          currentBalanceObj.status === "بدهکار"
+            ? currentBalanceObj.amount
+            : -currentBalanceObj.amount;
+
+        // type === "pay" means we are paying them, so their debt to us INCREASES.
+        const newDebt = currentDebt + Number(receiptAmount);
+
+        if (newDebt > person.creditLimit) {
+          customAlert(
+            `خطا: ثبت این سند باعث عبور از سقف اعتبار شخص می‌شود.
+سقف اعتبار: ${addCommas(person.creditLimit)}
+مبلغ بدهی بعد از ثبت: ${addCommas(newDebt)}`,
+          );
+          return;
+        }
+      }
+    }
+
+    // Validate allocated amounts
+    const totalAllocated = Object.values(receiptLinkedInvoices).reduce(
+      (a, b) => a + b,
+      0,
+    );
+    if (totalAllocated > Number(receiptAmount)) {
+      customAlert(
+        `جمع مبالغ تخصیص داده شده (${totalAllocated}) از مبلغ کل رسید (${receiptAmount}) بیشتر است.`,
+      );
+      return;
+    }
+
+    // Generate simple receipt number for review
+    const typeKey = type === "receive" ? "receive_receipt" : "pay_receipt";
+    const defaultPrefix = type === "receive" ? "RD-" : "PD-";
+    const receiptPrefix =
+      typeof storeSettings[`prefix_${typeKey}`] !== "undefined"
+        ? storeSettings[`prefix_${typeKey}`]
+        : defaultPrefix;
+
+    const existingRelated = (transactions || []).filter(
+      (t: any) => t.type === type && t.receiptNumber,
+    );
+
+    // Calculate sequential number based on settings
+    const startNumStr =
+      storeSettings[`start_${typeKey}`] ||
+      storeSettings.invoiceStartNumber ||
+      "1000";
+    const lenStr =
+      storeSettings[`len_${typeKey}`] ||
+      storeSettings.invoiceNumberLength ||
+      "6";
+
+    const startNum = parseInt(startNumStr, 10);
+    const numLength = Math.max(1, parseInt(lenStr, 10));
+
+    let maxNum = startNum - 1;
+
+    if (existingRelated.length > 0) {
+      const nums = existingRelated.map((t: any) => {
+        let numStr = String(t.receiptNumber);
+        if (numStr.startsWith(receiptPrefix)) {
+          numStr = numStr.substring(receiptPrefix.length);
+        }
+        const match = numStr.match(/\d+/);
+        return match ? parseInt(match[0], 10) : 0;
+      });
+      const maxExisting = Math.max(...nums);
+      if (maxExisting > maxNum) maxNum = maxExisting;
+    }
+    const nextNum = maxNum + 1;
+    const formattedNum = String(nextNum).padStart(numLength, "0");
+    const receiptNumber = `${receiptPrefix}${formattedNum}`;
+
+    const personObj = (persons || []).find((p: any) => String(p.id) === String(receiptPersonId));
+    const resolvedPersonName = formatPersonName(personObj) !== "نامشخص" ? formatPersonName(personObj) : formatPersonName(receiptPersonId, persons);
+
+    let payerId = receiptPersonId;
+    let payeeId = targetPersonId;
+
+    if (isPersonTransfer) {
+      if (transferDirection === "from_second_to_first") {
+        payerId = targetPersonId;
+        payeeId = receiptPersonId;
+      } else {
+        payerId = receiptPersonId;
+        payeeId = targetPersonId;
+      }
+    }
+
+    const payerObj = (persons || []).find((p: any) => String(p.id) === String(payerId));
+    const payeeObj = (persons || []).find((p: any) => String(p.id) === String(payeeId));
+    const payerName = payerObj ? (formatPersonName(payerObj) !== "نامشخص" ? formatPersonName(payerObj) : (payerObj.name || "طرف‌حساب پرداخت‌کننده")) : "نامشخص";
+    const payeeName = payeeObj ? (formatPersonName(payeeObj) !== "نامشخص" ? formatPersonName(payeeObj) : (payeeObj.name || "طرف‌حساب دریافت‌کننده")) : "نامشخص";
+
+    const nowTimestamp = Date.now();
+    const nowDate = new Date(nowTimestamp);
+    const nowTimeStr = `${String(nowDate.getHours()).padStart(2, '0')}:${String(nowDate.getMinutes()).padStart(2, '0')}`;
+
+    const basePayload: any = {
+      type,
+      method: isPersonTransfer ? "person_transfer" : receiptMethod,
+      isPersonTransfer,
+      personId: receiptPersonId,
+      personName: resolvedPersonName,
+      person: personObj,
+      targetPersonId,
+      targetPersonName: payeeId === receiptPersonId ? payerName : payeeName,
+      targetPerson: payeeId === receiptPersonId ? payerObj : payeeObj,
+      transferDirection,
+      payerId,
+      payerName,
+      payerPerson: payerObj,
+      payeeId,
+      payeeName,
+      payeePerson: payeeObj,
+      amount: Number(receiptAmount),
+      date:
+        convertToGregorian(receiptDate),
+      time: nowTimeStr,
+      createdAt: nowTimestamp,
+      rawDate: receiptDate,
+      displayDate: formatDateDisplay(receiptDate, storeSettings?.calendarType),
+      description: receiptDescription,
+      note: receiptNote,
+      receiptNumber: receiptNumber,
+      linkedInvoices: { ...receiptLinkedInvoices },
+      linkedRentInstallment: customData?.linkedRentInstallment || null,
+      resourceType: isPersonTransfer ? "person" : receiptResourceType,
+      resourceId: isPersonTransfer ? targetPersonId : receiptResourceId,
+    };
+
+    if (!isPersonTransfer && receiptMethod === "cash") {
+      basePayload.resourceType = receiptResourceType;
+      basePayload.resourceId = receiptResourceId;
+    } else if (!isPersonTransfer) {
+      basePayload.checkNumber = receiptCheckNumber;
+      basePayload.checkDueDate =
+        convertToGregorian(receiptCheckDueDate);
+      basePayload.rawCheckDueDate = receiptCheckDueDate;
+      basePayload.displayCheckDueDate = formatDateDisplay(receiptCheckDueDate, storeSettings?.calendarType);
+      if (type === "receive") {
+        basePayload.checkBankName = receiptCheckBankName;
+      } else {
+        basePayload.checkbookId = receiptCheckbookId;
+      }
+    }
+
+    // Show confirmation modal before final database commit
+    setPreviewReceiptData(basePayload);
+  };
+
+  const confirmReceiptSubmit = async (payload: any) => {
+    if (!payload) return;
+    setSubmittingReceipt(true);
+    const isReceive = payload.type === "receive";
+    const isCheck = payload.method === "check";
+    const isPersonTransfer = Boolean(payload.isPersonTransfer || payload.method === "person_transfer" || payload.resourceType === "person");
+
+    startAppProcessing(
+      isPersonTransfer
+        ? "شروع فرآیند ثبت انتقال بین طرفین حساب..."
+        : isCheck
+        ? (isReceive ? "شروع فرآیند دریافت چک..." : "شروع فرآیند پرداخت چک...")
+        : (isReceive ? "شروع فرآیند ثبت رسید دریافت..." : "شروع فرآیند ثبت رسید پرداخت...")
+    );
+
+    const rollbackActions: (() => Promise<void>)[] = [];
+    try {
+      updateAppProcessing("مرحله ۱ از ۳: اعتبارسنجی اطلاعات مالی و طرف‌حساب...");
+
+      // Concurrency check before persisting (in-memory fast lookup without redundant HTTP roundtrip):
+      let finalReceiptNumber = payload.receiptNumber;
+      const isTaken = (transactions || []).some(
+        (t: any) => t.type === payload.type && String(t.receiptNumber).trim().toLowerCase() === String(finalReceiptNumber).trim().toLowerCase()
+      );
+      if (isTaken) {
+        invalidateCache('doc_counters');
+        const docTypeMap: any = { 'receive': 'receive_receipt', 'pay': 'pay_receipt', 'salary': 'salary' };
+        finalReceiptNumber = await generateDocNumber(docTypeMap[payload.type]);
+        payload.receiptNumber = finalReceiptNumber;
+      }
+
+      const txPayload = {
+        ...payload,
+        receiptNumber: finalReceiptNumber,
+        linkedInvoices: receiptLinkedInvoices,
+        skipAccounting: payload.method === "check" || isPersonTransfer
+      };
+      let createdReceiptObj: any = { ...payload, receiptNumber: finalReceiptNumber };
+
+      if (isPersonTransfer) {
+        updateAppProcessing("مرحله ۲ از ۳: ثبت تراکنش‌های متقابل و صدور سند انتقال بین طرفین حساب...");
+        
+        const payerId = payload.payerId;
+        const payeeId = payload.payeeId;
+        const payerObj = (persons || []).find((p: any) => String(p.id) === String(payerId));
+        const payeeObj = (persons || []).find((p: any) => String(p.id) === String(payeeId));
+        const payerName = payload.payerName || formatPersonName(payerObj) || "طرف پرداخت‌کننده";
+        const payeeName = payload.payeeName || formatPersonName(payeeObj) || "طرف دریافت‌کننده";
+
+        const receiveId = generateId();
+        const payId = generateId();
+        const payReceiptNum = `${finalReceiptNumber}-P`;
+
+        const txReceive = {
+          id: receiveId,
+          type: "receive",
+          method: "person_transfer",
+          resourceType: "person",
+          resourceId: payeeId,
+          personId: payerId,
+          personName: payerName,
+          targetPersonId: payeeId,
+          targetPersonName: payeeName,
+          transferDirection: payload.transferDirection,
+          amount: payload.amount,
+          receiptNumber: finalReceiptNumber,
+          pairedTransactionId: payId,
+          date: payload.date,
+          time: payload.time,
+          rawDate: payload.rawDate,
+          displayDate: payload.displayDate,
+          description: payload.description || `دریافت وجه بابت حواله و انتقال به طرف‌حساب: ${payeeName}`,
+          note: payload.note,
+          linkedInvoices: payload.type === "receive" ? receiptLinkedInvoices : {},
+          skipAccounting: true,
+          isPersonTransfer: true,
+          createdAt: Date.now(),
+          updatedAt: Date.now()
+        };
+
+        const txPay = {
+          id: payId,
+          type: "pay",
+          method: "person_transfer",
+          resourceType: "person",
+          resourceId: payerId,
+          personId: payeeId,
+          personName: payeeName,
+          targetPersonId: payerId,
+          targetPersonName: payerName,
+          transferDirection: payload.transferDirection,
+          amount: payload.amount,
+          receiptNumber: payReceiptNum,
+          originalReceiptNumber: finalReceiptNumber,
+          pairedTransactionId: receiveId,
+          date: payload.date,
+          time: payload.time,
+          rawDate: payload.rawDate,
+          displayDate: payload.displayDate,
+          description: payload.description || `پرداخت وجه از محل دریافت از طرف‌حساب: ${payerName}`,
+          note: payload.note,
+          linkedInvoices: payload.type === "pay" ? receiptLinkedInvoices : {},
+          skipAccounting: true,
+          isPersonTransfer: true,
+          createdAt: Date.now(),
+          updatedAt: Date.now()
+        };
+
+        const ledgerAccounts = await getLedgerAccounts();
+        const defaultLedger = ledgerAccounts.length > 0 ? ledgerAccounts[0].id : '';
+
+        let payerLedgerId = defaultLedger;
+        if (payerObj && payerObj.accountingCode) {
+          const acc = ledgerAccounts.find((a: any) => a.code === payerObj.accountingCode);
+          if (acc) payerLedgerId = acc.id;
+        } else {
+          const acc = ledgerAccounts.find((a: any) => a.code === '21' || a.code === '2101');
+          if (acc) payerLedgerId = acc.id;
+        }
+
+        let payeeLedgerId = defaultLedger;
+        if (payeeObj && payeeObj.accountingCode) {
+          const acc = ledgerAccounts.find((a: any) => a.code === payeeObj.accountingCode);
+          if (acc) payeeLedgerId = acc.id;
+        } else {
+          const acc = ledgerAccounts.find((a: any) => a.code === '13' || a.code === '1301');
+          if (acc) payeeLedgerId = acc.id;
+        }
+
+        const formattedAmt = Number(payload.amount || 0).toLocaleString('fa-IR');
+        const currencyStr = storeSettings?.currency || 'تومان';
+        const docNum = await generateDocNumber('accounting_document');
+
+        const accountingDoc = {
+          id: generateId(),
+          documentNumber: docNum,
+          date: payload.date || new Date().toISOString().split('T')[0],
+          description: `حواله و انتقال وجه بین اشخاص به مبلغ ${formattedAmt} ${currencyStr} - پرداخت از [${payerName}] و دریافت توسط [${payeeName}] (شماره رسید: ${finalReceiptNumber})`,
+          status: 'approved',
+          sourceType: 'person_transfer',
+          sourceId: receiveId,
+          currency: currencyStr,
+          createdAt: Date.now(),
+          items: [
+            {
+              description: `دریافت وجه طی حواله از ${payerName} (رسید شماره ${finalReceiptNumber})`,
+              debit: Number(payload.amount),
+              credit: 0,
+              ledgerAccountId: payeeLedgerId,
+              detailedAccountId: payeeId,
+              currency: currencyStr
+            },
+            {
+              description: `پرداخت وجه طی حواله به ${payeeName} (رسید شماره ${finalReceiptNumber})`,
+              debit: 0,
+              credit: Number(payload.amount),
+              ledgerAccountId: payerLedgerId,
+              detailedAccountId: payerId,
+              currency: currencyStr
+            }
+          ]
+        };
+
+        // All saved in ONE atomic batch call to the database!
+        await batchLocalData([
+          { type: 'append', key: 'receipt_transactions', data: txReceive },
+          { type: 'append', key: 'payment_transactions', data: txPay },
+          { type: 'append', key: 'accounting_documents', data: accountingDoc }
+        ]);
+
+        updateDocCounter('receive_receipt', finalReceiptNumber).catch(() => {});
+        updateDocCounter('accounting_document', docNum).catch(() => {});
+
+        createdReceiptObj = {
+          ...txReceive,
+          pairedTransactionId: payId,
+          isPersonTransfer: true,
+          payerName,
+          payeeName,
+          payerId,
+          payeeId,
+        };
+
+        rollbackActions.push(async () => {
+          await deleteTransaction(receiveId);
+        });
+      } else if (payload.method === "check") {
+        updateAppProcessing(
+          isReceive
+            ? "مرحله ۲ از ۳: ثبت چک در دفتر چک‌های دریافتی..."
+            : "مرحله ۲ از ۳: ثبت و تخصیص چک در دفتر چک‌های پرداختی..."
+        );
+
+        if (payload.type === "receive") {
+          const savedCheck = await addReceivedCheck({
+            checkNumber: payload.checkNumber,
+            bankName: payload.checkBankName,
+            branchName: "",
+            amount: payload.amount,
+            payerId: payload.personId,
+            receiveDate: payload.date || payload.jalaliDate,
+            dueDate: payload.checkDueDate,
+            status: "received",
+            description:
+              payload.description ||
+              `چک دریافتی شماره ${payload.checkNumber} (سررسید ${payload.checkDueDate}) بابت رسید ${payload.receiptNumber}`,
+            receiptNumber: payload.receiptNumber,
+          });
+          createdReceiptObj.id = savedCheck.id;
+
+          rollbackActions.push(async () => {
+            await deleteReceivedCheck(savedCheck.id.toString());
+          });
+        } else {
+          const blankCheck = issuedChecks.find((c: any) => c.status === 'blank' && c.checkbookId?.toString() === payload.checkbookId?.toString() && c.checkNumber === payload.checkNumber);
+          
+          let savedCheckId;
+          const issuedCheckPayload = {
+            checkbookId: payload.checkbookId,
+            checkNumber: payload.checkNumber,
+            amount: payload.amount,
+            payeeId: payload.personId,
+            issueDate: payload.date || payload.jalaliDate,
+            dueDate: payload.checkDueDate,
+            status: "issued",
+            description:
+              payload.description ||
+              `چک صادره شماره ${payload.checkNumber} (سررسید ${payload.checkDueDate}) بابت رسید ${payload.receiptNumber}`,
+            receiptNumber: payload.receiptNumber,
+          };
+          
+          if (blankCheck) {
+            const originalBlankCheck = { ...blankCheck };
+            await updateIssuedCheck(blankCheck.id.toString(), { ...blankCheck, ...issuedCheckPayload, status: "issued" });
+            savedCheckId = blankCheck.id;
+
+            rollbackActions.push(async () => {
+              await updateIssuedCheck(blankCheck.id.toString(), originalBlankCheck);
+            });
+          } else {
+            const savedCheck = await addIssuedCheck(issuedCheckPayload);
+            savedCheckId = savedCheck.id;
+
+            rollbackActions.push(async () => {
+              await deleteIssuedCheck(savedCheck.id.toString());
+            });
+          }
+        }
+        const savedTx = await addTransaction(txPayload as any);
+        createdReceiptObj = savedTx;
+
+        rollbackActions.push(async () => {
+          await deleteTransaction(savedTx.id.toString());
+        });
+      } else {
+        updateAppProcessing("مرحله ۲ از ۳: ثبت تراکنش و به‌روزرسانی نقد/بانک...");
+
+        const savedTx = await addTransaction(txPayload as any);
+        createdReceiptObj = savedTx;
+
+        rollbackActions.push(async () => {
+          await deleteTransaction(savedTx.id.toString());
+        });
+      }
+
+      updateAppProcessing("مرحله ۳ از ۳: تسویه فاکتورهای مرتبط و به‌روزرسانی مانده حساب...");
+
+      // Update actual invoices payment status and paid amount out of linkedInvoices
+      const linkedEntries = Object.entries(receiptLinkedInvoices);
+      if (linkedEntries.length > 0) {
+        await Promise.all(
+          linkedEntries.map(async ([invId, amount]) => {
+            const inv = invoices.find((i) => i.id.toString() === invId);
+            if (inv && amount > 0) {
+              const originalInv = { ...inv };
+              const newPaid = (inv.paidAmount || 0) + amount;
+              const newStatus =
+                newPaid >= (inv.totalAmount || 0) ? "paid" : "partial";
+              await updateInvoice(inv.id, {
+                ...inv,
+                paidAmount: newPaid,
+                paymentStatus: newStatus,
+              }, true);
+
+              rollbackActions.push(async () => {
+                await updateInvoice(inv.id, originalInv, true);
+              });
+            }
+          })
+        );
+      }
+
+      // Settle linked rent contract installment if present
+      if (payload.linkedRentInstallment) {
+        try {
+          updateAppProcessing("به‌روزرسانی و تسویه تعهد قرارداد اجاره...");
+          await settleRentInstallmentWithPayment(
+            payload.linkedRentInstallment.contractId,
+            payload.linkedRentInstallment.installmentId,
+            {
+              paymentDocId: finalReceiptNumber || createdReceiptObj?.receiptNumber || String(createdReceiptObj?.id || ''),
+              amount: Number(payload.amount),
+              paidDate: payload.date || new Date().toISOString(),
+              paymentMethod: payload.method === 'cash' ? payload.resourceType : payload.method,
+              paymentSourceId: payload.resourceId,
+              paymentRefNumber: payload.receiptNumber || payload.trackingNumber,
+            }
+          );
+        } catch (rErr) {
+          console.error("Failed to settle rent installment in confirmReceiptSubmit:", rErr);
+        }
+      }
+
+      const typeTmp = payload.type;
+
+      setReceiptPersonId("");
+      setReceiptTargetPersonId("");
+      setReceiptTransferDirection("from_first_to_second");
+      setReceiptAmount("");
+      setReceiptResourceType("bank");
+      setReceiptResourceId("");
+      setReceiptCheckNumber("");
+      setReceiptCheckBankName("");
+      setReceiptCheckbookId("");
+      setReceiptCheckDueDate(new Date());
+      setReceiptMethod("cash");
+      setReceiptDescription("");
+      setReceiptNote("");
+      setReceiptDate(new Date());
+      setReceiptLinkedInvoices({});
+      setPreviewReceiptData(null);
+      setReceiptPersonSearchText("");
+      
+      localStorage.removeItem("receipt_draft");
+      setReceiptHasDraft(false);
+
+      setLastCreatedReceipt(createdReceiptObj);
+      setReceiptSuccessMsg(
+        isPersonTransfer
+          ? `حواله و انتقال وجه بین طرفین حساب (${payload.payerName} ⬅️ ${payload.payeeName}) با موفقیت در حساب هر دو طرف ثبت گردید`
+          : typeTmp === "receive"
+          ? "رسید دریافت با موفقیت صادر شد"
+          : "رسید پرداخت با موفقیت صادر شد",
+      );
+      // Queue or Send SMS for receipt/payment in sms_messages table
+      const receiptPerson = persons.find(
+        (p) => String(p.id) === String(payload.personId),
+      );
+      if (receiptPerson && (receiptPerson.phone || receiptPerson.mobile || receiptPerson.name)) {
+        const pPhone = String(receiptPerson.phone || receiptPerson.mobile || "").trim();
+        const amt =
+          typeof formatNumber === "function"
+            ? formatNumber(payload.amount)
+            : payload.amount;
+        const isRec = typeTmp === "receive";
+        const isCheck = payload.method === "check";
+        const curStr = storeSettings?.currency || "تومان";
+        const recNum = String(createdReceiptObj?.receiptNumber || payload.receiptNumber || "");
+        const dateStr = formatDateDisplay(new Date(), storeSettings?.calendarType);
+
+        let shouldSend = false;
+        if (isCheck) {
+          shouldSend = isRec
+            ? !!(storeSettings?.notify_on_receivable_check ?? storeSettings?.notify_on_receive ?? storeSettings?.notify_on_receipt ?? true)
+            : !!(storeSettings?.notify_on_payable_check ?? storeSettings?.notify_on_payment ?? storeSettings?.notify_on_receipt ?? true);
+        } else {
+          shouldSend = isRec
+            ? !!(storeSettings?.notify_on_receive ?? storeSettings?.notify_on_receipt ?? true)
+            : !!(storeSettings?.notify_on_payment ?? storeSettings?.notify_on_receipt ?? true);
+        }
+
+        const templateVars = {
+          name: receiptPerson.name,
+          phone: pPhone,
+          amount: String(amt),
+          currency: curStr,
+          receipt_number: recNum,
+          date: dateStr,
+          check_number: payload.checkNumber || '',
+          bank_name: payload.checkBankName || '',
+          due_date: payload.checkDueDate || '',
+          store_name: storeSettings?.store_name || '',
+        };
+
+        let msg = "";
+        if (isRec) {
+          if (isCheck) {
+            msg = storeSettings?.smsTemplateCheck
+              ? renderSmsTemplate(storeSettings.smsTemplateCheck, templateVars)
+              : `${receiptPerson.name} گرامی، چک دریافتی شماره ${payload.checkNumber || ''} عهده بانک ${payload.checkBankName || ''} به مبلغ ${amt} ${curStr} (سررسید ${payload.checkDueDate || ''}) در سیستم ثبت گردید. با تشکر.`;
+          } else {
+            msg = storeSettings?.smsTemplateReceipt
+              ? renderSmsTemplate(storeSettings.smsTemplateReceipt, templateVars)
+              : `${receiptPerson.name} گرامی، رسید دریافت شماره ${recNum} به مبلغ ${amt} ${curStr} در تاریخ ${dateStr} با موفقیت در سیستم ثبت گردید. با تشکر.`;
+          }
+        } else {
+          if (isCheck) {
+            msg = storeSettings?.smsTemplatePayableCheck
+              ? renderSmsTemplate(storeSettings.smsTemplatePayableCheck, templateVars)
+              : `${receiptPerson.name} گرامی، چک صادره شماره ${payload.checkNumber || ''} به مبلغ ${amt} ${curStr} (سررسید ${payload.checkDueDate || ''}) در سیستم ثبت و صادر گردید.`;
+          } else {
+            msg = storeSettings?.smsTemplatePayment
+              ? renderSmsTemplate(storeSettings.smsTemplatePayment, templateVars)
+              : `${receiptPerson.name} گرامی، رسید پرداخت شماره ${recNum} به مبلغ ${amt} ${curStr} در تاریخ ${dateStr} ثبت و به حساب شما منظور گردید.`;
+          }
+        }
+
+        sendNotification(
+          msg, 
+          pPhone, 
+          shouldSend ? storeSettings?.notify_method : undefined,
+          {
+            recipientName: receiptPerson.name,
+            recipientId: receiptPerson.id,
+            source: isCheck ? "cheque_alert" : (isRec ? "receipt" : "payment"),
+          }
+        );
+      }
+
+      checkDebtThreshold(payload.personId).catch(console.error);
+      
+      updateAppProcessing("عملیات با موفقیت انجام شد...");
+      await new Promise(resolve => setTimeout(resolve, 20));
+      
+    } catch (err: any) {
+      console.error("Error submitting receipt, rolling back operations...", err);
+      // Run rollback operations in reverse order
+      for (let i = rollbackActions.length - 1; i >= 0; i--) {
+        try {
+          await rollbackActions[i]();
+        } catch (rErr) {
+          console.error("Error executing rollback action:", rErr);
+        }
+      }
+      customAlert(`خطا در ثبت رسید: ${err.message || "خطای ارتباط با سرور رخ داد"}`);
+    } finally {
+      setSubmittingReceipt(false);
+      stopAppProcessing();
+    }
+  };
+
+const handleEditReceiptByCheck = (check: any, type: 'issued' | 'received') => {
+    const txType = type === 'issued' ? 'pay' : 'receive';
+    let tx;
+    if (check.receiptNumber) {
+      tx = transactions.find((t) => t.type === txType && String(t.receiptNumber) === String(check.receiptNumber));
+      if (!tx) {
+        tx = transactions.find((t) => t.type === txType && t.method === 'check' && String(t.checkNumber) === String(check.checkNumber));
+      }
+    } else {
+      tx = transactions.find((t) => t.type === txType && t.method === 'check' && String(t.checkNumber) === String(check.checkNumber));
+    }
+    
+    if (tx) {
+      setEditingReceipt(tx);
+      setIsEditReceiptModalOpen(true);
+    } else {
+      customAlert("رسید مرتبط با این چک یافت نشد.");
+    }
+  };
+
+const handleSaveReceipt = async (updatedFields: any) => {
+    if (!editingReceipt) return;
+    try {
+      await updateTransaction(editingReceipt.id, updatedFields);
+
+      // Keep related checks in sync
+      if (editingReceipt.method === "check" || updatedFields.method === "check") {
+        const checkNum = updatedFields.checkNumber || editingReceipt.checkNumber;
+        const receiptNo = updatedFields.receiptNumber || editingReceipt.receiptNumber;
+        if (editingReceipt.type === "receive" || updatedFields.type === "receive") {
+          const matchedCheck = receivedChecks.find(
+            (c) => c.receiptNumber === receiptNo || c.checkNumber === checkNum,
+          );
+          if (matchedCheck) {
+            const updatedCheckData = {
+              ...matchedCheck,
+              checkNumber:
+                updatedFields.checkNumber || matchedCheck.checkNumber,
+              bankName: updatedFields.checkBankName || matchedCheck.bankName,
+              amount: updatedFields.amount || matchedCheck.amount,
+              payerId: updatedFields.personId || matchedCheck.payerId,
+              dueDate: updatedFields.checkDueDate || matchedCheck.dueDate,
+              receiveDate: updatedFields.jalaliDate || updatedFields.date || matchedCheck.receiveDate,
+            };
+            await updateReceivedCheck(matchedCheck.id, updatedCheckData);
+          }
+        } else {
+          const matchedCheck = issuedChecks.find(
+            (c) => c.receiptNumber === receiptNo || c.checkNumber === checkNum,
+          );
+          if (matchedCheck) {
+            const updatedCheckData = {
+              ...matchedCheck,
+              checkNumber:
+                updatedFields.checkNumber || matchedCheck.checkNumber,
+              checkbookId:
+                updatedFields.checkbookId || matchedCheck.checkbookId,
+              amount: updatedFields.amount || matchedCheck.amount,
+              payeeId: updatedFields.personId || matchedCheck.payeeId,
+              dueDate: updatedFields.checkDueDate || matchedCheck.dueDate,
+              issueDate: updatedFields.jalaliDate || updatedFields.date || matchedCheck.issueDate,
+            };
+            await updateIssuedCheck(matchedCheck.id, updatedCheckData);
+          }
+        }
+      }
+
+      await Promise.all([
+        fetchTransactions(),
+        fetchAccounts(),
+        fetchCashboxes(),
+        fetchPersons(),
+        fetchInvoices(),
+        fetchAccountingDocuments(),
+        fetchChecks(),
+      ]);
+
+      showNotification(
+        "تغییرات با موفقیت روی رسید ذخیره گردید و اسناد حسابداری مرتبط و مانده‌ها بازسازی و اصلاح شدند.",
+        "success",
+      );
+      checkDebtThreshold(updatedFields.personId || editingReceipt.personId).catch(console.error);
+    } catch (err) {
+      console.error(err);
+      customAlert("خطا در بروزرسانی سند رسید.");
+    }
+  };
+
+const handleSubmitSalary = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!salaryPersonId || !salaryBaseAmount) {
+      customAlert("لطفا کارمند و مبلغ حقوق پایه را تعیین کنید");
+      return;
+    }
+
+    if (
+      !window.confirm(
+        "آیا از ثبت و صدور این فیش حقوقی اطمینان دارید؟ در صورت تایید، سند و گردش مالی به ثبت می‌رسد.",
+      )
+    )
+      return;
+
+    const base = Number(salaryBaseAmount) || 0;
+    const housing = Number(salaryHousingAllowance) || 0;
+    const grocery = Number(salaryGroceryAllowance) || 0;
+    const otherAllow = Number(salaryOtherAllowances) || 0;
+    const insDeduct = Number(salaryInsuranceDeduction) || 0;
+    const taxDeduct = Number(salaryTaxDeduction) || 0;
+    const penaltyDeduct = Number(salaryOtherDeductions) || 0;
+
+    const netSalary =
+      base +
+      housing +
+      grocery +
+      otherAllow -
+      (insDeduct + taxDeduct + penaltyDeduct);
+
+    if (netSalary <= 0) {
+      customAlert("مبلغ خالص حقوق باید بزرگتر از صفر باشد");
+      return;
+    }
+
+    setSubmittingSalary(true);
+    startAppProcessing('شروع فرآیند ثبت سند حقوق و دستمزد...');
+    await new Promise(r => setTimeout(r, 20));
+    try {
+      updateAppProcessing('مرحله ۱ از ۴: محاسبه کارکرد، کسورات و مزایای کارمند...');
+      await new Promise(r => setTimeout(r, 20));
+
+      const p = persons.find(
+        (item) => item.id.toString() === salaryPersonId.toString(),
+      );
+      const personName = p ? getPersonDisplayName(p) : "کارمند";
+
+      // Build payslip breakdown to store in description as JSON string
+      const pMonthName = ["فروردین", "اردیبهشت", "خرداد", "تیر", "مرداد", "شهریور", "مهر", "آبان", "آذر", "دی", "بهمن", "اسفند"];
+      const mName = pMonthName[parseInt(salaryPeriodMonth, 10) - 1];
+      const normalDescription = `سند حقوق ${mName} ماه ${salaryPeriodYear}`;
+      const payslipObj: any = {
+        isPayslip: true,
+        employeeName: personName,
+        personId: salaryPersonId,
+        periodMonth: salaryPeriodMonth,
+        periodYear: salaryPeriodYear,
+        base,
+        allowances: {
+          housing,
+          grocery,
+          other: otherAllow,
+        },
+        deductions: {
+          insurance: insDeduct,
+          tax: taxDeduct,
+          penalty: penaltyDeduct,
+        },
+        netSalary,
+        userNote: salaryDescription || "سند حقوق و دستمزد کارمند",
+      };
+      const payloadDescription = normalDescription;
+
+      updateAppProcessing('مرحله ۲ از ۴: شماره‌گذاری خودکار و ثبت تراکنش حقوق...');
+      await new Promise(r => setTimeout(r, 20));
+
+      // Auto-assign receipt number for salary
+      const salaryPrefix =
+        storeSettings.prefix_salary !== undefined
+          ? storeSettings.prefix_salary
+          : "PAY-";
+
+      const startNumStr =
+        storeSettings.start_salary ||
+        storeSettings.invoiceStartNumber ||
+        "1000";
+      const lenStr =
+        storeSettings.len_salary || storeSettings.invoiceNumberLength || "6";
+
+      const startNum = parseInt(startNumStr, 10);
+      const numLength = Math.max(1, parseInt(lenStr, 10));
+
+      let maxNum = startNum - 1;
+
+      const existingRelated = (transactions || []).filter(
+        (t: any) => t.type === "salary" && t.receiptNumber,
+      );
+      if (existingRelated.length > 0) {
+        const nums = existingRelated.map((t: any) => {
+          let numStr = String(t.receiptNumber);
+          if (numStr.startsWith(salaryPrefix)) {
+            numStr = numStr.substring(salaryPrefix.length);
+          }
+          const match = numStr.match(/\d+/);
+          return match ? parseInt(match[0], 10) : 0;
+        });
+        const maxExisting = Math.max(...nums);
+        if (maxExisting > maxNum) maxNum = maxExisting;
+      }
+
+      const nextNum = maxNum + 1;
+      const receiptNumber = `${salaryPrefix}${String(nextNum).padStart(numLength, "0")}`;
+
+      const payload = {
+        type: "salary",
+        receiptNumber,
+        personId: salaryPersonId,
+        amount: netSalary,
+        date:
+          convertToGregorian(salaryDate),
+                  
+        resourceType: "none",
+        resourceId: 0,
+        description: payloadDescription,
+      };
+      const savedTx = await addTransaction(payload as any);
+      payslipObj.transactionId = savedTx.id;
+      payslipObj.receiptNumber = receiptNumber;
+      payslipObj.date = payload.date;
+
+      updateAppProcessing('مرحله ۳ از ۴: صدور فیش حقوقی پرسنل در سیستم...');
+      await new Promise(r => setTimeout(r, 20));
+      const savedPayslip = await addPayslip(payslipObj);
+      setPayslips([...payslips, savedPayslip]);
+
+      updateAppProcessing('مرحله ۴ از ۴: بروزرسانی کاردکس کارمند و مانده حساب...');
+      await new Promise(r => setTimeout(r, 20));
+
+      setSalarySuccessMsg("سند حقوق و دستمزد با موفقیت صادر شد.");
+      setSalaryBaseAmount("");
+      setSalaryHousingAllowance("");
+      setSalaryGroceryAllowance("");
+      setSalaryOtherAllowances("");
+      setSalaryInsuranceDeduction("");
+      setSalaryTaxDeduction("");
+      setSalaryOtherDeductions("");
+      setSalaryDescription("");
+      setSalaryPeriodMonth("1");
+      setSalaryPeriodYear("1403");
+      setSalaryResourceId("");
+
+    } catch (error: any) {
+      console.error("Error submitting salary", error);
+      customAlert(error.message || "خطای سیستمی رخ داد");
+    } finally {
+      setSubmittingSalary(false);
+      stopAppProcessing();
+    }
+  };
+
+const handleDeleteTransaction = async (id: number | string) => {
+    const tx = transactions.find((t) => t.id.toString() === id.toString());
+    
+    let typeLabel = "سند";
+    if (tx?.type === "receive") typeLabel = "دریافت";
+    else if (tx?.type === "pay") typeLabel = "پرداخت";
+    else if (tx?.type === "salary") typeLabel = "حقوق و دستمزد";
+    else if (tx?.type === "cost") typeLabel = "هزینه";
+
+    const personName = persons.find(p => p.id === tx?.personId)?.name;
+    const accountName = accounts.find(a => a.id === tx?.accountId)?.title || accounts.find(a => a.id === tx?.accountId)?.bankName;
+    const boxName = cashboxes.find(b => b.id === tx?.cashboxId)?.name;
+    
+    const details = tx ? (
+      <div className="flex flex-col gap-2">
+        <div><strong>نوع سند:</strong> {typeLabel}</div>
+        {personName && <div><strong>شخص:</strong> {personName}</div>}
+        {accountName && <div><strong>حساب بانکی:</strong> {accountName}</div>}
+        {boxName && <div><strong>صندوق:</strong> {boxName}</div>}
+        {tx.amount !== undefined && <div><strong>مبلغ:</strong> {Number(tx.amount).toLocaleString()} ریال</div>}
+        <div><strong>تاریخ:</strong> {tx.date}</div>
+        {tx.description && <div><strong>توضیحات:</strong> {tx.description}</div>}
+      </div>
+    ) : undefined;
+
+    confirmAction(
+      "آیا از حذف این سند اطمینان دارید؟ مانده حساب مربوطه اصلاح خواهد شد.",
+      async () => {
+        try {
+          if (tx && tx.method === "check" && tx.checkNumber) {
+            if (tx.type === "receive") {
+              const rc = receivedChecks.find(
+                (c) =>
+                  c.checkNumber === tx.checkNumber && c.payerId === tx.personId,
+              );
+              if (rc) await deleteReceivedCheck(rc.id.toString());
+            } else {
+              const ic = issuedChecks.find(
+                (c) =>
+                  c.checkNumber === tx.checkNumber && c.payeeId === tx.personId,
+              );
+              if (ic) await deleteIssuedCheck(ic.id.toString());
+            }
+          }
+          await deleteTransaction(id.toString());
+        } catch (error) {
+          console.error("Error deleting transaction", error);
+        }
+      },
+      details
+    );
+  };
+
+const handleDeleteCashbox = async (id: number | string) => {
+    if (!confirm("آیا از حذف این صندوق اطمینان دارید؟")) return;
+    try {
+      await deleteCashbox(id.toString());
+      await fetchCashboxes();
+    } catch (error) {
+      console.error("Error deleting cashbox", error);
+    }
+  };
+
+const handleDeleteWarehouse = async (id: number | string) => {
+    if (!confirm("آیا از حذف این انبار اطمینان دارید؟")) return;
+    try {
+      await deleteWarehouse(id.toString());
+      await fetchWarehouses();
+    } catch (error) {
+      console.error("Error deleting warehouse", error);
+    }
+  };
+
+const handleRecalculateStocks = async () => {
+    try {
+      setRecalculating(true);
+      await recalculateAllWarehouseStocks();
+      const stocks = await getWarehouseStocks();
+      setWarehouseStocks(stocks as any);
+
+      const fetchedProds = await getProducts();
+      setProducts(fetchedProds as any);
+
+      showNotification(
+        "موجودی انبارها و کارت‌های کالا با موفقیت بر اساس اسناد فاکتورها، ورود و خروج‌ها محاسبه مجدد شد.",
+        "success",
+      );
+    } catch (e) {
+      console.error(e);
+      showNotification("خطا در محاسبه مجدد موجودی انبار.", "error");
+    } finally {
+      setRecalculating(false);
+    }
+  };
+
+const handleEditWarehouse = (w: Warehouse) => {
+    setEditingWarehouseId(w.id);
+    setNewWarehouseName(w.name);
+    setNewWarehouseManager(w.manager || "");
+    setNewWarehouseLocation(w.location || "");
+    setNewWarehouseIsActive(w.isActive !== undefined ? w.isActive : true);
+    setIsWarehouseModalOpen(true);
+  };
+
+const handleToggleProductActive = async (productId: string | number, currentActiveState: boolean) => {
+    try {
+      await updateProduct(productId.toString(), { isActive: !currentActiveState });
+      
+      showNotification(
+        `وضعیت کالا به ${!currentActiveState ? "فعال" : "غیرفعال"} تغییر یافت.`,
+        "success"
+      );
+    } catch (error) {
+      console.error("Error toggling product active status", error);
+      customAlert("خطا در تغییر وضعیت کالا");
+    }
+  };
+
+const handleEditProduct = (p: Product | any) => {
+    setEditingProductId(p.id);
+    setIsProductModalOpen(true);
+  };
+
+const handleDuplicateProduct = (p: Product | any) => {
+    setEditingProductId(null);
+    setDuplicateProductId(p.id);
+    setIsProductModalOpen(true);
+  };
+
+const handleAIProductsAdd = async (
+    selectedProducts: any[],
+    categoryId: string,
+  ) => {
+    try {
+      let isSuccess = false;
+      for (const prod of selectedProducts) {
+        const newProduct = {
+          name: prod.name,
+          description: prod.description || "",
+          price: prod.price || 0,
+          type: "product",
+          categoryId: categoryId || "",
+          code: "",
+          barcode: "",
+          purchasePrice: 0,
+          stock: 0,
+          minStock: 0,
+          unit: "عدد",
+          secondaryUnit: "",
+          unitRatio: 1,
+        };
+        await addProduct(newProduct as any);
+        isSuccess = true;
+      }
+      if (isSuccess) {
+        
+        setSuccessMsg("کالاهای انتخاب شده با موفقیت افزوده شدند.");
+      }
+    } catch (e: any) {
+      customAlert("خطا در ثبت کالاها: " + e.message);
+    }
+  };
+
+const handleSavePersonRole = async () => {
+    if (!newPersonRoleName.trim() || !newPersonRoleCode.trim()) {
+      customAlert("تمامی فیلدها الزامی است");
+      return;
+    }
+    try {
+      if (editingPersonRoleId) {
+        await updatePersonRole(editingPersonRoleId, {
+          name: newPersonRoleName,
+          code: newPersonRoleCode,
+        });
+      } else {
+        await addPersonRole({
+          name: newPersonRoleName,
+          code: newPersonRoleCode,
+        });
+      }
+      await fetchPersonRoles();
+      setNewPersonRoleName("");
+      setNewPersonRoleCode("");
+      setEditingPersonRoleId(null);
+    } catch (e) {
+      console.error("Error saving role", e);
+    }
+  };
+
+const handleDeletePersonRole = async (id: string) => {
+    if (["customer", "supplier", "employee"].includes(id)) {
+      customAlert("نقش‌های سیستمی پیش‌فرض قابل حذف نیستند.");
+      return;
+    }
+    confirmAction("آیا از حذف این نقش اطمینان دارید؟", async () => {
+      try {
+        await deletePersonRole(id);
+        await fetchPersonRoles();
+      } catch (e) {
+        console.error("Error deleting role", e);
+      }
+    });
+  };
+
+const handleSavePersonGroup = async () => {
+    if (!newPersonGroupName.trim()) {
+      customAlert("نام گروه الزامی است");
+      return;
+    }
+    try {
+      if (editingPersonGroupId) {
+        await updatePersonGroup(editingPersonGroupId, {
+          name: newPersonGroupName,
+          color: newPersonGroupColor,
+        });
+      } else {
+        await addPersonGroup({
+          name: newPersonGroupName,
+          color: newPersonGroupColor,
+        });
+      }
+      await fetchPersonGroups();
+      setNewPersonGroupName("");
+      setNewPersonGroupColor("indigo");
+      setEditingPersonGroupId(null);
+    } catch (e) {
+      console.error("Error saving group", e);
+    }
+  };
+
+const handleDeletePersonGroup = async (id: string) => {
+    confirmAction(
+      "آیا از حذف این گروه اطمینان دارید؟ تمامی اشخاص این گروه فاقد گروه خواهند شد.",
+      async () => {
+        try {
+          await deletePersonGroup(id);
+
+          // Remove group from all persons in this group
+          const affectedPersons = (persons || []).filter((p) => p.group === id);
+          for (const p of affectedPersons) {
+            await updatePerson(p.id as string, { ...p, group: "" });
+          }
+
+          await fetchPersonGroups();
+          
+        } catch (e) {
+          console.error("Error deleting group", e);
+        }
+      },
+    );
+  };
+
+const handleEditPerson = (p: Person) => {
+    setEditingPersonId(p.id);
+    setNewPersonType(p.personType);
+    setNewPersonGender((p.gender as any) || "none");
+    setNewPersonTitle(p.title || "");
+    setNewPersonAlias(p.alias || "");
+    setNewPersonFirstName(p.firstName || "");
+    setNewPersonLastName(p.lastName || "");
+    setNewPersonCompanyName(p.companyName || "");
+    setNewPersonFatherName(p.fatherName || "");
+    setNewPersonNationalId(p.nationalId || "");
+    setNewPersonAccountingCode(p.accountingCode || "");
+    setNewPersonAddress(p.address || "");
+    setNewPersonImage(p.imageUrl || "");
+    setNewPersonPhone(p.phone || "");
+    setNewPersonContacts(p.contacts || []);
+    setNewPersonGroup(p.group || "");
+    setNewPersonRole(p.role);
+    setNewPersonTaxNumber(p.taxNumber || "");
+    setNewPersonRegistrationNumber(p.registrationNumber || "");
+    setNewPersonRoles(p.roles || (p.role ? [p.role] : []));
+    setNewPersonCategories(p.categories || []);
+
+    setNewPersonProvince(p.province || "");
+    setNewPersonCity(p.city || "");
+    setNewPersonIsActive(p.isActive !== undefined ? p.isActive : true);
+    setNewPersonRegistrationDate(
+      p.registrationDate ? new Date(p.registrationDate) : new Date(),
+    );
+    setNewPersonInitialBalance(p.initialBalance?.toString() || "");
+    setNewPersonInitialBalanceType(p.initialBalanceType || "settled");
+    setNewPersonCreditLimit(p.creditLimit?.toString() || "");
+    setPersonModalActiveTab("basic");
+    setIsPersonModalOpen(true);
+  };
+
+const handleEditAccount = (acc: Account) => {
+    setEditingAccountId(acc.id);
+    setIsAccountModalOpen(true);
+  };
+
+const handleEditCashbox = (box: Cashbox) => {
+    setEditingCashboxId(box.id);
+    setIsCashboxModalOpen(true);
+  };
+
+const fetchSettings = async () => {
+    try {
+      const data = await getStoreSettings();
+      const docCounters = await getLocalData<Record<string, number>>('doc_counters', {});
+      const isConfigured = Boolean(
+        data && (
+          (data as any).isSetup || 
+          (data as any).storeName || 
+          (data as any).companyName
+        )
+      );
+      if (isConfigured) {
+        const savedData = data as any;
+        const localTheme = (typeof window !== 'undefined' && window.localStorage) ? localStorage.getItem('app_theme') : null;
+        const mergedSettings = {
+          ...savedData,
+          doc_counters: docCounters,
+          theme: localTheme || savedData.theme || "classic",
+          prefix_warehouse_receipt:
+            savedData.prefix_warehouse_receipt ?? "REC-",
+          prefix_warehouse_remittance:
+            savedData.prefix_warehouse_remittance ?? "REM-",
+          prefix_purchase: savedData.prefix_purchase ?? "PUR-",
+          prefix_sale: savedData.prefix_sale ?? "INV-",
+          prefix_receive_receipt: savedData.prefix_receive_receipt ?? "RD-",
+          prefix_pay_receipt: savedData.prefix_pay_receipt ?? "PD-",
+          notify_on_purchase_invoice: savedData.notify_on_purchase_invoice ?? savedData.notify_on_invoice ?? false,
+          notify_on_sale_invoice: savedData.notify_on_sale_invoice ?? savedData.notify_on_invoice ?? true,
+          notify_on_return_invoices: savedData.notify_on_return_invoices ?? savedData.notify_on_invoice ?? false,
+          notify_on_sale_return: savedData.notify_on_sale_return ?? savedData.notify_on_invoice ?? false,
+          notify_on_purchase_return: savedData.notify_on_purchase_return ?? savedData.notify_on_invoice ?? false,
+          notify_on_receive: savedData.notify_on_receive ?? savedData.notify_on_receipt ?? true,
+          notify_on_payment: savedData.notify_on_payment ?? savedData.notify_on_receipt ?? true,
+          notify_on_warehouse_receipt: savedData.notify_on_warehouse_receipt ?? false,
+          notify_on_warehouse_remittance: savedData.notify_on_warehouse_remittance ?? false,
+          notify_on_invoice_due: savedData.notify_on_invoice_due ?? true,
+          notify_on_receivable_check: savedData.notify_on_receivable_check ?? true,
+          notify_on_payable_check: savedData.notify_on_payable_check ?? true,
+          notify_on_debtors: savedData.notify_on_debtors ?? savedData.smsDebtThresholdEnabled ?? true,
+          notify_on_installment: savedData.notify_on_installment ?? true,
+          use_decimals: savedData.use_decimals ?? false,
+          decimal_places: savedData.decimal_places ?? 2,
+        };
+        setStoreSettings(mergedSettings);
+        setGlobalStoreSettings(mergedSettings);
+        globalDateFormatter.updateConfig({
+          dateFormat: mergedSettings.dateFormat,
+          dateSeparator: mergedSettings.dateSeparator,
+          dateYearFormat: mergedSettings.dateYearFormat,
+          showTime: mergedSettings.dateShowTime,
+          timeFormat: mergedSettings.dateTimeFormat,
+          calendarType: mergedSettings.calendarType,
+        });
+        setSettingsForm(mergedSettings);
+        setInvoiceCurrency(mergedSettings.currency || "تومان");
+        setExchangeRate(1);
+        setExchangeRateInput("1");
+        setRequiresInitSetup(false);
+        // Apply store-wide visual settings if set in Settings menu
+        if (mergedSettings.menuLayout) setMenuLayout(mergedSettings.menuLayout);
+        if (mergedSettings.isFullWidth !== undefined) setIsFullWidth(mergedSettings.isFullWidth);
+      } else {
+        setRequiresInitSetup(false);
+      }
+    } catch (error) {
+      console.error("Error fetching settings", error);
+    }
+  };
+
+const handleSaveSettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmittingSettings(true);
+    try {
+      const payload = { ...settingsForm, isSetup: true };
+      const counters = payload.doc_counters || {};
+      delete payload.doc_counters;
+      setGlobalStoreSettings(payload);
+      try {
+        if (payload.theme) {
+          localStorage.setItem('app_theme', payload.theme);
+        }
+        localStorage.setItem('company_profile', JSON.stringify(payload));
+        localStorage.setItem('number_format_config', JSON.stringify({
+          use_decimals: payload.use_decimals,
+          decimal_places: payload.decimal_places,
+          currency: payload.currency
+        }));
+      } catch (_) {}
+      await saveStoreSettings(payload as any);
+      // Also update the database name in global businesses table
+      try {
+        const activeStoreId = localStorage.getItem('activeStoreId') || 'default';
+        await fetch(`/api/databases/${activeStoreId}`, {
+          method: 'PUT',
+          headers: { 
+            'Content-Type': 'application/json',
+            ...getAuthHeaders()
+          },
+          body: JSON.stringify({ name: payload.storeName || 'کسب و کار اصلی' })
+        });
+      } catch (err) {
+        console.error('Failed to sync business name', err);
+      }
+      await saveLocalData('doc_counters', counters);
+      await fetchSettings();
+      setSuccessMsg("تنظیمات فروشگاه با موفقیت ذخیره شد");
+      setRequiresInitSetup(false);
+    } catch (error) {
+      console.error("Error saving settings", error);
+    } finally {
+      setSubmittingSettings(false);
+    }
+  };
+
+const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 2 * 1024 * 1024) {
+        customAlert("حجم تصویر نباید بیشتر از 2 مگابایت باشد.");
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setSettingsForm({ ...settingsForm, logoUrl: reader.result as string });
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+const handleCurrencyChange = (newCurrency: string) => {
+    const oldRate = exchangeRate;
+    const newRate = getDefaultExchangeRate(newCurrency, storeSettings.currency);
+    setInvoiceCurrency(newCurrency);
+    setExchangeRate(newRate);
+    setExchangeRateInput(newRate.toString());
+
+    if (oldRate > 0 && newRate > 0) {
+      setItems((prevItems) =>
+        prevItems.map((item) => {
+          const updatedPrice = item.unitPrice * (oldRate / newRate);
+          const subtotal = item.quantity * updatedPrice;
+          const total = subtotal * (1 - item.discountPercent / 100);
+          return {
+
+            ...item,
+            unitPrice: Number(updatedPrice.toFixed(4)),
+            totalPrice: Number(total.toFixed(4)),
+          };
+        }),
+      );
+    }
+  };
+
+const handleSourceInvoiceChange = (invoiceId: string | number) => {
+    setSourceInvoiceId(invoiceId);
+    if (!invoiceId) {
+      setInvoiceDescription("");
+    setInvoiceNote("");
+      return;
+    }
+
+    const sourceInv = invoices.find(
+      (i) => i.id.toString() === invoiceId.toString(),
+    );
+    if (sourceInv) {
+      if (activeTab === "create_warehouse_doc") {
+        const dbDraftsStr = localStorage.getItem("drafts");
+        let drafts = dbDraftsStr ? JSON.parse(dbDraftsStr) : {};
+        delete drafts[invoiceId];
+        localStorage.setItem("drafts", JSON.stringify(drafts));
+      }
+
+      if (sourceInv.customerId) setCustomerId(sourceInv.customerId);
+      if (sourceInv.currency) {
+        setInvoiceCurrency(sourceInv.currency);
+        setExchangeRate(sourceInv.exchangeRate || 1);
+        setExchangeRateInput(String(sourceInv.exchangeRate || 1));
+      }
+      if (sourceInv.items && Array.isArray(sourceInv.items)) {
+        const isRemittance =
+          activeTab === "create_warehouse_doc" &&
+          invoiceType === "warehouse_remittance";
+
+        // Calculate previously received/remitted amounts
+        const pastDocs = (invoices || []).filter(
+          (i) =>
+            i.sourceInvoiceId?.toString() === invoiceId.toString() &&
+            (isRemittance
+              ? i.type === "warehouse_remittance"
+              : i.type === "warehouse_receipt") && i.status !== "voided" && !i.isDeleted,
+        );
+        const processedAmounts: Record<string, number> = {};
+        pastDocs.forEach((doc) => {
+          if (doc.items) {
+            doc.items.forEach((rt: any) => {
+              const key = String(rt.productId || rt.productName || "");
+              if (!key) return;
+              if (!processedAmounts[key]) processedAmounts[key] = 0;
+              processedAmounts[key] += Number(rt.quantity) || 0;
+            });
+          }
+        });
+
+        const remainingItems = sourceInv.items
+          .map((it: any) => {
+            const key = String(it.productId || it.productName || "");
+            const processed = key ? processedAmounts[key] || 0 : 0;
+            const remaining = (Number(it.quantity) || 0) - processed;
+            return {
+
+              ...it,
+              id: generateId(),
+              maxQuantity: remaining > 0 ? remaining : 0, // Save max
+              quantity: remaining > 0 ? remaining : 0,
+              warehouseId: "", // User will select destination warehouse
+            };
+          })
+          .filter((it: any) => it.quantity > 0);
+
+        setItems(remainingItems);
+      }
+    }
+  };
+
+const handleExchangeRateChange = (newRate: number) => {
+    const oldRate = exchangeRate;
+    setExchangeRate(newRate);
+
+    if (oldRate > 0 && newRate > 0) {
+      setItems((prevItems) =>
+        prevItems.map((item) => {
+          const updatedPrice = item.unitPrice * (oldRate / newRate);
+          const subtotal = item.quantity * updatedPrice;
+          const total = subtotal * (1 - item.discountPercent / 100);
+          return {
+
+            ...item,
+            unitPrice: Number(updatedPrice.toFixed(4)),
+            totalPrice: Number(total.toFixed(4)),
+          };
+        }),
+      );
+    }
+  };
+
+useEffect(() => {
+    if (storeSettings?.storeName) {
+      document.title = storeSettings.storeName;
+    }
+  }, [storeSettings?.storeName]);
+
+useEffect(() => {
+    const font =
+      activeTab === "settings" && settingsForm?.fontFamily
+        ? settingsForm.fontFamily
+        : storeSettings?.fontFamily || "IRANYekanXFaNum";
+    const fontStack = `"${font}", "IRANYekanXFaNum", "Vazirmatn", "Vazirmatn FD", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+    document.documentElement.style.setProperty("--app-font", fontStack);
+    document.documentElement.style.setProperty("--font-sans", fontStack);
+    document.body.style.fontFamily = fontStack;
+  }, [settingsForm?.fontFamily, activeTab, storeSettings?.fontFamily]);
+
+const fetchChecks = async () => {
+    try {
+      const cb = await getCheckbooks();
+      setCheckbooks(cb as any);
+      const ic = await getIssuedChecks();
+      setIssuedChecks(ic as any);
+      const rc = await getReceivedChecks();
+      setReceivedChecks(rc as any);
+    } catch (err) {
+      console.error("fetchChecks error", err);
+    }
+  };
+
+const fetchSmsMessages = async () => {
+    try {
+      const msgs = await getSmsMessages();
+      setSmsMessages(msgs || []);
+    } catch (err) {
+      console.error("fetchSmsMessages error", err);
+    }
+  };
+
+
+  const fetchLoansAndInstallments = async () => {
+    try {
+      const [lData, iData] = await Promise.all([getLoans(), getInstallments()]);
+      setLoans(lData);
+      setInstallments(iData);
+    } catch (e) {
+      console.error("Error fetching loans and installments", e);
+    }
+  };
+
+  
+  useEffect(() => {
+    const handleDataChanged = (e: any) => {
+        // debounce fetch
+        if ((window as any)._dataChangeTimeout) {
+            clearTimeout((window as any)._dataChangeTimeout);
+        }
+        (window as any)._dataChangeTimeout = setTimeout(() => {
+            fetchDataSilent();
+        }, 300);
+    };
+    if (typeof window !== 'undefined') {
+        window.addEventListener('app_data_changed', handleDataChanged);
+        return () => window.removeEventListener('app_data_changed', handleDataChanged);
+    }
+  }, []);
+
+  const fetchDataSilent = async () => {
+    try {
+      await Promise.all([
+        fetchPersonRoles(),
+        fetchPersonGroups(),
+        fetchPersonOpeningBalances(),
+        fetchProducts(),
+        fetchAccounts(),
+        fetchCashboxes(),
+        fetchWarehouses(),
+        fetchSettings(),
+        fetchTransactions(),
+        fetchSmsMessages(),
+        fetchFinancialYearInfo(),
+        fetchLoansAndInstallments(),
+      ]);
+
+      await autoGenerateRentCommitments();
+    } catch (error) {
+      console.error("Error silently fetching data:", error);
+    }
+  };
+
+const fetchData = async () => {
+    setLoading(true);
+    try {
+      const allFetches = Promise.allSettled([
+        fetchPersonRoles(),
+        fetchPersonGroups(),
+        fetchPersonOpeningBalances(),
+        fetchProducts(),
+        fetchAccounts(),
+        fetchCashboxes(),
+        fetchWarehouses(),
+        fetchSettings(),
+        fetchTransactions(),
+        fetchSmsMessages(),
+        fetchFinancialYearInfo(),
+        fetchLoansAndInstallments(),
+      ]);
+
+      const timeoutPromise = new Promise((resolve) => setTimeout(resolve, 6000));
+      await Promise.race([allFetches, timeoutPromise]);
+
+      try {
+        await autoGenerateRentCommitments();
+      } catch (_) {}
+
+      // Silently sync freshly fetched data to the isolated IndexedDB of the active business
+      try {
+        const curStoreId = (typeof window !== 'undefined' ? localStorage.getItem('activeStoreId') : null) || 'default';
+        syncBusinessDataToIndexedDb(curStoreId, {
+          products,
+          persons,
+          invoices,
+          transactions,
+          accounts,
+          cashboxes,
+          warehouses
+        }).catch(() => {});
+      } catch (_) {}
+    } catch (error) {
+      console.error("Error fetching data:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useRealtimeSync({
+    activeStoreId: activeStoreId || undefined,
+    setTransactions,
+    setInvoices,
+    setPersons,
+    setAllPersons,
+    setAccountingDocuments,
+    setAccounts,
+    setCashboxes,
+    setProducts,
+    fetchTransactions,
+    fetchInvoices,
+    fetchPersons,
+    fetchAllPersons,
+    fetchAccountingDocuments,
+    fetchChecks,
+    fetchAccounts,
+    fetchCashboxes,
+    fetchPersonOpeningBalances,
+    fetchProducts,
+    showNotification,
+  });
+
+  /**
+   * Seamless online business switching:
+   * 1. Resets in-memory client state immediately
+   * 2. Sets cookie & localStorage for the new business
+   * 3. Fetches new business data without full page reload
+   * 4. Syncs to the business's own IndexedDB
+   */
+  const switchBusiness = async (newStoreId: string) => {
+    if (!newStoreId) return;
+
+    // 1. Immediately update storage, session & cookies so all downstream requests have the correct x-store-id
+    localStorage.setItem("activeStoreId", newStoreId);
+    sessionStorage.setItem("activeStoreId", newStoreId);
+    localStorage.setItem("activeBusinessChosen", "true");
+    sessionStorage.setItem("activeBusinessChosen", "true");
+    localStorage.setItem("initial_setup_complete", "true");
+    try {
+      document.cookie = `activeStoreId=${encodeURIComponent(newStoreId)}; path=/; max-age=31536000; SameSite=Lax`;
+    } catch (_) {}
+
+    // 2. Update Zustand store
+    setActiveStoreId(newStoreId);
+    setIsStoreSelectionOpen(false);
+
+    setLoading(true);
+
+    try {
+      // 3. Invalidate HTTP in-memory caches
+      invalidateCache();
+
+      // 4. Clear client in-memory state immediately so previous store data is not visible
+      setProducts([]);
+      setPersons([]);
+      setInvoices([]);
+      setTransactions([]);
+      setAccounts([]);
+      setCashboxes([]);
+      setWarehouses([]);
+      setPersonGroups([]);
+      setPersonRoles([]);
+      setAccountingDocuments([]);
+      setIssuedChecks([]);
+      setReceivedChecks([]);
+      setSmsMessages([]);
+      setActiveFinancialYearState(null);
+
+      // 5. Clear stored keys for old store settings in session/local storage
+      localStorage.removeItem("company_profile");
+      localStorage.removeItem("store_settings");
+      sessionStorage.removeItem("company_profile");
+      sessionStorage.removeItem("store_settings");
+
+      // 6. Fetch fresh data with Promise.allSettled and safety timeout so it never hangs
+      const fetchAllData = Promise.allSettled([
+        fetchPersonRoles(),
+        fetchPersonGroups(),
+        fetchPersons(),
+        fetchPersonOpeningBalances(),
+        fetchProducts(),
+        fetchAccounts(),
+        fetchCashboxes(),
+        fetchWarehouses(),
+        fetchSettings(),
+        fetchTransactions(),
+        fetchAccountingDocuments(),
+        fetchChecks(),
+        fetchSmsMessages(),
+        fetchFinancialYearInfo(),
+        fetchLoansAndInstallments(),
+        fetchInvoices(),
+      ]);
+
+      const timeoutPromise = new Promise((resolve) => setTimeout(resolve, 6000));
+      await Promise.race([fetchAllData, timeoutPromise]);
+
+      try {
+        await autoGenerateRentCommitments();
+      } catch (_) {}
+
+      // 7. Sync new store data to its dedicated IndexedDB in background
+      try {
+        const targetBiz = availableStores.find((s: any) => s.id === newStoreId);
+        syncBusinessDataToIndexedDb(newStoreId, {
+          meta: { businessName: targetBiz?.name || newStoreId, switchedAt: Date.now() }
+        }).catch(() => {});
+      } catch (_) {}
+
+      const storeName = availableStores.find((s: any) => s.id === newStoreId)?.name || 'کسب‌وکار انتخابی';
+      showNotification(`محیط کاری به «${storeName}» با موفقیت تغییر یافت.`, 'success');
+    } catch (err: any) {
+      console.error("Error switching business:", err);
+      showNotification(`کسب‌وکار فعال شد. اطلاعات تکمیلی در حال بارگذاری است.`, 'info');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAppSignOut = async () => {
+    try {
+      // 1. Reset business selection state
+      setActiveStoreId(null);
+      setIsStoreSelectionOpen(true);
+      sessionStorage.removeItem("activeBusinessChosen");
+      localStorage.removeItem("activeBusinessChosen");
+      sessionStorage.removeItem("activeStoreId");
+      localStorage.removeItem("activeStoreId");
+      sessionStorage.removeItem("company_profile");
+      localStorage.removeItem("company_profile");
+      sessionStorage.removeItem("store_settings");
+      localStorage.removeItem("store_settings");
+      try {
+        document.cookie = 'activeStoreId=; path=/; max-age=0; SameSite=Lax';
+      } catch (_) {}
+
+      // 2. Reset working section state (بخش کاری انتخابی)
+      setSystemModule("selector");
+      sessionStorage.removeItem("systemModule");
+      localStorage.removeItem("systemModule");
+      sessionStorage.removeItem("activeTab");
+      localStorage.removeItem("activeTab");
+      if (user?.id) {
+        try {
+          const localSettingsStr = localStorage.getItem('user_settings_' + user.id);
+          if (localSettingsStr) {
+            const parsed = JSON.parse(localSettingsStr);
+            delete parsed.systemModule;
+            localStorage.setItem('user_settings_' + user.id, JSON.stringify(parsed));
+          }
+        } catch (_) {}
+      }
+
+      // 3. Clear data in memory
+      invalidateCache();
+      setProducts([]);
+      setPersons([]);
+      setInvoices([]);
+      setTransactions([]);
+      setAccounts([]);
+      setCashboxes([]);
+      setActiveTab("welcome_page");
+    } catch (e) {
+      console.error("Error during app signout reset:", e);
+    } finally {
+      await signOut();
+    }
+  };
+
+  useEffect(() => {
+    // Only fetch data when user is authenticated AND a business has been actively selected
+    const isChosen = typeof window !== 'undefined' && window.sessionStorage?.getItem("activeBusinessChosen") === "true";
+    if (user && activeStoreId && isChosen) {
+      fetchData();
+    }
+  }, [user?.id, activeStoreId]);
+
+useEffect(() => {
+    if (!activeTab) return;
+    const isPersonLedger = activeTab === "person_ledger" || activeTab.includes("ledger");
+    const isInvoiceOrReceiptWorkflow =
+      activeTab.startsWith("create_") ||
+      activeTab.includes("invoice") ||
+      activeTab.includes("receipt") ||
+      activeTab === "keyboard_receipt" ||
+      activeTab.startsWith("list_") ||
+      isPersonLedger ||
+      Boolean(editingInvoiceId);
+
+    if (isInvoiceOrReceiptWorkflow) {
+      if (allPersons.length === 0) {
+        fetchAllPersons();
+      }
+      if (products.length === 0) {
+        fetchProducts();
+      }
+    }
+
+    if (isPersonLedger) {
+      fetchInvoices({ all: true });
+      if (accountingDocuments.length === 0) {
+        fetchAccountingDocuments();
+      }
+      if (transactions.length === 0) {
+        fetchTransactions();
+      }
+      if (checkbooks.length === 0 && issuedChecks.length === 0 && receivedChecks.length === 0) {
+        fetchChecks();
+      }
+      return;
+    }
+
+    if ((activeTab.startsWith("list_") || activeTab.includes("invoice")) && invoices.length === 0) {
+      fetchInvoices();
+    } else if ((activeTab === "persons" || activeTab === "persons_list" || activeTab.includes("person")) && persons.length === 0) {
+      fetchPersons();
+    } else if ((activeTab === "accounting_documents" || activeTab.includes("document")) && accountingDocuments.length === 0) {
+      fetchAccountingDocuments();
+    } else if ((activeTab.includes("check") || activeTab === "checkbooks") && (checkbooks.length === 0 && issuedChecks.length === 0 && receivedChecks.length === 0)) {
+      fetchChecks();
+    }
+  }, [activeTab]);
+
+  // Debounced instant server search for persons
+  useEffect(() => {
+    if (!personSearchTerm && persons.length === 0) return;
+    const t = setTimeout(() => {
+      fetchPersons({ search: personSearchTerm, page: 1, pageSize: personPageSize, paged: true });
+    }, 300);
+    return () => clearTimeout(t);
+  }, [personSearchTerm]);
+
+  // Debounced instant server search for invoices
+  useEffect(() => {
+    if (!invoiceSearchQuery && invoices.length === 0) return;
+    const t = setTimeout(() => {
+      fetchInvoices({ search: invoiceSearchQuery, page: 1, pageSize: invoicePageSize });
+    }, 300);
+    return () => clearTimeout(t);
+  }, [invoiceSearchQuery]);
+
+  // Server-side pagination transitions
+  useEffect(() => {
+    if (personCurrentPage > 1) {
+      fetchPersons({ search: personSearchTerm, page: personCurrentPage, pageSize: personPageSize, paged: true });
+    }
+  }, [personCurrentPage]);
+
+  useEffect(() => {
+    if (invoiceCurrentPage > 1) {
+      fetchInvoices({ search: invoiceSearchQuery, page: invoiceCurrentPage, pageSize: invoicePageSize });
+    }
+  }, [invoiceCurrentPage]);
+
+const handleAddItem = () => {
+    setItems((prevItems) => [
+      ...prevItems,
+      {
+        id: generateId(),
+        productId: "",
+        productName: "",
+        quantity: 1,
+        unitPrice: 0,
+        discountPercent: 0,
+        totalPrice: 0,
+      },
+    ]);
+  };
+
+const handleRemoveItem = (id: string) => {
+    setItems((items || []).filter((item) => item.id !== id));
+  };
+
+const productLastPrices = useMemo(() => {
+    const prices: Record<string, { purchase: { price: number, date: number }, sale: { price: number, date: number } }> = {};
+
+    invoices.forEach((inv) => {
+      if (inv.status === 'voided' || inv.isDeleted || inv.status === 'draft' || inv.isDraft || !inv.items) return;
+
+      const isPurchase = inv.type === "purchase" || inv.type === "warehouse_receipt";
+      const isSale = inv.type === "sale" || inv.type === "warehouse_remittance";
+
+      if (!isPurchase && !isSale) return;
+
+      const invDate = new Date(inv.date || inv.createdAt || 0).getTime();
+      const rate = inv.exchangeRate || 1;
+
+      inv.items.forEach((item: any) => {
+        const pid = item.productId?.toString();
+        if (!pid) return;
+
+        if (!prices[pid]) {
+          prices[pid] = {
+            purchase: { price: 0, date: 0 },
+            sale: { price: 0, date: 0 }
+          };
+        }
+
+        const product = products.find((p: any) => p.id?.toString() === pid);
+        const isSec = Boolean(item.isSecondaryUnit);
+        const ratio = Number(item.unitRatio || product?.unitRatio || 1);
+        const dir = item.unitRatioDirection || product?.unitRatioDirection || (product ? getUnitRatioDirection(product) : 'secondary_to_main');
+        const effectiveBasePrice = item.baseUnitPrice !== undefined && item.baseUnitPrice !== null && !isNaN(Number(item.baseUnitPrice))
+          ? Number(item.baseUnitPrice)
+          : convertPriceToBaseUnit(Number(item.unitPrice) || 0, isSec, ratio, dir);
+
+        const price = effectiveBasePrice * rate;
+        if (price > 0) {
+          if (isPurchase && invDate > prices[pid].purchase.date) {
+            prices[pid].purchase.date = invDate;
+            prices[pid].purchase.price = price;
+          }
+          if (isSale && invDate > prices[pid].sale.date) {
+            prices[pid].sale.date = invDate;
+            prices[pid].sale.price = price;
+          }
+        }
+      });
+    });
+
+    return prices;
+  }, [invoices]);
+
+const getLastPriceForProduct = (
+    productId: string | number,
+    isPurchase: boolean,
+  ) => {
+    const pid = productId.toString();
+    const prices = productLastPrices[pid];
+    if (!prices) return 0;
+    
+    // Note: This optimization drops the "currentInvoiceDate" restriction for performance,
+    // assuming the absolute latest price is acceptable for UX auto-fill.
+    return isPurchase ? prices.purchase.price : prices.sale.price;
+  };
+
+const handleFastAddProduct = (
+    productIdStr: string,
+    forceProductObj?: any,
+    initialQuantity: number = 1,
+  ) => {
+    if (!productIdStr) return;
+    const product =
+      forceProductObj || products.find((p) => p.isActive !== false && p.id.toString() === productIdStr);
+    if (!product) return;
+
+    if (activeTab === "create_warehouse_doc" && product.type === "service") {
+      customAlert("کالای خدماتی فاقد عملیات انبارداری و مدیریت تعداد است.");
+      return;
+    }
+
+    const isPurchase =
+      activeTab === "create_purchase" ||
+      (activeTab === "create_warehouse_doc" &&
+        invoiceType === "warehouse_receipt");
+    let pPrice = getLastPriceForProduct(product.id, isPurchase);
+    if (!pPrice || pPrice === 0) {
+      pPrice = isPurchase && product.purchasePrice
+        ? product.purchasePrice
+        : product.price;
+    }
+    const convertedPrice = exchangeRate > 0 ? pPrice / exchangeRate : pPrice;
+    const unitPriceRounded = Number(convertedPrice.toFixed(4));
+    const addQty = Math.max(0.01, Number(initialQuantity) || 1);
+
+    setItems((currentItems) => {
+      // Check if it exists
+      const existingItemIndex = currentItems.findIndex(
+        (i) => i.productId?.toString() === productIdStr,
+      );
+      if (existingItemIndex > -1 && !storeSettings.allowDuplicateInvoiceRows) {
+        const newItems = [...currentItems];
+        newItems[existingItemIndex].quantity =
+          Number(newItems[existingItemIndex].quantity || 0) + addQty;
+        newItems[existingItemIndex].totalPrice = Math.max(
+          0,
+          newItems[existingItemIndex].quantity *
+            newItems[existingItemIndex].unitPrice *
+            (1 - newItems[existingItemIndex].discountPercent / 100),
+        );
+        return newItems;
+      } else {
+        const defaultWh = invoiceWarehouseId || defaultSalesWarehouse?.id || (warehouses?.[0]?.id ?? "");
+        return [
+          ...currentItems,
+          {
+            id: generateId(),
+            productId: productIdStr,
+            productName: product.name,
+            warehouseId: defaultWh,
+            quantity: addQty,
+            unitPrice: unitPriceRounded,
+            discountPercent: 0,
+            totalPrice: unitPriceRounded * addQty,
+            selectedUnit: product.unit || "",
+            unitRatio: product.unitRatio || 1,
+            isSecondaryUnit: false,
+          },
+        ];
+      }
+    });
+  };
+
+  const handleBulkAddProducts = (
+    selectedItems: Array<{ productId: string | number; quantity: number }>,
+  ) => {
+    if (!selectedItems || selectedItems.length === 0) return;
+    const isPurchase =
+      activeTab === "create_purchase" ||
+      (activeTab === "create_warehouse_doc" &&
+        invoiceType === "warehouse_receipt");
+
+    const pMap: Record<string, any> = {};
+    (products || []).forEach((p: any) => {
+      if (p && p.isActive !== false) {
+        pMap[p.id?.toString()] = p;
+      }
+    });
+
+    const defaultWh = invoiceWarehouseId || defaultSalesWarehouse?.id || (warehouses?.[0]?.id ?? "");
+
+    setItems((currentItems) => {
+      let newItems = [...currentItems];
+      for (const sel of selectedItems) {
+        const pidStr = sel.productId.toString();
+        const product = pMap[pidStr];
+        if (!product) continue;
+        if (activeTab === "create_warehouse_doc" && product.type === "service")
+          continue;
+
+        let pPrice = getLastPriceForProduct(product.id, isPurchase);
+        if (!pPrice || pPrice === 0) {
+          pPrice =
+            isPurchase && product.purchasePrice
+              ? product.purchasePrice
+              : product.price;
+        }
+        const convertedPrice = exchangeRate > 0 ? pPrice / exchangeRate : pPrice;
+        const unitPriceRounded = Number(convertedPrice.toFixed(4));
+        const addQty = Math.max(0.01, Number(sel.quantity) || 1);
+
+        const existingIndex = newItems.findIndex(
+          (i) => i.productId?.toString() === pidStr,
+        );
+        if (existingIndex > -1 && !storeSettings.allowDuplicateInvoiceRows) {
+          const updatedQty =
+            Number(newItems[existingIndex].quantity || 0) + addQty;
+          const discount =
+            Number(newItems[existingIndex].discountPercent) || 0;
+          const price = Number(newItems[existingIndex].unitPrice) || 0;
+          newItems[existingIndex] = {
+            ...newItems[existingIndex],
+            quantity: updatedQty,
+            totalPrice: Math.max(
+              0,
+              updatedQty * price * (1 - discount / 100),
+            ),
+          };
+        } else {
+          newItems.push({
+            id: generateId(),
+            productId: pidStr,
+            productName: product.name,
+            warehouseId: defaultWh,
+            quantity: addQty,
+            unitPrice: unitPriceRounded,
+            discountPercent: 0,
+            totalPrice: unitPriceRounded * addQty,
+            selectedUnit: product.unit || "",
+            unitRatio: product.unitRatio || 1,
+            isSecondaryUnit: false,
+          });
+        }
+      }
+      return newItems;
+    });
+
+    playAudioFeedback("scan" as any);
+    showNotification(
+      `${toPersianDigits(selectedItems.length)} قلم کالا با موفقیت به فاکتور افزوده شد`,
+      "success",
+      true,
+    );
+  };
+
+  const handleAddBlankRow = () => {
+    const defaultWh = invoiceWarehouseId || defaultSalesWarehouse?.id || (warehouses?.[0]?.id ?? "");
+    setItems((currentItems) => [
+      ...currentItems,
+      {
+        id: generateId(),
+        productId: "",
+        productName: "",
+        warehouseId: defaultWh,
+        quantity: 1,
+        unitPrice: 0,
+        discountPercent: 0,
+        totalPrice: 0,
+        selectedUnit: "عدد",
+        unitRatio: 1,
+        isSecondaryUnit: false,
+      },
+    ]);
+  };
+
+  const handleDuplicateItem = (id: string) => {
+    setItems((currentItems) => {
+      const item = currentItems.find((i) => i.id === id);
+      if (!item) return currentItems;
+      return [
+        ...currentItems,
+        {
+          ...item,
+          id: generateId(),
+        },
+      ];
+    });
+  };
+
+  const handleIncrementQuantity = (id: string, delta: number) => {
+    setItems((currentItems) => {
+      return currentItems.map((item) => {
+        if (item.id !== id) return item;
+        const currentQty = Number(item.quantity) || 0;
+        const newQty = Math.max(0.01, Number((currentQty + delta).toFixed(4)));
+        const discount = Number(item.discountPercent) || 0;
+        const unitPrice = Number(item.unitPrice) || 0;
+        return {
+          ...item,
+          quantity: newQty,
+          totalPrice: Math.max(0, newQty * unitPrice * (1 - discount / 100)),
+        };
+      });
+    });
+  };
+
+const handleFastBarcodeScan = (code: string) => {
+    const product = products.find((p) => p.isActive !== false && (p.barcode === code || p.code === code));
+    if (product) {
+      playAudioFeedback("scan" as any);
+      handleFastAddProduct(String(product.id), product);
+      showNotification(`کالا "${product.name}" اضافه شد`, "success", true);
+    } else {
+      playAudioFeedback("scan_error" as any);
+      showNotification("کالایی با این بارکد/کد یافت نشد", "error", true);
+    }
+  };
+
+  const handleItemChange = (
+    id: string,
+    field: keyof InvoiceItem,
+    value: any,
+  ) => {
+    const isWarehouseTab = activeTab === "create_warehouse_doc";
+    let sourceInv: any = null;
+    let processedAmounts: Record<string, number> = {};
+
+    if (
+      isWarehouseTab &&
+      sourceInvoiceId &&
+      field === "quantity"
+    ) {
+      sourceInv = invoices.find(
+        (i) => i.id.toString() === sourceInvoiceId.toString(),
+      );
+      if (sourceInv) {
+        const pastDocs = (invoices || []).filter(
+          (i) =>
+            i.sourceInvoiceId?.toString() === sourceInvoiceId.toString() &&
+            (invoiceType === "warehouse_remittance"
+              ? i.type === "warehouse_remittance"
+              : i.type === "warehouse_receipt") &&
+            i.status !== "voided" &&
+            !i.isDeleted,
+        );
+        pastDocs.forEach((doc) => {
+          if (doc.items) {
+            doc.items.forEach((rt: any) => {
+              const key = String(rt.productId || rt.productName || "");
+              if (!key) return;
+              if (!processedAmounts[key]) processedAmounts[key] = 0;
+              processedAmounts[key] += Number(rt.quantity) || 0;
+            });
+          }
+        });
+      }
+    }
+
+    setItems(
+      (items || []).map((item) => {
+        if (item.id === id) {
+          const updatedItem = { ...item, [field]: value };
+
+          // Special handling for product selection to auto-fill details
+          if (field === "productId" && value !== "") {
+            const product = products.find(
+              (p) => p.id.toString() === String(value),
+            );
+            if (product) {
+              if (
+                activeTab === "create_warehouse_doc" &&
+                product.type === "service"
+              ) {
+                customAlert(
+                  "کالای خدماتی فاقد عملیات انبارداری و مدیریت تعداد است.",
+                );
+                return item;
+              }
+              updatedItem.productName = product.name;
+              updatedItem.selectedUnit = product.unit || "";
+              updatedItem.unitRatio = product.unitRatio || 1;
+              updatedItem.unitRatioDirection = product.unitRatioDirection || getUnitRatioDirection(product);
+              updatedItem.isSecondaryUnit = false;
+
+              const isPurchase =
+                activeTab === "create_purchase" ||
+                (activeTab === "create_warehouse_doc" &&
+                  invoiceType === "warehouse_receipt");
+              let pPrice = getLastPriceForProduct(product.id, isPurchase);
+              if (!pPrice || pPrice === 0) {
+                pPrice =
+                  isPurchase && product.purchasePrice
+                    ? product.purchasePrice
+                    : product.price;
+              }
+              const convertedPrice =
+                exchangeRate > 0 ? pPrice / exchangeRate : pPrice;
+
+              updatedItem.unitPrice = Number(convertedPrice.toFixed(4));
+              const subtotal = convertedPrice * updatedItem.quantity;
+              updatedItem.totalPrice = Math.max(
+                0,
+                subtotal * (1 - updatedItem.discountPercent / 100),
+              );
+            }
+          }
+
+          // Special handling for pricing calculation
+          if (
+            field === "quantity" ||
+            field === "unitPrice" ||
+            field === "discountPercent" ||
+            field === "isSecondaryUnit"
+          ) {
+            const isSec =
+              field === "isSecondaryUnit"
+                ? Boolean(value)
+                : Boolean(updatedItem.isSecondaryUnit);
+
+            // If we toggled the unit type, adjust the unit price relative to base price
+            if (field === "isSecondaryUnit" && updatedItem.productId) {
+              const product = products.find(
+                (p) => p.id.toString() === String(updatedItem.productId),
+              );
+              if (product) {
+                updatedItem.selectedUnit = isSec
+                  ? product.secondaryUnit || ""
+                  : product.unit || "";
+                updatedItem.unitRatio = product.unitRatio || 1;
+                const dir = product.unitRatioDirection || getUnitRatioDirection(product);
+                updatedItem.unitRatioDirection = dir;
+
+                const isPurchase =
+                  activeTab === "create_purchase" ||
+                  (activeTab === "create_warehouse_doc" && invoiceType === "warehouse_receipt");
+                let baseP = getLastPriceForProduct(product.id, isPurchase);
+                if (!baseP || baseP === 0) {
+                  baseP = isPurchase && product.purchasePrice ? product.purchasePrice : product.price;
+                }
+                const convertedBasePrice = exchangeRate > 0 ? (baseP || 0) / exchangeRate : (baseP || 0);
+
+                updatedItem.unitPrice = getPriceForSelectedUnit(
+                  convertedBasePrice,
+                  isSec,
+                  product.unitRatio,
+                  dir
+                );
+              }
+            }
+
+            const currentProduct = products.find(
+              (p) => p.id?.toString() === updatedItem.productId?.toString(),
+            );
+            const allowDecimal = currentProduct ? currentProduct.allowDecimalQuantity !== false : true;
+
+            let qtyStr = field === "quantity" ? String(value ?? "") : String(updatedItem.quantity ?? "");
+            let numQty = parseFloat(qtyStr.replace(/[٫\/]/g, ".")) || 0;
+            if (!allowDecimal) {
+              numQty = Math.round(numQty);
+            }
+
+            let rawValToStore: any = field === "quantity" ? value : updatedItem.quantity;
+
+            if (isWarehouseTab && sourceInvoiceId) {
+              if (sourceInv) {
+                const key = String(
+                  updatedItem.productId || updatedItem.productName || "",
+                );
+                const srcItem = sourceInv.items.find(
+                  (si: any) => (si.productId || si.productName) === key,
+                );
+                if (srcItem) {
+                  const processed = processedAmounts[key] || 0;
+                  let maxQty = (Number(srcItem.quantity) || 0) - processed;
+                  if (typeof updatedItem.maxQuantity !== "undefined") {
+                    if (numQty > updatedItem.maxQuantity) {
+                      numQty = updatedItem.maxQuantity;
+                      rawValToStore = updatedItem.maxQuantity;
+                    }
+                  } else {
+                    if (numQty > maxQty) {
+                      numQty = maxQty;
+                      rawValToStore = maxQty;
+                    }
+                    updatedItem.maxQuantity = maxQty;
+                  }
+                }
+              }
+            } else if (
+              isWarehouseTab &&
+              typeof updatedItem.maxQuantity !== "undefined"
+            ) {
+              if (numQty > updatedItem.maxQuantity) {
+                numQty = updatedItem.maxQuantity;
+                rawValToStore = updatedItem.maxQuantity;
+              }
+            }
+
+            updatedItem.quantity = rawValToStore as any;
+            const price =
+              field === "unitPrice"
+                ? Number(value)
+                : Number(updatedItem.unitPrice);
+            const discPercent =
+              field === "discountPercent"
+                ? Number(value)
+                : Number(updatedItem.discountPercent);
+
+            const subtotal = numQty * price;
+            const total = subtotal * (1 - discPercent / 100);
+            updatedItem.totalPrice = total > 0 ? total : 0;
+
+            const ratio = Number(updatedItem.unitRatio || currentProduct?.unitRatio || 1);
+            const dir = updatedItem.unitRatioDirection || currentProduct?.unitRatioDirection || (currentProduct ? getUnitRatioDirection(currentProduct) : 'secondary_to_main');
+            updatedItem.baseUnitPrice = convertPriceToBaseUnit(price, isSec, ratio, dir);
+            updatedItem.baseQuantity = convertQuantityToBaseUnit(numQty, isSec, ratio, dir);
+          }
+
+          return updatedItem;
+        }
+        return item;
+      }),
+    );
+  };
+
+  const getPersonDisplayName = (person: any, personsList?: any[]) => {
+    return formatPersonName(person, personsList || persons);
+  };
+
+  const getPersonDisplayNameById = (personId: string | number | undefined) => {
+    return formatPersonName(personId, persons);
+  };
+
+const renderPersonLink = (
+    personId: string | number | undefined,
+    fallbackName: string | undefined = undefined,
+  ) => {
+    let name = "نامشخص";
+    if (personId) {
+      name = getPersonDisplayNameById(personId);
+    }
+    if (name === "نامشخص" && fallbackName) {
+      name = fallbackName;
+    }
+
+    if (!personId || name === "نامشخص") return <span>{name}</span>;
+    return (
+      <span
+        className="cursor-pointer text-indigo-600 hover:text-indigo-800 transition-colors font-bold border-b border-dashed border-indigo-300 hover:border-indigo-600 pb-[1px]"
+        onClick={(e) => {
+          e.stopPropagation();
+          setLedgerPersonId(personId);
+          setActiveTab("person_ledger");
+          setDrawerPersonId("");
+          setViewingInvoice(null);
+          setPreviewInvoiceData(null);
+          setPreviewReceiptData(null);
+          setViewingPayslip(null);
+        }}
+        title="مشاهده کارت حساب"
+      >
+        {name}
+      </span>
+    );
+  };
+
+  const handleDeleteInvoice = async (id: string | number) => {
+    const invoice = invoices.find((inv) => inv.id.toString() === id.toString());
+    if (!invoice) return;
+
+    const isWarehouseDoc = invoice.type === "warehouse_receipt" || invoice.type === "warehouse_remittance";
+    const hasLinkedWarehouseOp = invoices.some(
+      (inv) =>
+        (inv.type === "warehouse_receipt" ||
+          inv.type === "warehouse_remittance") &&
+        inv.sourceInvoiceId?.toString() === id.toString() &&
+        !inv.isAutoGenerated,
+    );
+    if (hasLinkedWarehouseOp) {
+      customAlert(
+        "برای این فاکتور عملیات انبار (رسید/حواله) ثبت شده است و قابل حذف نمی‌باشد.",
+      );
+      return;
+    }
+
+    const typeLabel =
+      invoice.type === "sale" ? "فاکتور فروش" :
+      invoice.type === "purchase" ? "فاکتور خرید" :
+      invoice.type === "return_sale" || invoice.type === "sales_return" ? "برگشت از فروش" :
+      invoice.type === "return_purchase" || invoice.type === "purchase_return" ? "برگشت از خرید" :
+      invoice.type === "warehouse_receipt" ? "رسید ورود به انبار" :
+      invoice.type === "warehouse_remittance" ? "حواله خروج از انبار" : "سند / فاکتور";
+      
+    const personName = persons.find(p => p.id === invoice.customerId || p.id === invoice.personId)?.name || invoice.customerName || invoice.personName || "انبار داخلی / سازمانی";
+    const whObj = warehouses.find(w => String(w.id) === String(invoice.warehouseId));
+    const whName = whObj ? whObj.name : "انبار مربوطه";
+    const itemsCount = (invoice.items || []).length;
+    
+    const details = (
+      <div className="flex flex-col gap-2 font-medium">
+        <div className="flex justify-between border-b border-slate-200/70 pb-1.5">
+          <span className="text-slate-500 font-bold">نوع سند:</span>
+          <span className="font-black text-slate-800">{typeLabel}</span>
+        </div>
+        <div className="flex justify-between border-b border-slate-200/70 pb-1.5">
+          <span className="text-slate-500 font-bold">شماره:</span>
+          <span className="font-mono font-black text-slate-900">#{toPersianDigits(invoice.invoiceNumber || invoice.id)}</span>
+        </div>
+        <div className="flex justify-between border-b border-slate-200/70 pb-1.5">
+          <span className="text-slate-500 font-bold">انبار:</span>
+          <span className="font-bold text-slate-800">{whName}</span>
+        </div>
+        <div className="flex justify-between border-b border-slate-200/70 pb-1.5">
+          <span className="text-slate-500 font-bold">طرف حساب:</span>
+          <span className="font-bold text-slate-800">{personName}</span>
+        </div>
+        <div className="flex justify-between border-b border-slate-200/70 pb-1.5">
+          <span className="text-slate-500 font-bold">اقلام:</span>
+          <span className="font-bold text-slate-800">{toPersianDigits(itemsCount)} قلم کالا</span>
+        </div>
+        <div className="flex justify-between border-b border-slate-200/70 pb-1.5">
+          <span className="text-slate-500 font-bold">تاریخ:</span>
+          <span className="font-bold text-slate-800">{toPersianDigits(invoice.date ? invoice.date.split("T")[0] : "-")}</span>
+        </div>
+        {isWarehouseDoc && (
+          <div className="mt-1 text-[11px] leading-relaxed text-rose-800 bg-rose-50 border border-rose-200 p-2.5 rounded-lg">
+            هشدار: با حذف این سند، اثرات آن بر موجودی انبار و کاردکس لغو شده و رکورد سند به طور کامل پاک می‌شود.
+          </div>
+        )}
+      </div>
+    );
+
+    confirmAction(
+      isWarehouseDoc
+        ? `آیا از حذف کامل سند «${typeLabel}» به شماره ${toPersianDigits(invoice.invoiceNumber || invoice.id)} اطمینان دارید؟`
+        : "حذف این مورد غیرقابل بازگشت است. آیا اطمینان دارید؟",
+      async () => {
+        try {
+          await deleteInvoice(id.toString());
+          await recalculateAllWarehouseStocks();
+          await fetchInvoices();
+          await fetchWarehouses();
+          await fetchProducts();
+          showNotification(`سند ${typeLabel} با موفقیت حذف گردید.`, 'success');
+        } catch (err: any) {
+          customAlert(err.message);
+        }
+      },
+      details,
+      {
+        title: isWarehouseDoc ? `حذف ${typeLabel}` : "تایید حذف فاکتور",
+        confirmText: "حذف قطعی",
+        type: "danger",
+        confirmButtonClass: "bg-rose-600 hover:bg-rose-700 text-white"
+      }
+    );
+  };
+
+  const handleVoidInvoice = async (id: string | number) => {
+    const invoice = invoices.find((inv) => inv.id.toString() === id.toString());
+    if (!invoice) return;
+
+    const isWarehouseDoc = invoice.type === "warehouse_receipt" || invoice.type === "warehouse_remittance";
+    const typeLabel =
+      invoice.type === "sale" ? "فاکتور فروش" :
+      invoice.type === "purchase" ? "فاکتور خرید" :
+      invoice.type === "return_sale" || invoice.type === "sales_return" ? "برگشت از فروش" :
+      invoice.type === "return_purchase" || invoice.type === "purchase_return" ? "برگشت از خرید" :
+      invoice.type === "warehouse_receipt" ? "رسید ورود به انبار" :
+      invoice.type === "warehouse_remittance" ? "حواله خروج از انبار" : "سند / فاکتور";
+      
+    const personName = persons.find(p => p.id === invoice.customerId || p.id === invoice.personId)?.name || invoice.customerName || invoice.personName || "انبار داخلی / سازمانی";
+    const whObj = warehouses.find(w => String(w.id) === String(invoice.warehouseId));
+    const whName = whObj ? whObj.name : "انبار مربوطه";
+    const itemsCount = (invoice.items || []).length;
+    
+    const details = (
+      <div className="flex flex-col gap-2 font-medium">
+        <div className="flex justify-between border-b border-slate-200/70 pb-1.5">
+          <span className="text-slate-500 font-bold">نوع سند:</span>
+          <span className="font-black text-slate-800">{typeLabel}</span>
+        </div>
+        <div className="flex justify-between border-b border-slate-200/70 pb-1.5">
+          <span className="text-slate-500 font-bold">شماره:</span>
+          <span className="font-mono font-black text-slate-900">#{toPersianDigits(invoice.invoiceNumber || invoice.id)}</span>
+        </div>
+        <div className="flex justify-between border-b border-slate-200/70 pb-1.5">
+          <span className="text-slate-500 font-bold">انبار:</span>
+          <span className="font-bold text-slate-800">{whName}</span>
+        </div>
+        <div className="flex justify-between border-b border-slate-200/70 pb-1.5">
+          <span className="text-slate-500 font-bold">طرف حساب:</span>
+          <span className="font-bold text-slate-800">{personName}</span>
+        </div>
+        <div className="flex justify-between border-b border-slate-200/70 pb-1.5">
+          <span className="text-slate-500 font-bold">تعداد اقلام:</span>
+          <span className="font-bold text-slate-800">{toPersianDigits(itemsCount)} قلم کالا</span>
+        </div>
+        <div className="flex justify-between border-b border-slate-200/70 pb-1.5">
+          <span className="text-slate-500 font-bold">تاریخ:</span>
+          <span className="font-bold text-slate-800">{toPersianDigits(invoice.date ? invoice.date.split("T")[0] : "-")}</span>
+        </div>
+        <div className="mt-1 text-[11px] leading-relaxed text-amber-900 bg-amber-50 border border-amber-200 p-2.5 rounded-lg">
+          توجه: سند ابطال‌شده دیگر در محاسبات موجودی انبار لحاظ نمی‌شود، اما با وضعیت «ابطال‌شده» در سوابق سیستم حفظ خواهد شد.
+        </div>
+      </div>
+    );
+
+    confirmAction(
+      isWarehouseDoc 
+        ? `آیا از ابطال سند «${typeLabel}» به شماره ${toPersianDigits(invoice.invoiceNumber || invoice.id)} اطمینان دارید؟`
+        : "آیا از ابطال این فاکتور اطمینان دارید؟ فاکتور ابطال شده در محاسبات لحاظ نخواهد شد اما در سوابق باقی می‌ماند.", 
+      async () => {
+        try {
+          await voidInvoice(id.toString());
+          await recalculateAllWarehouseStocks();
+          await fetchInvoices();
+          await fetchWarehouses();
+          await fetchProducts();
+          showNotification(`سند ${typeLabel} با موفقیت ابطال شد.`, 'info');
+        } catch (err: any) {
+          customAlert(err.message);
+        }
+      },
+      details,
+      {
+        title: isWarehouseDoc ? `ابطال ${typeLabel}` : "تایید ابطال فاکتور",
+        confirmText: "ابطال قطعی سند",
+        type: "warning",
+        confirmButtonClass: "bg-amber-600 hover:bg-amber-700 text-white"
+      }
+    );
+  };
+
+
+const handleFastWarehouseReceipt = async (inv: any, warehouseId: string) => {
+    if (!warehouseId) {
+      customAlert("انتخاب انبار الزامی است.");
+      return null;
+    }
+
+    if (inv.type === "purchase" && (inv.status === "pending_approval" || inv.status === "draft" || inv.isDraft)) {
+      customAlert("صدور رسید انبار برای فاکتورهای پیش‌نویس یا تایید نشده امکان‌پذیر نیست. لطفاً ابتدا فاکتور خرید را تایید نهایی نمایید.");
+      return null;
+    }
+    
+    // Check if receipt already exists
+    const existing = invoices.find(
+      (i: any) =>
+        i.type === "warehouse_receipt" &&
+        (i.sourceInvoiceId?.toString() === inv.id?.toString() ||
+          (i.sourceInvoiceNumber && i.sourceInvoiceNumber?.toString() === inv.invoiceNumber?.toString())) &&
+        i.status !== "voided" &&
+        !i.isDeleted
+    );
+    if (existing) {
+       customAlert(`رسید انبار برای این فاکتور قبلاً با شماره سند #${toPersianDigits(existing.invoiceNumber || existing.id)} ثبت شده است.`);
+       if (setViewingInvoice) {
+         setViewingInvoice(existing);
+       }
+       return existing;
+    }
+
+    updateAppProcessing("در حال ثبت رسید انبار...");
+    
+    try {
+        const payload = {
+            type: "warehouse_receipt",
+            warehouseId: warehouseId,
+            operationType: "purchase_invoice",
+            sourceInvoiceId: inv.id,
+            sourceInvoiceNumber: inv.invoiceNumber || inv.id,
+            customerId: inv.customerId,
+            date: new Date().toISOString(),
+            items: (inv.items || []).map((item: any) => {
+                const productObj = products.find((p) => p.id?.toString() === item.productId?.toString());
+                const isSec = Boolean(item.isSecondaryUnit) || (Boolean(productObj?.secondaryUnit) && item.selectedUnit === productObj?.secondaryUnit);
+                const ratio = Number(item.unitRatio || productObj?.unitRatio || 1);
+                const dir = item.unitRatioDirection || productObj?.unitRatioDirection || (productObj ? getUnitRatioDirection(productObj) : 'secondary_to_main');
+                const rawPrice = Number(item.unitPrice || item.price || 0);
+                const rawQty = Number(item.quantity) || 0;
+                const baseUnitPrice = convertPriceToBaseUnit(rawPrice, isSec, ratio, dir);
+                const baseQuantity = convertQuantityToBaseUnit(rawQty, isSec, ratio, dir);
+
+                return {
+                    ...item,
+                    warehouseId: warehouseId,
+                    isSecondaryUnit: isSec,
+                    unitRatio: ratio,
+                    unitRatioDirection: dir,
+                    selectedUnit: item.selectedUnit || (isSec ? productObj?.secondaryUnit : productObj?.unit),
+                    baseUnitPrice,
+                    baseQuantity,
+                };
+            }),
+            status: "approved",
+            isDraft: false,
+            totalAmount: inv.totalAmount,
+            overallDiscountPercent: inv.overallDiscountPercent,
+            invoiceDescription: `رسید اتوماتیک انبار برای فاکتور خرید ${inv.invoiceNumber || inv.id}`
+        };
+        
+        const added = await addInvoice(payload as any, false);
+        await recalculateAllWarehouseStocks();
+        await fetchInvoices();
+        await fetchProducts();
+        setSuccessMsg("رسید انبار با موفقیت ثبت شد و مقادیر در کاردکس انبار اعمال گردید.");
+        setTimeout(() => setSuccessMsg(""), 3500);
+
+        const createdReceipt = added || payload;
+        if (setViewingInvoice && createdReceipt) {
+          setViewingInvoice(createdReceipt);
+        }
+        return createdReceipt;
+    } catch (e) {
+        console.error("Fast receipt error:", e);
+        customAlert("خطا در ثبت رسید انبار");
+        return null;
+    } finally {
+        stopAppProcessing();
+    }
+};
+
+const handleFastWarehouseRemittance = async (inv: any, warehouseId?: string) => {
+  if (!inv) return null;
+
+  if (inv.status === "voided" || inv.isDraft) {
+    customAlert("صدور حواله انبار برای فاکتورهای پیش‌نویس یا باطل شده امکان‌پذیر نیست.");
+    return null;
+  }
+
+  // Get all physical items
+  const physicalItems = (inv.items || []).filter((it: any) => {
+    const p = products.find((prod) => prod.id?.toString() === it.productId?.toString());
+    return p?.type !== "service";
+  });
+
+  if (physicalItems.length === 0) {
+    customAlert("این فاکتور فاقد کالای فیزیکی جهت صدور حواله خروج است.");
+    return null;
+  }
+
+  // Find all distinct warehouses in items or fallback to warehouseId or active default warehouse
+  const fallbackDefaultWh = (warehouses || []).find((w: any) => w.isActive !== false)?.id || warehouses?.[0]?.id;
+  const distinctWhIds: string[] = Array.from(
+    new Set(
+      physicalItems
+        .map((it: any) => (it.warehouseId || inv.warehouseId || warehouseId || fallbackDefaultWh || "").toString())
+        .filter(Boolean)
+    )
+  );
+
+  const targetWhList = warehouseId ? [warehouseId.toString()] : distinctWhIds;
+  if (targetWhList.length === 0) {
+    customAlert("لطفاً انبار مورد نظر را انتخاب نمایید.");
+    return null;
+  }
+
+  startAppProcessing("در حال صدور حواله(های) تفکیکی خروج از انبار...");
+  const newCreatedRemittances: any[] = [];
+  const existingRemittances: any[] = [];
+
+  try {
+    for (const targetWh of targetWhList) {
+      const itemsForWh = physicalItems.filter((it: any) => {
+        const itWh = (it.warehouseId || inv.warehouseId || "").toString();
+        return !itWh || itWh === targetWh;
+      });
+      if (itemsForWh.length === 0) continue;
+
+      const whObj = warehouses.find((w: any) => w.id?.toString() === targetWh);
+      const whName = whObj ? whObj.name : "انبار";
+
+      // Check if remittance for this invoice and warehouse already exists
+      const existing = invoices.find(
+        (i: any) =>
+          i.type === "warehouse_remittance" &&
+          (i.sourceInvoiceId?.toString() === inv.id?.toString() ||
+            (i.sourceInvoiceNumber && i.sourceInvoiceNumber?.toString() === inv.invoiceNumber?.toString())) &&
+          i.warehouseId?.toString() === targetWh &&
+          i.status !== "voided" &&
+          !i.isDeleted
+      );
+      if (existing) {
+        existingRemittances.push(existing);
+        continue;
+      }
+
+      const mappedItems = itemsForWh.map((item: any) => {
+        const productObj = products.find((p) => p.id?.toString() === item.productId?.toString());
+        const isSec = Boolean(item.isSecondaryUnit) || (Boolean(productObj?.secondaryUnit) && item.selectedUnit === productObj?.secondaryUnit);
+        const ratio = Number(item.unitRatio || productObj?.unitRatio || 1);
+        const dir = item.unitRatioDirection || productObj?.unitRatioDirection || (productObj ? getUnitRatioDirection(productObj) : 'secondary_to_main');
+        const rawPrice = Number(item.unitPrice || item.price || 0);
+        const rawQty = Number(item.quantity) || 0;
+        const baseUnitPrice = convertPriceToBaseUnit(rawPrice, isSec, ratio, dir);
+        const baseQuantity = convertQuantityToBaseUnit(rawQty, isSec, ratio, dir);
+
+        return {
+          ...item,
+          warehouseId: targetWh,
+          isSecondaryUnit: isSec,
+          unitRatio: ratio,
+          unitRatioDirection: dir,
+          selectedUnit: item.selectedUnit || (isSec ? productObj?.secondaryUnit : productObj?.unit),
+          baseUnitPrice,
+          baseQuantity,
+        };
+      });
+
+      const totalItemsAmount = mappedItems.reduce((acc: number, it: any) => acc + (Number(it.totalPrice) || 0), 0);
+
+      const payload = {
+        type: "warehouse_remittance",
+        warehouseId: targetWh,
+        operationType: "sales_invoice",
+        sourceInvoiceId: inv.id,
+        sourceInvoiceNumber: inv.invoiceNumber || inv.id,
+        customerId: inv.customerId,
+        date: new Date().toISOString(),
+        items: mappedItems,
+        status: "approved",
+        isDraft: false,
+        totalAmount: totalItemsAmount,
+        overallDiscountPercent: inv.overallDiscountPercent || 0,
+        invoiceDescription: `حواله خروج خودکار انبار «${whName}» برای فاکتور فروش ${inv.invoiceNumber || inv.id}`,
+      };
+
+      const added = await addInvoice(payload as any, false);
+      if (added) {
+        newCreatedRemittances.push(added);
+      }
+    }
+
+    await recalculateAllWarehouseStocks();
+    await fetchInvoices();
+    await fetchProducts();
+
+    if (newCreatedRemittances.length > 0) {
+      setSuccessMsg(
+        newCreatedRemittances.length > 1
+          ? `تعداد ${toPersianDigits(newCreatedRemittances.length)} حواله خروج تفکیکی برای انبارهای مربوطه با موفقیت صادر گردید.`
+          : `حواله خروج انبار با موفقیت صادر و در کاردکس ثبت شد.`
+      );
+      setTimeout(() => setSuccessMsg(""), 3500);
+
+      if (setViewingInvoice && newCreatedRemittances[0]) {
+        setViewingInvoice(newCreatedRemittances[0]);
+      }
+      return newCreatedRemittances;
+    } else if (existingRemittances.length > 0) {
+      customAlert(`حواله خروج انبار برای این فاکتور قبلاً با شماره سند #${toPersianDigits(existingRemittances[0].invoiceNumber || existingRemittances[0].id)} صادر شده است.`);
+      if (setViewingInvoice && existingRemittances[0]) {
+        setViewingInvoice(existingRemittances[0]);
+      }
+      return existingRemittances;
+    } else {
+      customAlert("هیچ قلم کالای فیزیکی مرتبط با انبار انتخاب‌شده برای صدور حواله یافت نشد.");
+      return null;
+    }
+  } catch (e) {
+    console.error("Fast remittance error:", e);
+    customAlert("خطا در صدور حواله خروج انبار");
+    return null;
+  } finally {
+    stopAppProcessing();
+  }
+};
+
+const handleApprovePurchaseInvoice = async (inv: any) => {
+    if (!inv || !inv.id) return;
+    if (inv.status === "approved") {
+      customAlert("این فاکتور خرید قبلاً تایید نهایی شده است.");
+      return;
+    }
+
+    startAppProcessing("در حال تایید نهایی فاکتور خرید و صدور سند حسابداری...");
+    try {
+      const updatedInvoiceData = {
+        ...inv,
+        status: "approved",
+        isDraft: false,
+        updatedAt: Date.now()
+      };
+
+      await updateInvoice(inv.id.toString(), updatedInvoiceData as any, false, false);
+      await syncInvoiceAccountingDocument(updatedInvoiceData);
+      
+      // If invoice had payment information, process financial payment transaction
+      if ((inv.paymentStatus === "paid" || (inv.paymentStatus === "partial" && Number(inv.paidAmount) > 0)) && inv.paymentAccountId) {
+        const invoiceTotalAmt = Number(inv.totalAmount) || 0;
+        const paidAmt = inv.paymentStatus === "paid" ? invoiceTotalAmt : Number(inv.paidAmount);
+        const paymentAccount = accounts.find((a: any) => a.id === inv.paymentAccountId);
+
+        if (paymentAccount && paidAmt > 0) {
+          const payTxPayload = {
+            type: "pay",
+            amount: paidAmt,
+            date: inv.date || new Date().toISOString().split("T")[0],
+            personId: inv.customerId,
+            resourceType: (paymentAccount as any).type === "bank" ? "bank" : "cashbox",
+            resourceId: inv.paymentAccountId,
+            method: "cash",
+            description: `بابت تسویه فاکتور خرید شماره ${inv.invoiceNumber || inv.id}`,
+            currency: inv.currency || "تومان",
+            linkedInvoices: { [inv.id]: paidAmt }
+          };
+          await addTransaction(payTxPayload);
+        }
+      }
+
+      await addSystemLog(
+        "APPROVE_PURCHASE_INVOICE",
+        `تایید نهایی فاکتور خرید شماره ${inv.invoiceNumber || inv.id} و صدور سند حسابداری`,
+        "purchase_invoices",
+        inv.id
+      );
+
+      await fetchInvoices();
+      await fetchAccountingDocuments();
+      await fetchTransactions();
+      setSuccessMsg(`فاکتور خرید شماره ${inv.invoiceNumber || inv.id} با موفقیت تایید نهایی گردید و سند حسابداری آن صادر شد.`);
+      setTimeout(() => setSuccessMsg(""), 3500);
+    } catch (e: any) {
+      console.error("Error approving purchase invoice:", e);
+      customAlert(`خطا در تایید فاکتور خرید: ${e.message || "خطای ناشناخته"}`);
+    } finally {
+      stopAppProcessing();
+    }
+};
+
+  const handleApproveWarehouseDoc = async (doc: any) => {
+    if (!doc || !doc.id) return;
+    if (doc.status === "approved" || doc.status === "final") {
+      customAlert("این سند انبار قبلاً تایید نهایی شده است.");
+      return;
+    }
+
+    const isReceipt = doc.type === "warehouse_receipt" || doc.type === "purchase" || doc.type === "sales_return";
+    const docTypeLabel = isReceipt ? "رسید ورود به انبار" : "حواله خروج از انبار";
+    const docNumber = doc.invoiceNumber || doc.documentNumber || String(doc.id);
+    const targetWhObj = warehouses.find((w: any) => String(w.id) === String(doc.warehouseId));
+    const whName = targetWhObj ? targetWhObj.name : "انبار مرکزی";
+
+    // Strict shortage validation if approving a remittance
+    if (!isReceipt && getProductStockInfo) {
+      const shortages: string[] = [];
+      const targetWh = doc.warehouseId ? doc.warehouseId.toString() : "";
+      (doc.items || []).forEach((it: any) => {
+        if (it.productId) {
+          const p = products.find((prod: any) => String(prod.id) === String(it.productId));
+          if (p && p.type !== "service") {
+            const sInfo = getProductStockInfo(it.productId);
+            const cur = targetWh && sInfo?.warehouses?.[targetWh]
+              ? Number(sInfo.warehouses[targetWh].physical || 0)
+              : sInfo
+              ? Number(sInfo.totalPhysical || 0)
+              : Number(p.stock || 0);
+            const q = Number(it.quantity) || 0;
+            if (q > cur) {
+              shortages.push(`• ${it.productName || p.name}: موجودی فعلی ${toPersianDigits(cur)}، مقدار حواله ${toPersianDigits(q)} (کسری: ${toPersianDigits(Number((q - cur).toFixed(2)))})`);
+            }
+          }
+        }
+      });
+
+      if (shortages.length > 0) {
+        customAlert(
+          `خطای عدم موجودی کافی!\nامکان تایید نهایی حواله وجود ندارد زیرا اقلام زیر در کاردکس انبار «${whName}» کسری دارند:\n\n${shortages.join("\n")}\n\nلطفاً ابتدا موجودی کالا را تامین فرمایید.`
+        );
+        return;
+      }
+    }
+
+    const itemsCount = (doc.items || []).length;
+    const totalQty = (doc.items || []).reduce((acc: number, it: any) => acc + (Number(it.quantity) || 0), 0);
+    const personName = doc.customerName || doc.personName || "انبار داخلی / سازمانی";
+
+    const modalDetails = (
+      <div className="flex flex-col gap-2 font-medium">
+        <div className="flex justify-between border-b border-slate-200/70 pb-1.5">
+          <span className="text-slate-500 font-bold">نوع سند:</span>
+          <span className="font-black text-slate-800">{docTypeLabel}</span>
+        </div>
+        <div className="flex justify-between border-b border-slate-200/70 pb-1.5">
+          <span className="text-slate-500 font-bold">شماره سند:</span>
+          <span className="font-mono font-black text-slate-900">#{toPersianDigits(docNumber)}</span>
+        </div>
+        <div className="flex justify-between border-b border-slate-200/70 pb-1.5">
+          <span className="text-slate-500 font-bold">انبار مربوطه:</span>
+          <span className="font-bold text-slate-800">{whName}</span>
+        </div>
+        <div className="flex justify-between border-b border-slate-200/70 pb-1.5">
+          <span className="text-slate-500 font-bold">طرف حساب:</span>
+          <span className="font-bold text-slate-800">{personName}</span>
+        </div>
+        <div className="flex justify-between border-b border-slate-200/70 pb-1.5">
+          <span className="text-slate-500 font-bold">تعداد اقلام:</span>
+          <span className="font-bold text-slate-800">{toPersianDigits(itemsCount)} قلم ({toPersianDigits(totalQty)} واحد)</span>
+        </div>
+        <div className="mt-1 text-[11px] leading-relaxed text-emerald-800 bg-emerald-50 border border-emerald-200 p-2.5 rounded-lg">
+          {isReceipt
+            ? "با تایید نهایی این سند، موجودی کالاهای فوق بلافاصله در انبار افزایش یافته و در کاردکس ثبت خواهد شد."
+            : "با تایید نهایی این سند، موجودی کالاهای فوق بلافاصله از انبار کسر گردیده و از کاردکس خارج می‌شود."}
+        </div>
+      </div>
+    );
+
+    confirmAction(
+      `آیا از تایید نهایی و قطعی‌سازی سند «${docTypeLabel}» به شماره ${toPersianDigits(docNumber)} اطمینان دارید؟`,
+      async () => {
+        startAppProcessing(`در حال تایید نهایی ${docTypeLabel} و به‌روزرسانی کاردکس...`);
+        try {
+          const updatedDocData = {
+            ...doc,
+            status: "approved",
+            isDraft: false,
+            updatedAt: Date.now()
+          };
+
+          await updateInvoice(doc.id.toString(), updatedDocData as any, false, false);
+          await recalculateAllWarehouseStocks();
+          
+          await addSystemLog(
+            isReceipt ? "APPROVE_WAREHOUSE_RECEIPT" : "APPROVE_WAREHOUSE_REMITTANCE",
+            `تایید نهایی ${docTypeLabel} شماره ${docNumber} و ثبت قطعی در کاردکس انبار ${whName}`,
+            isReceipt ? "warehouse_receipts" : "warehouse_remittances",
+            doc.id
+          );
+
+          await fetchInvoices();
+          await fetchWarehouses();
+          await fetchProducts();
+          setSuccessMsg(`سند ${docTypeLabel} شماره ${toPersianDigits(docNumber)} با موفقیت تایید نهایی شد و اثر آن در موجودی انبار اعمال گردید.`);
+          setTimeout(() => setSuccessMsg(""), 3500);
+        } catch (e: any) {
+          console.error("Error approving warehouse doc:", e);
+          customAlert(`خطا در تایید ${docTypeLabel}: ${e.message || "خطای ناشناخته"}`);
+        } finally {
+          stopAppProcessing();
+        }
+      },
+      modalDetails,
+      {
+        title: `تایید نهایی ${docTypeLabel}`,
+        confirmText: isReceipt ? "تایید و ورود به انبار" : "تایید و خروج از انبار",
+        type: "success",
+        confirmButtonClass: isReceipt ? "bg-emerald-600 hover:bg-emerald-700 text-white" : "bg-purple-600 hover:bg-purple-700 text-white"
+      }
+    );
+  };
+
+  const handleApproveWarehouseReceipt = handleApproveWarehouseDoc;
+
+const handleEditInvoiceAction = async (inv: any) => {
+    const isWarehouseDoc = inv.type === "warehouse_receipt" || inv.type === "warehouse_remittance";
+    const hasLinkedWarehouseOp = invoices.some(
+      (val) =>
+        (val.type === "warehouse_receipt" ||
+          val.type === "warehouse_remittance") &&
+        val.sourceInvoiceId?.toString() === inv.id.toString() &&
+        !val.isAutoGenerated,
+    );
+    if (hasLinkedWarehouseOp) {
+      customAlert(
+        isWarehouseDoc 
+          ? "برای این سند انبار عملیات مرتبط ثبت شده است و قابل ویرایش نمی‌باشد."
+          : "برای این فاکتور عملیات انبار (رسید/حواله) مبدا ثبت شده است و قابل ویرایش نمی‌باشد.",
+      );
+      return;
+    }
+
+    const isDraft = inv.isDraft || inv.status === "draft";
+
+    const proceedEdit = () => {
+      setEditingInvoiceId(inv.id);
+      setInvoiceMode("manual");
+      setInvoiceNumber(inv.invoiceNumber);
+      setSellerInvoiceNumber(inv.sellerInvoiceNumber || "");
+      setInvoiceTitle(inv.title || "");
+      setInvoiceType(inv.type);
+      setInvoiceCurrency(inv.currency || storeSettings.currency);
+      setCustomerId(inv.customerId);
+      setDriverPersonId(inv.driverPersonId || "");
+      setDriverName(inv.driverName || "");
+      setDriverPhone(inv.driverPhone || "");
+      setReceiverPersonId(inv.receiverPersonId || "");
+      setReceiverName(inv.receiverName || "");
+      setReceiverPhone(inv.receiverPhone || "");
+      setVehiclePlateNumber(inv.vehiclePlateNumber || "");
+      setShippingAddress(inv.shippingAddress || "");
+      setInvoiceWarehouseId(inv.warehouseId || inv.items?.find((i: any) => i?.warehouseId)?.warehouseId || "");
+      setSourceInvoiceId(inv.sourceInvoiceId || "");
+      setItems((inv.items || []).map((i: any) => ({ ...i, id: i.id || generateId() })));
+      setOverallDiscountPercent(inv.overallDiscountPercent || 0);
+
+      if (inv.date) {
+        try {
+          setDate(new Date(inv.date));
+        } catch (e) {}
+      }
+
+      setActiveTab(
+        inv.type === "sale_return"
+          ? "create_sale_return"
+          : inv.type === "purchase_return"
+            ? "create_purchase_return"
+            : inv.type === "sale"
+              ? "create_sale"
+              : inv.type === "purchase"
+                ? "create_purchase"
+                : (inv.type === "consignment_out" || inv.type === "consignment_in")
+                  ? "create_consignment"
+                  : "create_warehouse_doc",
+        true,
+      );
+    };
+
+    if (!isDraft) {
+      confirmAction(
+        isWarehouseDoc 
+          ? `آیا می‌خواهید سند انبار شماره ${toPersianDigits(inv.invoiceNumber || inv.id)} را ویرایش کنید؟ تغییرات پس از ثبت نهایی در موجودی انبار اعمال خواهد شد.`
+          : "آیا می‌خواهید این فاکتور را ویرایش کنید؟ نسخه قبلی پس از ذخیره نهایی حذف و با نسخه جدید جایگزین خواهد شد.",
+        proceedEdit,
+        undefined,
+        {
+          title: isWarehouseDoc ? "ویرایش سند انبار" : "ویرایش فاکتور",
+          confirmText: "شروع ویرایش",
+          type: "info",
+          confirmButtonClass: "bg-blue-600 hover:bg-blue-700 text-white"
+        }
+      );
+    } else {
+      confirmAction(
+        isWarehouseDoc 
+          ? `آیا می‌خواهید پیش‌نویس سند انبار شماره ${toPersianDigits(inv.invoiceNumber || inv.id)} را ویرایش کنید؟` 
+          : "آیا می‌خواهید این فاکتور پیش‌نویس را ویرایش کنید؟", 
+        proceedEdit,
+        undefined,
+        {
+          title: isWarehouseDoc ? "ویرایش پیش‌نویس سند انبار" : "ویرایش پیش‌نویس فاکتور",
+          confirmText: "ورود به ویرایشگر",
+          type: "info",
+          confirmButtonClass: "bg-blue-600 hover:bg-blue-700 text-white"
+        }
+      );
+    }
+  };
+
+const old_unused = () => { // We're stubbing the old lines to replace them without breaking the rest
+  };
+
+const hasRemainingWarehouseItems = (invoiceId: string | number) => {
+    const sourceInv = invoices.find(
+      (i) => i.id.toString() === invoiceId.toString(),
+    );
+    if (!sourceInv || !sourceInv.items) return false;
+
+    const isRemittance =
+      (activeTab === "create_warehouse_doc" &&
+        invoiceType === "warehouse_remittance") ||
+      activeTab === "list_warehouse_docs";
+    const pastDocs = (invoices || []).filter(
+      (i) =>
+        i.sourceInvoiceId?.toString() === invoiceId.toString() &&
+        (isRemittance
+          ? i.type === "warehouse_remittance"
+          : i.type === "warehouse_receipt") && i.status !== "voided" && !i.isDeleted,
+    );
+    const processedAmounts: Record<string, number> = {};
+    pastDocs.forEach((doc) => {
+      if (doc.items) {
+        doc.items.forEach((rt: any) => {
+          const key = String(rt.productId || rt.productName || "");
+          if (!key) return;
+          if (!processedAmounts[key]) processedAmounts[key] = 0;
+          processedAmounts[key] += Number(rt.quantity) || 0;
+        });
+      }
+    });
+
+    const hasAny = sourceInv.items.some((it: any) => {
+      const prod = products.find(
+        (p) => p.id?.toString() === it.productId?.toString(),
+      );
+      if (prod?.type === "service") return false;
+
+      const key = String(it.productId || it.productName || "");
+      const processed = key ? processedAmounts[key] || 0 : 0;
+      const remaining = (Number(it.quantity) || 0) - processed;
+      return remaining > 0;
+    });
+    return hasAny;
+  };
+
+const getInvoiceNumber = (typeOverride?: string) => {
+    let typeKey = typeOverride || "sale";
+    if (!typeOverride) {
+      if (
+        (activeTab === "create_warehouse_doc" &&
+          invoiceType === "warehouse_receipt") ||
+        invoiceType === "warehouse_receipt"
+      )
+        typeKey = "warehouse_receipt";
+      else if (
+        (activeTab === "create_warehouse_doc" &&
+          invoiceType === "warehouse_remittance") ||
+        invoiceType === "warehouse_remittance"
+      )
+        typeKey = "warehouse_remittance";
+      else if (activeTab === "create_purchase" || invoiceType === "purchase")
+        typeKey = "purchase";
+      else if (invoiceType === "proforma") typeKey = "proforma";
+      else if (
+        activeTab === "create_sale_return" ||
+        invoiceType === "sale_return"
+      )
+        typeKey = "sale_return";
+      else if (
+        activeTab === "create_purchase_return" ||
+        invoiceType === "purchase_return"
+      )
+        typeKey = "purchase_return";
+    }
+
+    // Default prefixes if not configured
+    const defaultPrefixes: Record<string, string> = {
+      sale: "INV-",
+      purchase: "PUR-",
+      proforma: "PF-",
+      warehouse_receipt: "REC-",
+      warehouse_remittance: "REM-",
+      sale_return: "RTN-S-",
+      purchase_return: "RTN-P-",
+    };
+
+    const prefix =
+      (storeSettings as any)["prefix_" + typeKey] !== undefined &&
+      (storeSettings as any)["prefix_" + typeKey] !== null
+        ? String((storeSettings as any)["prefix_" + typeKey])
+        : defaultPrefixes[typeKey] || "";
+
+    // Calculate sequential number based on settings
+    const startNumStr =
+      (storeSettings as any)["start_" + typeKey] ||
+      storeSettings.invoiceStartNumber ||
+      "1000";
+    const lenStr =
+      (storeSettings as any)["len_" + typeKey] ||
+      storeSettings.invoiceNumberLength ||
+      "6";
+
+    const startNum = parseInt(startNumStr, 10);
+    const numLength = Math.max(1, parseInt(lenStr, 10));
+
+    let maxNum = startNum - 1;
+
+    invoices.forEach((inv) => {
+      let invType = "sale";
+      if (inv.type) invType = inv.type;
+
+      if (invType === typeKey && inv.invoiceNumber) {
+        let numStr = String(inv.invoiceNumber);
+        if (prefix && numStr.startsWith(prefix)) {
+          numStr = numStr.substring(prefix.length);
+        }
+        const num = parseInt(numStr.replace(/\D/g, ""), 10);
+        if (!isNaN(num) && num > maxNum) {
+          maxNum = num;
+        }
+      }
+    });
+
+    const nextNum = maxNum + 1;
+    const formattedNum = String(nextNum).padStart(numLength, "0");
+    return prefix + formattedNum;
+  };
+
+  const saveInvoiceData = async (
+    customPayload?: any,
+    isDraftOverride?: boolean,
+  ) => {
+    setSubmitting(true);
+    setSuccessMsg("");
+    startAppProcessing('شروع فرآیند ثبت فاکتور...');
+    await new Promise(r => setTimeout(r, 20));
+
+    const isDraft =
+      typeof isDraftOverride === "boolean"
+        ? isDraftOverride
+        : Boolean(customPayload && (customPayload.isDraft || customPayload.status === "draft"));
+
+    let finalInvoiceNumber = String(invoiceNumber || "");
+
+    if (
+      (invoiceMode === "auto" && !autoSaveInvoiceId && !editingInvoiceId) ||
+      !finalInvoiceNumber
+    ) {
+      finalInvoiceNumber = "";
+    }
+
+    if (activeTab === "create_warehouse_doc" && !invoiceWarehouseId) {
+      customAlert(
+        "لطفاً در قسمت توضیحات مبدا/مقصد فرم، یک انبار را مشخص کنید.",
+      );
+      setSubmitting(false);
+      stopAppProcessing();
+      return;
+    }
+
+    if (activeTab === "create_warehouse_doc" && deletePreviousDocs && sourceInvoiceId && !isDraft) {
+      const isReceipt = ["purchase_invoice", "sales_return", "transfer_in"].includes(warehouseOperationType);
+      const pastDocs = invoices.filter(
+         i => i.sourceInvoiceId?.toString() === sourceInvoiceId?.toString() && 
+         (isReceipt ? i.type === "warehouse_receipt" : i.type === "warehouse_remittance")
+      );
+      for (const pd of pastDocs) {
+         try {
+           if (typeof deleteInvoice !== "undefined") {
+             await deleteInvoice(pd.id.toString(), true);
+           }
+         } catch (e) {
+           console.error("Error deleting previous doc", e);
+         }
+      }
+      setDeletePreviousDocs(false);
+    }
+
+    if (
+      (activeTab === "create_sale" || invoiceType === "sale") &&
+      items.some(
+        (i) => products.find((p) => p.id === i.productId)?.type !== "service",
+      ) &&
+      !invoiceWarehouseId
+    ) {
+      customAlert(
+        "لطفاً برای فاکتور فروش، انبار فروش را انتخاب کنید. فروش حتماً باید از یک انبار مشخص انجام شود.",
+      );
+      setSubmitting(false);
+      stopAppProcessing();
+      return;
+    }
+
+    const actualCustomerId = customPayload?.customerId || customerId;
+    const actualType = customPayload?.type || invoiceType;
+
+    if (
+      storeSettings.requireWarehouse &&
+      !activeTab.includes("warehouse") &&
+      activeTab !== "create_sale" &&
+      activeTab !== "create_purchase" &&
+      actualType !== "purchase" &&
+      items.some(
+        (i) => products.find((p) => p.id === i.productId)?.type !== "service",
+      ) &&
+      !invoiceWarehouseId
+    ) {
+      customAlert(
+        "لطفاً برای فاکتور فروش شامل کالا، انبار را انتخاب کنید.",
+      );
+      setSubmitting(false);
+      stopAppProcessing();
+      return;
+    }
+
+    const cleanItems = (items || []).filter(
+      (item) =>
+        item.productName ||
+        item.productId ||
+        (item.quantity > 0 && item.unitPrice > 0),
+    );
+
+    // ---- Sale Invoice Validation Gates ----
+    if (!isDraft && actualType === "sale") {
+      updateAppProcessing('بررسی گیت‌های ۷ گانه اعتبارسنجی فاکتور فروش...');
+      const validationErrors: string[] = [];
+
+      // 1. فعال و معتبر بودن مشتری
+      if (!actualCustomerId) {
+        validationErrors.push("• گیت ۱: مشتری مشخص نشده است.");
+      } else {
+        const customer = (allPersons.length > 0 ? allPersons : persons).find(p => p.id?.toString() === actualCustomerId.toString());
+        if (!customer) {
+          validationErrors.push("• گیت ۱: مشتری انتخاب شده در سیستم معتبر نیست یا یافت نشد.");
+        } else if (customer.isActive === false) {
+          validationErrors.push(`• گیت ۱: حساب مشتری (${customer.name}) مسدود یا غیرفعال می‌باشد.`);
+        }
+      }
+
+      // 2. بررسی تکراری نبودن شماره فاکتور
+      const checkInvNum = (customPayload?.invoiceNumber || finalInvoiceNumber || "").trim();
+      if (checkInvNum && !checkInvNum.includes("خودکار") && !checkInvNum.includes("تولید خودکار")) {
+        const isDuplicate = invoices.some(i => 
+          !i.isDeleted && !i.isDraft && i.status !== 'draft' &&
+          i.id?.toString() !== editingInvoiceId?.toString() &&
+          i.id?.toString() !== autoSaveInvoiceId?.toString() &&
+          (i.type === "sale" || !i.type) &&
+          String(i.invoiceNumber || "").trim().toLowerCase() === checkInvNum.toLowerCase()
+        );
+        if (isDuplicate) {
+          if (invoiceMode === "auto" || !editingInvoiceId) {
+            // در حالت شماره‌گذاری خودکار، در ثبت‌های همزمان اجازه می‌دهیم موتور تخصیص شماره یکتا را تعیین کند
+            if (customPayload) customPayload.invoiceNumber = "";
+            finalInvoiceNumber = "";
+          } else {
+            validationErrors.push(`• گیت ۲: شماره فاکتور فروش (${checkInvNum}) تکراری بوده و قبلاً ثبت شده است.`);
+          }
+        }
+      }
+
+      // 3. بررسی باز بودن دوره مالی
+      const currentFY = activeFinancialYear;
+      if (!currentFY) {
+        validationErrors.push("• گیت ۳: هیچ دوره مالی فعالی برای ثبت این فاکتور یافت نشد.");
+      } else if (currentFY.isClosed === true || currentFY.status === 'closed') {
+        validationErrors.push(`• گیت ۳: دوره مالی (${currentFY.title || currentFY.name || 'جاری'}) بسته شده است و امکان ثبت وجود ندارد.`);
+      } else if (currentFY.startDate && currentFY.endDate) {
+        const targetDate = customPayload?.date || date;
+        const invDateStr = convertToGregorian(targetDate).split('T')[0];
+        const startDateStr = currentFY.startDate.split('T')[0];
+        const endDateStr = currentFY.endDate.split('T')[0];
+        if (invDateStr < startDateStr || invDateStr > endDateStr) {
+          validationErrors.push(`• گیت ۳: تاریخ فاکتور (${invDateStr}) در محدوده دوره مالی فعال (${startDateStr} تا ${endDateStr}) قرار ندارد.`);
+        }
+      }
+
+      // 4. بررسی معتبر بودن کد تمام کالا ها & 5. موجودی کافی انبار
+      const itemsToCheck = customPayload ? (customPayload.items || []) : cleanItems;
+      if (!itemsToCheck || itemsToCheck.length === 0) {
+        validationErrors.push("• گیت ۴: فاکتور فروش حداقل باید شامل یک آیتم یا کالا باشد.");
+      } else {
+        itemsToCheck.forEach((item: any, idx: number) => {
+          if (!item.productId) {
+            validationErrors.push(`• گیت ۴: کالای ردیف ${idx + 1} (${item.productName || 'نامشخص'}) بدون شناسه/کد محصول است.`);
+          } else {
+            const prod = products.find(p => p.id?.toString() === item.productId.toString());
+            if (!prod) {
+              validationErrors.push(`• گیت ۴: کالا با شناسه ${item.productId} (ردیف ${idx + 1}) در لیست کالاهای سیستم یافت نشد.`);
+            } else {
+              if (!prod.code || String(prod.code).trim() === '') {
+                validationErrors.push(`• گیت ۴: کالای "${prod.name}" (ردیف ${idx + 1}) فاقد کد کالا در سیستم است.`);
+              }
+              if (prod.isActive === false) {
+                validationErrors.push(`• گیت ۴: کالای "${prod.name}" (ردیف ${idx + 1}) در سیستم غیرفعال شده است.`);
+              }
+
+              // 5. Inventory Check (Only if negative stock is not allowed)
+              const isNegativeStockAllowed = Boolean(
+                storeSettings?.allowNegativeStock === true ||
+                storeSettings?.allowNegativeStock === "true" ||
+                storeSettings?.allowNegativeStock === 1
+              );
+              if (!isNegativeStockAllowed && prod.type !== "service") {
+                const whId = item.warehouseId || invoiceWarehouseId;
+                const stockInfo = getProductStockInfo(prod.id);
+                const currentStock = stockInfo.warehouses[whId] ? stockInfo.warehouses[whId].available : 0;
+                
+                let originalQty = 0;
+                if (editingInvoiceId) {
+                  const originalInvoice = invoices.find(i => i.id?.toString() === editingInvoiceId.toString());
+                  if (originalInvoice && originalInvoice.type === 'sale') {
+                    const originalItem = originalInvoice.items.find((oi: any) => oi.productId?.toString() === item.productId?.toString() && (oi.warehouseId?.toString() === whId?.toString()));
+                    if (originalItem) {
+                       originalQty = convertQuantityToBaseUnit(
+                         originalItem.quantity,
+                         Boolean(originalItem.isSecondaryUnit),
+                         Number(originalItem.unitRatio),
+                         originalItem.unitRatioDirection || (prod ? (prod.unitRatioDirection || getUnitRatioDirection(prod)) : undefined)
+                       );
+                    }
+                  }
+                }
+
+                const neededQty = convertQuantityToBaseUnit(
+                  item.quantity,
+                  Boolean(item.isSecondaryUnit),
+                  Number(item.unitRatio || prod.unitRatio),
+                  item.unitRatioDirection || prod.unitRatioDirection || getUnitRatioDirection(prod)
+                );
+                
+                if (currentStock + originalQty < neededQty) {
+                    validationErrors.push(`• گیت ۵: موجودی کالای "${prod.name}" (ردیف ${idx + 1}) در انبار کافی نیست. موجودی: ${currentStock + originalQty}، مقدار درخواستی: ${neededQty}. (فروش با موجودی منفی غیرفعال است)`);
+                    const rowEl = document.getElementById(`sale-invoice-item-row-${item.id}`);
+                    if (rowEl) {
+                      rowEl.scrollIntoView({ behavior: "smooth", block: "center" });
+                    }
+                }
+              }
+            }
+          }
+        });
+      }
+
+      // 6. بررسی تطابق جمع ردیف ها با سرجمع فاکتور
+      let rowSumCalculated = 0;
+      itemsToCheck.forEach((item: any) => {
+        const qty = Number(item.quantity) || 0;
+        const price = Number(item.unitPrice) || 0;
+        const ratio = (item.isSecondaryUnit && item.unitRatio) ? Number(item.unitRatio) : 1;
+        const discPercent = Number(item.discountPercent) || 0;
+        const lineTotal = (qty * price) * (1 - discPercent / 100);
+        rowSumCalculated += lineTotal;
+      });
+      const discOverall = Number(customPayload?.overallDiscountPercent ?? overallDiscountPercent) || 0;
+      const calculatedHeaderTotal = Math.round(rowSumCalculated * (1 - discOverall / 100));
+      const actualHeaderTotal = Math.round(Number(customPayload?.totalAmount ?? calculateFinalTotal()) || 0);
+
+      if (Math.abs(calculatedHeaderTotal - actualHeaderTotal) > 5) {
+        validationErrors.push(`• گیت ۶: جمع محاسباتی ردیف‌های فاکتور (${formatNumber(calculatedHeaderTotal)}) با سرجمع نهایی فاکتور (${formatNumber(actualHeaderTotal)}) تطابق ندارد.`);
+      }
+
+      // Credit is checked against the persisted ledger inside the posting transaction.
+      if (validationErrors.length > 0) {
+        customAlert("خطا در اعتبارسنجی فاکتور فروش (عدم عبور از گیت‌های ایمنی):\n\n" + validationErrors.join("\n\n"));
+        setSubmitting(false);
+        stopAppProcessing();
+        return false;
+      }
+      
+      updateAppProcessing('تمامی ۷ گیت اعتبارسنجی تایید شدند. شروع ثبت فاکتور...');
+    }
+
+    // ---- Purchase Return Validation Gates (Partial) ----
+    if (!isDraft && actualType === "purchase_return" && actualCustomerId) {
+      const person = (allPersons.length > 0 ? allPersons : persons).find((p) => p.id.toString() === actualCustomerId.toString());
+      if (person && person.creditLimit && person.creditLimit > 0) {
+        const currentBalanceObj = calculatePersonBalance(actualCustomerId);
+        let currentDebt = currentBalanceObj.status === "بدهکار" ? currentBalanceObj.amount : -currentBalanceObj.amount;
+        let invTotal = customPayload ? (customPayload.totalAmount || 0) : calculateFinalTotal();
+        const newDebt = currentDebt + invTotal;
+        if (newDebt > person.creditLimit) {
+          customAlert(`خطا: ثبت این سند باعث عبور از سقف اعتبار شخص می‌شود.\nسقف اعتبار: ${addCommas(person.creditLimit)}\nمبلغ بدهی بعد از ثبت: ${addCommas(newDebt)}`);
+          setSubmitting(false);
+          stopAppProcessing();
+          return;
+        }
+      }
+    }
+
+    // ---- Purchase Invoice Validation Gates ----
+    if (!isDraft && actualType === "purchase") {
+      const validationErrors: string[] = [];
+
+      // 1. فعال و معتبر بودن تامین کننده
+      if (!actualCustomerId) {
+        validationErrors.push("• گیت ۱: تامین‌کننده مشخص نشده است.");
+      } else {
+        const supplier = (allPersons.length > 0 ? allPersons : persons).find(p => p.id?.toString() === actualCustomerId.toString());
+        if (!supplier) {
+          validationErrors.push("• گیت ۱: تامین‌کننده انتخاب شده در سیستم معتبر نیست یا یافت نشد.");
+        } else if (supplier.isActive === false) {
+          validationErrors.push(`• گیت ۱: حساب تامین‌کننده (${supplier.name}) غیرفعال می‌باشد.`);
+        }
+      }
+
+      // 2. بررسی تکراری نبودن شماره فاکتور
+      const checkInvNum = (customPayload?.invoiceNumber || finalInvoiceNumber || "").trim();
+      const checkSellerNum = (customPayload?.sellerInvoiceNumber || sellerInvoiceNumber || "").trim();
+
+      if (checkInvNum && !checkInvNum.includes("خودکار") && !checkInvNum.includes("تولید خودکار")) {
+        const isDuplicate = invoices.some(i => 
+          !i.isDeleted && !i.isDraft && i.status !== 'draft' &&
+          i.id?.toString() !== editingInvoiceId?.toString() &&
+          i.id?.toString() !== autoSaveInvoiceId?.toString() &&
+          i.type === "purchase" &&
+          String(i.invoiceNumber || "").trim().toLowerCase() === checkInvNum.toLowerCase()
+        );
+        if (isDuplicate) {
+          if (invoiceMode === "auto" || !editingInvoiceId) {
+            if (customPayload) customPayload.invoiceNumber = "";
+            finalInvoiceNumber = "";
+          } else {
+            validationErrors.push(`• گیت ۲: شماره فاکتور خرید (${checkInvNum}) تکراری بوده و قبلاً ثبت شده است.`);
+          }
+        }
+      }
+
+      if (checkSellerNum && actualCustomerId) {
+        const isDuplicateSeller = invoices.some(i =>
+          !i.isDeleted && !i.isDraft && i.status !== 'draft' &&
+          i.id?.toString() !== editingInvoiceId?.toString() &&
+          i.type === "purchase" &&
+          i.customerId?.toString() === actualCustomerId.toString() &&
+          i.sellerInvoiceNumber?.trim() === checkSellerNum
+        );
+        if (isDuplicateSeller) {
+          validationErrors.push(`• گیت ۲: شماره فاکتور فروشنده (${checkSellerNum}) برای این تامین‌کننده قبلاً ثبت شده است.`);
+        }
+      }
+
+      // 3. بررسی باز بودن دوره مالی
+      const currentFY = activeFinancialYear;
+      if (!currentFY) {
+        validationErrors.push("• گیت ۳: هیچ دوره مالی فعالی برای ثبت این فاکتور یافت نشد.");
+      } else if (currentFY.isClosed === true || currentFY.status === 'closed') {
+        validationErrors.push(`• گیت ۳: دوره مالی (${currentFY.title || currentFY.name || 'جاری'}) بسته شده است و امکان ثبت وجود ندارد.`);
+      } else if (currentFY.startDate && currentFY.endDate) {
+        const targetDate = customPayload?.date || date;
+        const invDateStr = convertToGregorian(targetDate).split('T')[0];
+        
+        const startDateStr = currentFY.startDate.split('T')[0];
+        const endDateStr = currentFY.endDate.split('T')[0];
+        if (invDateStr < startDateStr || invDateStr > endDateStr) {
+          validationErrors.push(`• گیت ۳: تاریخ فاکتور (${invDateStr}) در محدوده دوره مالی فعال (${startDateStr} تا ${endDateStr}) قرار ندارد.`);
+        }
+      }
+
+      // 4. بررسی معتبر بودن کد تمام کالا ها
+      const itemsToCheck = customPayload ? (customPayload.items || []) : cleanItems;
+      if (!itemsToCheck || itemsToCheck.length === 0) {
+        validationErrors.push("• گیت ۴: فاکتور خرید حداقل باید شامل یک آیتم یا کالا باشد.");
+      } else {
+        itemsToCheck.forEach((item: any, idx: number) => {
+          if (!item.productId) {
+            validationErrors.push(`• گیت ۴: کالای ردیف ${idx + 1} (${item.productName || 'نامشخص'}) بدون شناسه/کد محصول است.`);
+          } else {
+            const prod = products.find(p => p.id?.toString() === item.productId.toString());
+            if (!prod) {
+              validationErrors.push(`• گیت ۴: کالا با شناسه ${item.productId} (ردیف ${idx + 1}) در لیست کالاهای سیستم یافت نشد.`);
+            } else {
+              if (!prod.code || String(prod.code).trim() === '') {
+                validationErrors.push(`• گیت ۴: کالای "${prod.name}" (ردیف ${idx + 1}) فاقد کد کالا در سیستم است.`);
+              }
+              if (prod.isActive === false) {
+                validationErrors.push(`• گیت ۴: کالای "${prod.name}" (ردیف ${idx + 1}) در سیستم غیرفعال شده است.`);
+              }
+            }
+          }
+        });
+      }
+
+      // 5. بررسی تطابق جمع ردیف ها با سرجمع فاکتور
+      let rowSumCalculated = 0;
+      itemsToCheck.forEach((item: any) => {
+        const qty = Number(item.quantity) || 0;
+        const price = Number(item.unitPrice) || 0;
+        const ratio = (item.isSecondaryUnit && item.unitRatio) ? Number(item.unitRatio) : 1;
+        const discPercent = Number(item.discountPercent) || 0;
+        const lineTotal = (qty * price) * (1 - discPercent / 100);
+        rowSumCalculated += lineTotal;
+      });
+
+      const discOverall = Number(customPayload?.overallDiscountPercent ?? overallDiscountPercent) || 0;
+      const calculatedHeaderTotal = Math.round(rowSumCalculated * (1 - discOverall / 100));
+      const actualHeaderTotal = Math.round(Number(customPayload?.totalAmount ?? calculateFinalTotal()) || 0);
+
+      if (Math.abs(calculatedHeaderTotal - actualHeaderTotal) > 5) {
+        validationErrors.push(`• گیت ۵: جمع محاسباتی ردیف‌های فاکتور (${formatNumber(calculatedHeaderTotal)}) با سرجمع نهایی فاکتور (${formatNumber(actualHeaderTotal)}) تطابق ندارد.`);
+      }
+
+      // Display ALL accumulated validation gate errors together if any failed
+      if (validationErrors.length > 0) {
+        customAlert("خطا در اعتبارسنجی فاکتور خرید (عدم عبور از گیت‌های ایمنی):\n\n" + validationErrors.join("\n\n"));
+        setSubmitting(false);
+        stopAppProcessing();
+        return false;
+      }
+    }
+
+    // ---- Return Invoices (Sale Return & Purchase Return) Duplicate Gate ----
+    if (!isDraft && (actualType === "sale_return" || actualType === "purchase_return")) {
+      const checkInvNum = (customPayload?.invoiceNumber || finalInvoiceNumber || "").trim();
+      if (checkInvNum && !checkInvNum.includes("خودکار") && !checkInvNum.includes("تولید خودکار")) {
+        const isDuplicate = invoices.some(i => 
+          !i.isDeleted && !i.isDraft && i.status !== 'draft' &&
+          i.id?.toString() !== editingInvoiceId?.toString() &&
+          i.type === actualType &&
+          String(i.invoiceNumber || "").trim().toLowerCase() === checkInvNum.toLowerCase()
+        );
+        if (isDuplicate) {
+          if (invoiceMode === "auto" && !editingInvoiceId) {
+            if (customPayload) customPayload.invoiceNumber = "";
+            finalInvoiceNumber = "";
+          } else {
+            const returnTitle = actualType === "sale_return" ? "برگشت از فروش" : "برگشت از خرید";
+            customAlert(`خطا در اعتبارسنجی فاکتور:\n\n• شماره فاکتور ${returnTitle} (${checkInvNum}) تکراری بوده و قبلاً در سیستم ثبت شده است.`);
+            setSubmitting(false);
+            stopAppProcessing();
+            return false;
+          }
+        }
+      }
+    }
+
+    const mapItemWithBase = (item: any) => {
+      const productObj = products.find((p) => p.id?.toString() === item.productId?.toString());
+      const isSec = Boolean(item.isSecondaryUnit) || (Boolean(productObj?.secondaryUnit) && item.selectedUnit === productObj?.secondaryUnit);
+      const ratio = Number(item.unitRatio || productObj?.unitRatio || 1);
+      const dir = item.unitRatioDirection || productObj?.unitRatioDirection || (productObj ? getUnitRatioDirection(productObj) : 'secondary_to_main');
+      const rawPrice = Number(item.unitPrice || item.price || 0);
+      const rawQty = Number(item.quantity) || 0;
+      const baseUnitPrice = convertPriceToBaseUnit(rawPrice, isSec, ratio, dir);
+      const baseQuantity = convertQuantityToBaseUnit(rawQty, isSec, ratio, dir);
+
+      return {
+        ...item,
+        isSecondaryUnit: isSec,
+        unitRatio: ratio,
+        unitRatioDirection: dir,
+        selectedUnit: item.selectedUnit || (isSec ? productObj?.secondaryUnit : productObj?.unit),
+        baseUnitPrice,
+        baseQuantity,
+      };
+    };
+
+    const isNegativeStockAllowed = Boolean(
+      storeSettings?.allowNegativeStock === true ||
+      storeSettings?.allowNegativeStock === "true" ||
+      storeSettings?.allowNegativeStock === 1
+    );
+
+    const baseItems = cleanItems.map((item) => ({
+      ...mapItemWithBase(item),
+      warehouseId: item.warehouseId || invoiceWarehouseId || "",
+    }));
+
+    const rawItems = (customPayload && Array.isArray(customPayload.items) && customPayload.items.length > 0)
+      ? customPayload.items.map(mapItemWithBase)
+      : baseItems;
+
+    const isWarehouseDocType = invoiceType === "warehouse_receipt" || customPayload?.type === "warehouse_receipt" || invoiceType === "warehouse_remittance" || customPayload?.type === "warehouse_remittance";
+    const determinedStatus = isDraft
+      ? "draft"
+      : (customPayload?.status || (invoiceType === "purchase" || customPayload?.type === "purchase" || isWarehouseDocType ? "approved" : "final"));
+
+    const personPool = allPersons.length > 0 ? allPersons : persons;
+    const resolvedCustomerPersonId = customPayload?.customerId !== undefined ? customPayload.customerId : customerId;
+    const resolvedPersonObj = personPool.find(
+      (p: any) => p && String(p.id) === String(resolvedCustomerPersonId)
+    );
+    const resolvedCustomerName = resolvedPersonObj
+      ? (resolvedPersonObj.alias || resolvedPersonObj.name || `${resolvedPersonObj.firstName || ''} ${resolvedPersonObj.lastName || ''}`.trim())
+      : "";
+
+    const payload = customPayload
+      ? {
+          invoiceNumber: (function () {
+            let num = customPayload.invoiceNumber !== undefined ? customPayload.invoiceNumber : finalInvoiceNumber;
+            if (!num || num.includes("خودکار") || num.includes("تولید خودکار")) {
+                num = ""; // allow backend to generate
+            }
+            return num;
+          })(),
+          sellerInvoiceNumber: customPayload.sellerInvoiceNumber !== undefined ? customPayload.sellerInvoiceNumber : (sellerInvoiceNumber || ""),
+          title: customPayload.title !== undefined ? customPayload.title : invoiceTitle,
+          description: customPayload.description !== undefined ? customPayload.description : invoiceDescription,
+          note: customPayload.note !== undefined ? customPayload.note : invoiceNote,
+          warehouseId: customPayload.warehouseId !== undefined ? customPayload.warehouseId : invoiceWarehouseId,
+          type: customPayload.type !== undefined ? customPayload.type : invoiceType,
+          currency: customPayload.currency !== undefined ? customPayload.currency : invoiceCurrency,
+          allowNegativeStock: isNegativeStockAllowed,
+          date: customPayload.date !== undefined ? convertToGregorian(customPayload.date) : convertToGregorian(date),
+          dueDate: (customPayload.dueDate !== undefined ? convertToGregorian(customPayload.dueDate) : (invoiceDueDate ? convertToGregorian(invoiceDueDate) : null)),
+          customerId: resolvedCustomerPersonId,
+          customerName: customPayload.customerName || resolvedCustomerName || undefined,
+          personId: customPayload.personId || resolvedCustomerPersonId || undefined,
+          personName: customPayload.personName || resolvedCustomerName || undefined,
+          driverPersonId: customPayload.driverPersonId !== undefined ? customPayload.driverPersonId : driverPersonId,
+          driverName: customPayload.driverName !== undefined ? customPayload.driverName : driverName,
+          driverPhone: customPayload.driverPhone !== undefined ? customPayload.driverPhone : driverPhone,
+          receiverPersonId: customPayload.receiverPersonId !== undefined ? customPayload.receiverPersonId : receiverPersonId,
+          receiverName: customPayload.receiverName !== undefined ? customPayload.receiverName : receiverName,
+          receiverPhone: customPayload.receiverPhone !== undefined ? customPayload.receiverPhone : receiverPhone,
+          vehiclePlateNumber: customPayload.vehiclePlateNumber !== undefined ? customPayload.vehiclePlateNumber : vehiclePlateNumber,
+          shippingAddress: customPayload.shippingAddress !== undefined ? customPayload.shippingAddress : shippingAddress,
+          sourceInvoiceId: customPayload.sourceInvoiceId !== undefined ? customPayload.sourceInvoiceId : sourceInvoiceId,
+          items: rawItems,
+          overallDiscountPercent: customPayload.overallDiscountPercent !== undefined ? customPayload.overallDiscountPercent : overallDiscountPercent,
+          totalAmount: customPayload.totalAmount !== undefined ? customPayload.totalAmount : calculateFinalTotal(),
+          paymentStatus: customPayload.paymentStatus !== undefined ? customPayload.paymentStatus : invoicePaymentStatus,
+          paidAmount: customPayload.paidAmount !== undefined ? Number(customPayload.paidAmount) || 0 : (Number(invoicePaidAmount) || 0),
+          isDraft,
+          status: determinedStatus,
+          ...customPayload,
+        }
+      : {
+          invoiceNumber: finalInvoiceNumber,
+          sellerInvoiceNumber: sellerInvoiceNumber || "",
+          title: invoiceTitle,
+          description: invoiceDescription,
+          note: invoiceNote,
+          warehouseId: invoiceWarehouseId,
+          type: invoiceType,
+          currency: invoiceCurrency,
+          allowNegativeStock: isNegativeStockAllowed,
+          date:
+            convertToGregorian(date),
+          dueDate: invoiceDueDate ? (convertToGregorian(invoiceDueDate)) : null,
+          customerId,
+          customerName: resolvedCustomerName || undefined,
+          personId: customerId || undefined,
+          personName: resolvedCustomerName || undefined,
+          driverPersonId,
+          driverName,
+          driverPhone,
+          receiverPersonId,
+          receiverName,
+          receiverPhone,
+          vehiclePlateNumber,
+          shippingAddress,
+          sourceInvoiceId,
+          items: baseItems,
+          overallDiscountPercent,
+          totalAmount: calculateFinalTotal(),
+          paymentStatus: invoicePaymentStatus,
+          paidAmount: Number(invoicePaidAmount) || 0,
+          isDraft,
+          status: determinedStatus,
+        };
+    // 2. Standard validation for other conditions or warehouse remittances
+    const isNegativeStockAllowedForRemittance = Boolean(
+      storeSettings?.allowNegativeStock === true ||
+      storeSettings?.allowNegativeStock === "true" ||
+      storeSettings?.allowNegativeStock === 1
+    );
+    if (
+      !isNegativeStockAllowedForRemittance &&
+      payload.type === "warehouse_remittance"
+    ) {
+      const requiredQtyList: { productId: string; whId: string; q: number }[] = [];
+
+      for (const item of payload.items) {
+        if (!item.productId) continue;
+        const productObj = products.find((p) => String(p.id) === String(item.productId));
+        if (productObj?.type === "service") continue;
+        const prodDir = productObj?.unitRatioDirection || getUnitRatioDirection(productObj);
+        const q = convertQuantityToBaseUnit(
+          item.quantity,
+          Boolean(item.isSecondaryUnit),
+          Number(item.unitRatio || productObj?.unitRatio),
+          prodDir
+        );
+        const pId = String(item.productId);
+        const wId = String(item.warehouseId || payload.warehouseId || "");
+        const existingReq = requiredQtyList.find((r) => r.productId === pId && r.whId === wId);
+        if (existingReq) {
+          existingReq.q += q;
+        } else {
+          requiredQtyList.push({ productId: pId, whId: wId, q });
+        }
+      }
+
+      for (const req of requiredQtyList) {
+        const stockInfo = getProductStockInfo(req.productId);
+        const avail = req.whId && stockInfo.warehouses?.[req.whId]
+          ? (stockInfo.warehouses[req.whId].physical || 0)
+          : (stockInfo.totalPhysical || 0);
+
+        if (avail < req.q) {
+          const prodObj = products.find((p) => String(p.id) === req.productId);
+          customAlert(
+            `موجودی فیزیکی کالای «${prodObj?.name || "کالا"}» در انبار کافی نیست. (موجودی: ${avail}، مقدار درخواستی حواله: ${req.q})`,
+          );
+          setSubmitting(false);
+          stopAppProcessing();
+          return false;
+        }
+      }
+    }
+
+    suspendAppDataChanged();
+    const rollbackActions: (() => Promise<void>)[] = [];
+    try {
+      let addedInvoice: any = null;
+
+      const typeTitles: Record<string, string> = {
+        sale: "فاکتور فروش",
+        purchase: "فاکتور خرید",
+        purchase_return: "فاکتور برگشت خرید",
+        sale_return: "فاکتور برگشت فروش",
+        proforma: "پیش‌فاکتور",
+        warehouse_receipt: "رسید ورود به انبار",
+        warehouse_remittance: "حواله خروج از انبار"
+      };
+      const titleName = typeTitles[payload.type] || "سند";
+
+      // Step 1: Pre-save header & transaction begin
+      if (payload.type === "sale") {
+        updateAppProcessing(`ثبت اقلام و ردیف‌های فاکتور فروش (${payload.items?.length || 0} قلم کالا)...`);
+      } else if (payload.type === "purchase") {
+        updateAppProcessing("مرحله ۱ از ۶ (BEGIN TRANSACTION): تایید گیت‌های ۵‌گانه و ثبت هدر فاکتور خرید...");
+        await new Promise(r => setTimeout(r, 40));
+        updateAppProcessing(`مرحله ۲ از ۶: ثبت اقلام و قیمت‌های ورودی کالا (${payload.items?.length || 0} قلم)...`);
+        await new Promise(r => setTimeout(r, 20));
+      } else if (payload.type === "sale_return") {
+        updateAppProcessing("مرحله ۱ از ۵ (BEGIN TRANSACTION): بررسی مشخصات و ثبت هدر فاکتور برگشت فروش...");
+        await new Promise(r => setTimeout(r, 40));
+        updateAppProcessing(`مرحله ۲ از ۵: ثبت اقلام مرجوعی و اصلاح کاردکس (${payload.items?.length || 0} قلم)...`);
+        await new Promise(r => setTimeout(r, 20));
+      } else if (payload.type === "purchase_return") {
+        updateAppProcessing("مرحله ۱ از ۵ (BEGIN TRANSACTION): بررسی مشخصات و ثبت هدر فاکتور برگشت خرید...");
+        await new Promise(r => setTimeout(r, 40));
+        updateAppProcessing(`مرحله ۲ از ۵: ثبت اقلام مرجوعی و آماده‌سازی حواله خروج (${payload.items?.length || 0} قلم)...`);
+        await new Promise(r => setTimeout(r, 20));
+      } else if (payload.type === "warehouse_receipt") {
+        updateAppProcessing("مرحله ۱ از ۶: هدر سند موجودی StockDocument و آیتم‌های سند موجودی StockDocumentItem ثبت شد...");
+        await new Promise(r => setTimeout(r, 20));
+      } else if (payload.type === "warehouse_remittance") {
+        updateAppProcessing("مرحله ۱ از ۸: بررسی گیت انبار (آیا موجودی کافی است؟)...");
+        await new Promise(r => setTimeout(r, 20));
+        updateAppProcessing("مرحله ۲ از ۸: ثبت هدر سند و ثبت ردیف سند حواله...");
+        await new Promise(r => setTimeout(r, 20));
+      } else {
+        updateAppProcessing(`مرحله ۱ از ۳: ثبت اولیه ${titleName}...`);
+        await new Promise(r => setTimeout(r, 20));
+      }
+
+      // Fast-path invoice persistence (skipAccounting: true, skipRecalc: true)
+      const savePayload = {
+        ...payload,
+        status: isDraft ? "draft" : (payload.status || "approved"),
+        isDraft: !!isDraft,
+      };
+
+      if (payload.type === 'sale' && !isDraft) {
+        const targetId = editingInvoiceId || autoSaveInvoiceId;
+        const postingId = payload.postingId || generateId();
+        const response = await fetch('/api/sales/post', {
+          method:'POST', headers:{...getAuthHeaders(),'Content-Type':'application/json'},
+          body: JSON.stringify({
+            invoice:{...savePayload,id:targetId || postingId, postingId, editing:!!targetId,
+              version:payload.expectedVersion || invoices.find(i=>String(i.id)===String(targetId))?.version || 1, exchangeRate},
+            settlement:payload.settlement
+          })
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'ثبت فروش انجام نشد');
+        addedInvoice = result;
+        invalidateCache();
+        await Promise.allSettled([fetchAccounts(),fetchCashboxes(),fetchTransactions(),fetchAccountingDocuments()]);
+        setEditingInvoiceId(null);
+        setAutoSaveInvoiceId(null);
+      } else if (editingInvoiceId) {
+        const originalInvoice = invoices.find((i) => i.id?.toString() === editingInvoiceId.toString());
+        const originalInvoiceCopy = originalInvoice ? JSON.parse(JSON.stringify(originalInvoice)) : null;
+
+        addedInvoice = await updateInvoice(editingInvoiceId, savePayload as any, true, true);
+        if (!isDraftOverride) {
+          setEditingInvoiceId(null);
+        }
+
+        rollbackActions.push(async () => {
+          if (originalInvoiceCopy) {
+            await updateInvoice(editingInvoiceId, originalInvoiceCopy, true, true);
+          }
+        });
+      } else if (autoSaveInvoiceId) {
+        // Promote draft in place without delete/recreate overhead
+        try {
+          addedInvoice = await updateInvoice(autoSaveInvoiceId, {
+            ...savePayload,
+            isDraft: isDraftOverride ? true : false,
+            status: isDraftOverride ? "draft" : (savePayload.status || "approved")
+          } as any, true, true);
+        } catch (updErr) {
+          console.warn("Draft not found on server during promote, creating fresh invoice:", updErr);
+          addedInvoice = await addInvoice(savePayload as any, true, true);
+        }
+        setAutoSaveInvoiceId(null);
+        if (isDraftOverride) {
+          setEditingInvoiceId(addedInvoice.id);
+        }
+
+        rollbackActions.push(async () => {
+          if (addedInvoice?.id) {
+            await deleteInvoice(addedInvoice.id.toString(), true, true);
+          }
+        });
+      } else {
+        addedInvoice = await addInvoice(savePayload as any, true, true);
+        if (isDraftOverride) {
+          setEditingInvoiceId(addedInvoice.id);
+        }
+
+        rollbackActions.push(async () => {
+          if (addedInvoice?.id) {
+            await deleteInvoice(addedInvoice.id.toString(), true, true);
+          }
+        });
+      }
+
+      const invId = addedInvoice?.id || editingInvoiceId;
+
+      // Type-specific follow-up steps:
+      if (payload.type === "sale") {
+        updateAppProcessing("ثبت سند حسابداری و تثبیت نهایی فاکتور فروش...");
+      } else if (payload.type === "purchase") {
+        const isApproved = !isDraft && savePayload.status === "approved";
+        if (isApproved) {
+          updateAppProcessing("مرحله ۳ از ۶: به‌روزرسانی تاریخچه قیمت‌ها...");
+          await new Promise(r => setTimeout(r, 40));
+
+          updateAppProcessing("مرحله ۴ از ۶: ثبت سند حسابداری (بدهکار موجودی کالا - بستانکار تامین‌کننده)...");
+          if (addedInvoice) {
+            await syncInvoiceAccountingDocument(addedInvoice);
+          }
+          await new Promise(r => setTimeout(r, 40));
+
+          const invoiceTotalAmt = Number(payload.totalAmount) || 0;
+          if ((payload.paymentStatus === "paid" || (payload.paymentStatus === "partial" && Number(payload.paidAmount) > 0)) && invoicePaymentAccountId) {
+            const paidAmt = payload.paymentStatus === "paid" ? invoiceTotalAmt : Number(payload.paidAmount);
+            const paymentAccount = accounts.find((a: any) => a.id === invoicePaymentAccountId);
+
+            if (paymentAccount) {
+              updateAppProcessing("مرحله ۵ از ۶: ثبت رسید پرداخت نقدی فاکتور...");
+              await new Promise(r => setTimeout(r, 40));
+
+              const payTxPayload = {
+                type: "pay",
+                amount: paidAmt,
+                date: payload.date || new Date().toISOString().split("T")[0],
+                personId: payload.customerId,
+                resourceType: (paymentAccount as any).type === "bank" ? "bank" : "cashbox",
+                resourceId: invoicePaymentAccountId,
+                method: "cash",
+                description: `بابت تسویه فاکتور خرید شماره ${addedInvoice?.invoiceNumber || payload.invoiceNumber || invId}`,
+                currency: payload.currency || "تومان",
+                linkedInvoices: { [invId]: paidAmt }
+              };
+              const createdPayTx = await addTransaction(payTxPayload);
+              if (createdPayTx?.id) {
+                rollbackActions.push(async () => {
+                  await deleteTransaction(createdPayTx.id.toString());
+                });
+              }
+            }
+          } else {
+            updateAppProcessing("مرحله ۵ از ۶: به‌روزرسانی وضعیت مانده حساب تامین‌کننده...");
+            await new Promise(r => setTimeout(r, 30));
+          }
+        } else {
+          updateAppProcessing("ثبت اولیه فاکتور خرید در انتظار تایید سرپرست/مدیر...");
+          await new Promise(r => setTimeout(r, 30));
+        }
+
+        updateAppProcessing("مرحله ۶ از ۶: ثبت لاگ سیستمی و تثبیت نهایی (COMMIT)...");
+        await new Promise(r => setTimeout(r, 20));
+      } else if (payload.type === "sale_return") {
+        updateAppProcessing("مرحله ۳ از ۵: صدور سند حسابداری (بدهکار برگشت فروش - بستانکار مشتری)...");
+        if (!isDraft && addedInvoice) {
+          await syncInvoiceAccountingDocument(addedInvoice);
+        }
+        await new Promise(r => setTimeout(r, 40));
+
+        updateAppProcessing("مرحله ۴ از ۵: به‌روزرسانی مانده حساب و کاردکس مشتری...");
+        await new Promise(r => setTimeout(r, 30));
+
+        updateAppProcessing("مرحله ۵ از ۵: ثبت لاگ سیستمی و تثبیت نهایی عملیات (COMMIT)...");
+        await new Promise(r => setTimeout(r, 20));
+      } else if (payload.type === "purchase_return") {
+        // Auto-create warehouse remittance for purchase return
+        if (!editingInvoiceId && !isDraft) {
+          const startNum = parseInt(storeSettings.invoiceStartNumber || "1000", 10);
+          const autoPrefix = storeSettings.prefix_warehouse_remittance || "REM-";
+          const numLength = Math.max(1, parseInt(storeSettings.invoiceNumberLength || "6", 10));
+          let maxNum = startNum - 1;
+          invoices.forEach((inv) => {
+            if (inv.invoiceNumber && inv.invoiceNumber.startsWith(autoPrefix)) {
+              const num = parseInt(inv.invoiceNumber.substring(autoPrefix.length), 10);
+              if (!isNaN(num) && num > maxNum) maxNum = num;
+            }
+          });
+          const autoDocNumber = autoPrefix + String(maxNum + 1).padStart(numLength, "0");
+
+          const autoDocPayload = {
+            isAutoGenerated: true,
+            invoiceNumber: autoDocNumber,
+            title: "حواله خروج خودکار (مرتبط با برگشت خرید " + payload.invoiceNumber + ")",
+            type: "warehouse_remittance",
+            warehouseId: payload.warehouseId,
+            currency: payload.currency,
+            date: payload.date,
+            customerId: payload.customerId,
+            sourceInvoiceId: addedInvoice?.id || payload.invoiceNumber,
+            items: (payload.items || []).map((item: any) => ({
+              ...item,
+              warehouseId: item.warehouseId || payload.warehouseId,
+            })),
+            overallDiscountPercent: 0,
+            totalAmount: 0,
+          };
+          const autoRem = await addInvoice(autoDocPayload as any, true, true);
+          if (autoRem?.id) {
+            rollbackActions.push(async () => {
+              await deleteInvoice(autoRem.id.toString(), true, true);
+            });
+          }
+        }
+
+        updateAppProcessing("مرحله ۳ از ۵: صدور سند حسابداری (بدهکار تامین‌کننده - بستانکار برگشت خرید)...");
+        if (!isDraft && addedInvoice) {
+          await syncInvoiceAccountingDocument(addedInvoice);
+        }
+        await new Promise(r => setTimeout(r, 40));
+
+        // Handle refund payment if selected
+        const invoiceTotalAmt = Number(payload.totalAmount) || 0;
+        if ((payload.paymentStatus === "paid" || (payload.paymentStatus === "partial" && Number(payload.paidAmount) > 0)) && invoicePaymentAccountId) {
+          const paidAmt = payload.paymentStatus === "paid" ? invoiceTotalAmt : Number(payload.paidAmount);
+          const paymentAccount = accounts.find((a: any) => a.id === invoicePaymentAccountId);
+
+          if (paymentAccount) {
+            updateAppProcessing("مرحله ۴ از ۵: ثبت رسید استرداد وجه نقدی به حساب...");
+            await new Promise(r => setTimeout(r, 40));
+
+            const refundTxPayload = {
+              type: "receive",
+              amount: paidAmt,
+              date: payload.date || new Date().toISOString().split("T")[0],
+              personId: payload.customerId,
+              resourceType: (paymentAccount as any).type === "bank" ? "bank" : "cashbox",
+              resourceId: invoicePaymentAccountId,
+              method: "cash",
+              description: `بابت دریافت وجه فاکتور برگشت خرید شماره ${payload.invoiceNumber || invId}`,
+              currency: payload.currency || "تومان",
+              linkedInvoices: { [invId]: paidAmt }
+            };
+            const createdTx = await addTransaction(refundTxPayload);
+            if (createdTx?.id) {
+              rollbackActions.push(async () => {
+                await deleteTransaction(createdTx.id.toString());
+              });
+            }
+          }
+        } else {
+          updateAppProcessing("مرحله ۴ از ۵: به‌روزرسانی مانده حساب و کاردکس تامین‌کننده...");
+          await new Promise(r => setTimeout(r, 30));
+        }
+
+        updateAppProcessing("مرحله ۵ از ۵: ثبت لاگ سیستمی و تثبیت نهایی عملیات (COMMIT)...");
+        await new Promise(r => setTimeout(r, 20));
+      } else if (payload.type === "warehouse_receipt") {
+        updateAppProcessing("مرحله ۲ از ۶: محاسبه میانگین موزون جدید...");
+        await new Promise(r => setTimeout(r, 20));
+        updateAppProcessing("مرحله ۳ از ۶: Insert در ItemLedger (کاردکس — فقط رکورد جدید اضافه می‌شود)...");
+        await new Promise(r => setTimeout(r, 20));
+        updateAppProcessing("مرحله ۴ از ۶: Update در StockBalance (جدول موجودی لحظه‌ای)...");
+        await new Promise(r => setTimeout(r, 20));
+        updateAppProcessing("مرحله ۵ از ۶: ثبت سند حسابداری...");
+        await new Promise(r => setTimeout(r, 20));
+        updateAppProcessing("مرحله ۶ از ۶: ثبت لاگ تغییرات (Audit Log)...");
+        await new Promise(r => setTimeout(r, 20));
+      } else if (payload.type === "warehouse_remittance") {
+        updateAppProcessing("مرحله ۳ از ۸: محاسبه بهای تمام‌شده خروجی (طبق میانگین موزون لحظه‌ای)...");
+        await new Promise(r => setTimeout(r, 20));
+        updateAppProcessing("مرحله ۴ از ۸: Insert در ItemLedger (کاردکس)...");
+        await new Promise(r => setTimeout(r, 20));
+        updateAppProcessing("مرحله ۵ از ۸: Update در StockBalance (جدول موجودی لحظه‌ای)...");
+        await new Promise(r => setTimeout(r, 20));
+        updateAppProcessing("مرحله ۶ از ۸: آزادسازی رزرو...");
+        await new Promise(r => setTimeout(r, 20));
+        updateAppProcessing("مرحله ۷ از ۸: ثبت سند حسابداری...");
+        await new Promise(r => setTimeout(r, 20));
+        updateAppProcessing("مرحله ۸ از ۸: ثبت لاگ تغییرات و COMMIT...");
+        await new Promise(r => setTimeout(r, 20));
+      } else {
+        updateAppProcessing("مرحله ۲ از ۳: محاسبه کاردکس کالا و به‌روزرسانی...");
+        await new Promise(r => setTimeout(r, 20));
+        updateAppProcessing("مرحله ۳ از ۳: تثبیت نهایی عملیات...");
+        await new Promise(r => setTimeout(r, 20));
+      }
+
+      if (!isDraft && payload.type !== "proforma") {
+        await recalculateAllWarehouseStocks()
+          .then(async () => {
+            await fetchInvoices();
+            await fetchWarehouses();
+            await fetchInventoryTransactions();
+            const freshProducts = await fetchProducts();
+            if (viewingProduct && Array.isArray(freshProducts)) {
+              const updatedView = freshProducts.find((p: any) => String(p.id) === String(viewingProduct.id));
+              if (updatedView) setViewingProduct(updatedView);
+            }
+            try {
+              const st = await getWarehouseStocks();
+              setWarehouseStocks(st as any);
+            } catch (e) {
+              console.error("Error refreshing warehouse stocks:", e);
+            }
+          })
+          .catch(console.error);
+      } else {
+        await fetchInvoices();
+        const freshProducts = await fetchProducts();
+        if (viewingProduct && Array.isArray(freshProducts)) {
+          const updatedView = freshProducts.find((p: any) => String(p.id) === String(viewingProduct.id));
+          if (updatedView) setViewingProduct(updatedView);
+        }
+      }
+
+      const successTypeName =
+        payload.type === "warehouse_receipt"
+          ? "رسید انبار"
+          : payload.type === "warehouse_remittance"
+            ? "حواله انبار"
+            : payload.type === "purchase"
+              ? "فاکتور خرید"
+              : payload.type === "sale"
+                ? "فاکتور فروش"
+                : payload.type === "sale_return"
+                  ? "فاکتور برگشت از فروش"
+                  : payload.type === "purchase_return"
+                    ? "فاکتور برگشت از خرید"
+                    : "فاکتور";
+
+      setSuccessMsg(
+        isDraft
+          ? `پیش‌نویس ${successTypeName} با موفقیت ذخیره شد!`
+          : `${successTypeName} با موفقیت ثبت شد!`,
+      );
+      if (
+        (payload.type === "sale" || payload.type === "purchase" || payload.type === "sale_return" || payload.type === "purchase_return" || payload.type === "warehouse_receipt" || payload.type === "warehouse_remittance") &&
+        !isDraft
+      ) {
+        const person = persons.find((p) => String(p.id) === String(payload.customerId));
+        if (person && (person.phone || person.mobile || person.name)) {
+          const pPhone = String(person.phone || person.mobile || "").trim();
+          const amt =
+            typeof formatNumber === "function"
+              ? formatNumber(payload.totalAmount)
+              : payload.totalAmount;
+          const invNum = String(addedInvoice?.invoiceNumber || payload.invoiceNumber || "");
+          const curStr = storeSettings?.currency || "تومان";
+          const dateStr = formatDateDisplay(new Date(), storeSettings?.calendarType);
+
+          let msg = "";
+          let smsSource = "sale_invoice";
+          let shouldNotify = false;
+
+          const templateVars = {
+            name: person.name,
+            phone: pPhone,
+            amount: String(amt),
+            currency: curStr,
+            invoice_number: invNum,
+            date: dateStr,
+            due_date: payload.dueDate || '',
+            store_name: storeSettings?.store_name || '',
+          };
+
+          if (payload.type === "sale") {
+            smsSource = "sale_invoice";
+            shouldNotify = !!(storeSettings?.notify_on_sale_invoice ?? storeSettings?.notify_on_invoice ?? true);
+            msg = storeSettings?.smsTemplateInvoice
+              ? renderSmsTemplate(storeSettings.smsTemplateInvoice, templateVars)
+              : `مشتری گرامی ${person.name}، فاکتور فروش شماره ${invNum} به مبلغ ${amt} ${curStr} در تاریخ ${dateStr} ثبت گردید. با تشکر از خرید شما.`;
+          } else if (payload.type === "purchase") {
+            smsSource = "purchase_invoice";
+            shouldNotify = !!(storeSettings?.notify_on_purchase_invoice ?? storeSettings?.notify_on_invoice ?? false);
+            msg = storeSettings?.smsTemplatePurchase
+              ? renderSmsTemplate(storeSettings.smsTemplatePurchase, templateVars)
+              : `تأمین‌کننده گرامی ${person.name}، فاکتور خرید شماره ${invNum} به مبلغ ${amt} ${curStr} در تاریخ ${dateStr} در سیستم ثبت گردید.`;
+          } else if (payload.type === "sale_return") {
+            smsSource = "sale_return";
+            shouldNotify = !!(storeSettings?.notify_on_return_invoices ?? storeSettings?.notify_on_sale_return ?? storeSettings?.notify_on_invoice ?? false);
+            msg = storeSettings?.smsTemplateReturn
+              ? renderSmsTemplate(storeSettings.smsTemplateReturn, templateVars)
+              : `مشتری گرامی ${person.name}، فاکتور برگشت از فروش شماره ${invNum} به مبلغ ${amt} ${curStr} در تاریخ ${dateStr} ثبت و از حساب شما کسر گردید.`;
+          } else if (payload.type === "purchase_return") {
+            smsSource = "purchase_return";
+            shouldNotify = !!(storeSettings?.notify_on_return_invoices ?? storeSettings?.notify_on_purchase_return ?? storeSettings?.notify_on_invoice ?? false);
+            msg = storeSettings?.smsTemplateReturn
+              ? renderSmsTemplate(storeSettings.smsTemplateReturn, templateVars)
+              : `همکار گرامی ${person.name}، فاکتور برگشت از خرید شماره ${invNum} به مبلغ ${amt} ${curStr} در تاریخ ${dateStr} در سیستم ثبت گردید.`;
+          } else if (payload.type === "warehouse_receipt") {
+            smsSource = "warehouse_receipt";
+            shouldNotify = !!(storeSettings?.notify_on_warehouse_receipt ?? false);
+            msg = storeSettings?.smsTemplateWarehouseReceipt
+              ? renderSmsTemplate(storeSettings.smsTemplateWarehouseReceipt, templateVars)
+              : `همکار گرامی ${person.name}، رسید ورود به انبار شماره ${invNum} در تاریخ ${dateStr} در سیستم با موفقیت ثبت گردید.`;
+          } else if (payload.type === "warehouse_remittance") {
+            smsSource = "warehouse_remittance";
+            shouldNotify = !!(storeSettings?.notify_on_warehouse_remittance ?? false);
+            msg = storeSettings?.smsTemplateWarehouseRemittance
+              ? renderSmsTemplate(storeSettings.smsTemplateWarehouseRemittance, templateVars)
+              : `همکار گرامی ${person.name}، حواله خروج از انبار (رسید خروج) شماره ${invNum} در تاریخ ${dateStr} در سیستم ثبت و تحویل شد.`;
+          }
+
+          sendNotification(
+            msg, 
+            pPhone, 
+            shouldNotify ? storeSettings?.notify_method : undefined,
+            {
+              recipientName: person.name,
+              recipientId: person.id,
+              source: smsSource,
+            }
+          );
+        }
+      }
+      
+      checkDebtThreshold(payload.customerId).catch(console.error);
+
+      // Reset form after short delay
+      clearDraft();
+      setTimeout(() => {
+        if (payload.type === "purchase") {
+          // Open pricing wizard with the added invoice items (excluding services if possible, or all items)
+          const newWizardItems = payload.items
+            .filter((it: any) => {
+              const prod = products.find((p) => p.id === it.productId);
+              return prod && prod.type !== "service";
+            })
+            .map((it: any) => {
+              const prod = products.find((p) => p.id === it.productId);
+              const prodDir = prod?.unitRatioDirection || getUnitRatioDirection(prod);
+              let basePurchasePrice = Number(it.unitPrice) || 0;
+              const isSecUnit = Boolean(it.isSecondaryUnit);
+              if (isSecUnit && prod?.unitRatio && prod.unitRatio > 0) {
+                 basePurchasePrice = convertPriceToBaseUnit(basePurchasePrice, true, prod.unitRatio, prodDir);
+              }
+              return {
+                productId: it.productId,
+                productName: it.productName,
+                purchasePrice: Math.round(basePurchasePrice),
+                originalUnitPrice: Number(it.unitPrice) || 0,
+                isSecondaryUnit: isSecUnit,
+                invoiceUnit: isSecUnit ? (prod?.secondaryUnit || 'واحد فرعی') : (prod?.unit || 'واحد اصلی'),
+                mainUnit: prod?.unit || 'عدد',
+                secondaryUnit: prod?.secondaryUnit || '',
+                unitRatio: prod?.unitRatio || 1,
+                unitRatioDirection: prodDir,
+                marginPercent: 0,
+                salePrice: prod ? Number(prod.price) : 0,
+              };
+            });
+          if (newWizardItems.length > 0) {
+            setPricingWizardItems(newWizardItems);
+            setPricingWizardInvoice(payload);
+          }
+        }
+
+        if (invoiceMode === "manual") setInvoiceNumber("");
+        setSellerInvoiceNumber("");
+        setCustomerId("");
+        setSourceInvoiceId("");
+        setItems([]);
+        setOverallDiscountPercent(0);
+        setInvoiceCurrency(storeSettings.currency || "تومان");
+        setExchangeRate(1);
+        setExchangeRateInput("1");
+        setInvoicePaymentAccountId("");
+        // Re-initialize based on active tab
+        if (activeTab === "create_sale") {
+          setInvoiceType("sale");
+          setInvoiceTitle("فاکتور فروش کالا");
+          setInvoicePaymentStatus("unpaid");
+          setInvoicePaidAmount(0);
+        } else if (activeTab === "create_sale_return") {
+          setInvoiceType("sale_return");
+          setInvoiceTitle("فاکتور برگشت از فروش");
+          setInvoicePaymentStatus("unpaid");
+          setInvoicePaidAmount(0);
+        } else if (activeTab === "create_purchase_return") {
+          setInvoiceType("purchase_return");
+          setInvoiceTitle("فاکتور برگشت از خرید");
+          setInvoicePaymentStatus("unpaid");
+          setInvoicePaidAmount(0);
+        } else if (activeTab === "create_purchase") {
+          setInvoiceType("purchase");
+          setInvoiceTitle("فاکتور خرید کالا");
+          setInvoicePaymentStatus("unpaid");
+          setInvoicePaidAmount(0);
+        } else if (activeTab === "create_warehouse_doc") {
+          const storedDraftStr = localStorage.getItem("invoice_draft");
+          const storedDraft = storedDraftStr
+            ? JSON.parse(storedDraftStr)
+            : null;
+          if (storedDraft && storedDraft.type === "warehouse_receipt") {
+            setInvoiceType("warehouse_receipt");
+            setInvoiceTitle("رسید انبار (ورود کالا)");
+            setWarehouseOperationType("purchase_invoice");
+          } else {
+            setInvoiceType("warehouse_remittance");
+            setInvoiceTitle("حواله انبار (خروج کالا)");
+            setWarehouseOperationType("sales_invoice");
+          }
+          setWarehouseWizardStep(1);
+        } else {
+          setInvoiceType("sale");
+          setInvoiceTitle("فاکتور فروش کالا");
+        }
+        setSuccessMsg("");
+        setPreviewInvoiceData(null); // Clear preview modal
+      }, payload.type === "sale" ? 50 : 1500);
+      return addedInvoice || true;
+    } catch (error: any) {
+      console.error("Error submitting invoice, rolling back operations...", error);
+      updateAppProcessing('خطا رخ داد! در حال بازگردانی (Rollback)...');
+      await new Promise(r => setTimeout(r, 20));
+      for (let i = rollbackActions.length - 1; i >= 0; i--) {
+        try {
+          await rollbackActions[i]();
+        } catch (rErr) {
+          console.error("Error executing rollback action:", rErr);
+        }
+      }
+      customAlert(`ثبت یا به‌روزرسانی نمایش فاکتور با خطا مواجه شد. وضعیت فاکتور را با شماره آن بررسی کنید.\nشرح خطا: ${error.message || "خطای ارتباط با سرور رخ داد"}`);
+    } finally {
+      resumeAppDataChanged(true);
+      setSubmitting(false);
+      stopAppProcessing();
+    }
+    return false;
+  };
+
+const handleExecuteTransferAndSubmit = async () => {
+    if (!transferProposal) return;
+    setSubmitting(true);
+    const rollbackActions: (() => Promise<void>)[] = [];
+
+    try {
+      const { items: proposalItems, payload: originalPayload } =
+        transferProposal;
+
+      // Let's create the transfer documents for each suggested transfer
+      for (const item of proposalItems) {
+        for (const tr of item.transfers) {
+          // Generate warehouse remittance (exit from source warehouse) and warehouse receipt (entry to sales warehouse)
+          const startNum = parseInt(
+            storeSettings.invoiceStartNumber || "1000",
+            10,
+          );
+          const remPrefix = storeSettings.prefix_warehouse_remittance || "REM-";
+          const recPrefix = storeSettings.prefix_warehouse_receipt || "REC-";
+          const numLength = Math.max(
+            1,
+            parseInt(storeSettings.invoiceNumberLength || "6", 10),
+          );
+
+          let maxNumRem = startNum - 1;
+          let maxNumRec = startNum - 1;
+          invoices.forEach((inv) => {
+            if (inv.invoiceNumber) {
+              if (inv.invoiceNumber.startsWith(remPrefix)) {
+                const num = parseInt(
+                  inv.invoiceNumber.substring(remPrefix.length),
+                  10,
+                );
+                if (!isNaN(num) && num > maxNumRem) maxNumRem = num;
+              }
+              if (inv.invoiceNumber.startsWith(recPrefix)) {
+                const num = parseInt(
+                  inv.invoiceNumber.substring(recPrefix.length),
+                  10,
+                );
+                if (!isNaN(num) && num > maxNumRec) maxNumRec = num;
+              }
+            }
+          });
+
+          const remNumber = `${remPrefix}${String(maxNumRem + 1).padStart(numLength, "0")}`;
+          const recNumber = `${recPrefix}${String(maxNumRec + 1).padStart(numLength, "0")}`;
+
+          const product = products.find(
+            (p) => p.id.toString() === item.productId.toString(),
+          );
+          const transferDate = new Date();
+          
+
+          // 1. Warehouse Remittance (خروج از انبار مبدا)
+          const remittancePayload = {
+            isAutoGenerated: true,
+            invoiceNumber: remNumber,
+            title: `حواله انتقال کالا به انبار فروش (خودکار بابت فاکتور فروش ${originalPayload.invoiceNumber})`,
+            description: `انتقال خودکار کالا به انبار فروش (${tr.toWarehouseName}) بابت کسر موجودی`,
+            type: "warehouse_remittance",
+            warehouseId: tr.fromWarehouseId,
+            currency: originalPayload.currency || "تومان",
+            date: transferDate.toISOString(),
+                        customerId: originalPayload.customerId || "",
+            items: [
+              {
+                id: generateId(),
+                productId: item.productId,
+                productName: item.productName,
+                quantity: tr.qty,
+                unitPrice: product?.price || 0,
+                discountPercent: 0,
+                totalPrice: (product?.price || 0) * tr.qty,
+                selectedUnit: product?.unit || "",
+                unitRatio: product?.unitRatio || 1,
+                isSecondaryUnit: false,
+                warehouseId: tr.fromWarehouseId,
+              },
+            ],
+            overallDiscountPercent: 0,
+            totalAmount: 0,
+          };
+
+          // 2. Warehouse Receipt (ورود به انبار مقصد/فروش)
+          const receiptPayload = {
+            isAutoGenerated: true,
+            invoiceNumber: recNumber,
+            title: `رسید انتقال کالا به انبار فروش (خودکار بابت فاکتور فروش ${originalPayload.invoiceNumber})`,
+            description: `انتقال خودکار کالا از انبار مبدا (${tr.fromWarehouseName}) بابت کسر موجودی`,
+            type: "warehouse_receipt",
+            warehouseId: tr.toWarehouseId,
+            currency: originalPayload.currency || "تومان",
+            date: transferDate.toISOString(),
+                        customerId: originalPayload.customerId || "",
+            items: [
+              {
+                id: generateId(),
+                productId: item.productId,
+                productName: item.productName,
+                quantity: tr.qty,
+                unitPrice: product?.price || 0,
+                discountPercent: 0,
+                totalPrice: (product?.price || 0) * tr.qty,
+                selectedUnit: product?.unit || "",
+                unitRatio: product?.unitRatio || 1,
+                isSecondaryUnit: false,
+                warehouseId: tr.toWarehouseId,
+              },
+            ],
+            overallDiscountPercent: 0,
+            totalAmount: 0,
+          };
+
+          const addedRem = await addInvoice(remittancePayload as any, true);
+          rollbackActions.push(async () => {
+            if (addedRem?.id) await deleteInvoice(addedRem.id.toString(), true, true);
+          });
+
+          const addedRec = await addInvoice(receiptPayload as any, true);
+          rollbackActions.push(async () => {
+            if (addedRec?.id) await deleteInvoice(addedRec.id.toString(), true, true);
+          });
+        }
+      }
+
+      // Recalculate stock
+      await recalculateAllWarehouseStocks();
+      await fetchWarehouses();
+      setTransferProposal(null);
+
+      // Submit original invoice with bypass of shortage checks (since stock is now in target warehouse!)
+      const addedInvoice = await addInvoice(originalPayload);
+      rollbackActions.push(async () => {
+        if (addedInvoice?.id) await deleteInvoice(addedInvoice.id.toString(), true, true);
+      });
+
+      // Warehouse remittance for sales is manual per user request (no auto-remittance generated)
+
+      setSuccessMsg(
+        `سند انتقال موجودی و فاکتور فروش شماره ${originalPayload.invoiceNumber} با موفقیت ثبت شدند!`,
+      );
+
+      if (originalPayload.customerId) {
+        const person = persons.find((p) => String(p.id) === String(originalPayload.customerId));
+        if (person && (person.phone || person.mobile || person.name)) {
+          const pPhone = String(person.phone || person.mobile || "").trim();
+          const amt =
+            typeof formatNumber === "function"
+              ? formatNumber(originalPayload.totalAmount)
+              : originalPayload.totalAmount;
+          const invNum = String(originalPayload.invoiceNumber || "");
+          const curStr = storeSettings?.currency || "تومان";
+          const dateStr = formatDateDisplay(new Date(), storeSettings?.calendarType);
+
+          const templateVars = {
+            name: person.name,
+            phone: pPhone,
+            amount: String(amt),
+            currency: curStr,
+            invoice_number: invNum,
+            date: dateStr,
+            store_name: storeSettings?.store_name || '',
+          };
+
+          let msg = storeSettings?.smsTemplateInvoice
+            ? renderSmsTemplate(storeSettings.smsTemplateInvoice, templateVars)
+            : `مشتری گرامی ${person.name}، فاکتور فروش شماره ${invNum} به مبلغ ${amt} ${curStr} در تاریخ ${dateStr} در سیستم ثبت شد. با تشکر از خرید شما.`;
+          const shouldSendSaleSms = !!(storeSettings?.notify_on_sale_invoice ?? storeSettings?.notify_on_invoice ?? true);
+          sendNotification(
+            msg, 
+            pPhone, 
+            shouldSendSaleSms ? storeSettings?.notify_method : undefined,
+            {
+              recipientName: person.name,
+              recipientId: person.id,
+              source: "sale_invoice",
+            }
+          );
+        }
+      }
+
+      
+      clearDraft();
+
+      setTimeout(() => {
+        if (invoiceMode === "manual") setInvoiceNumber("");
+        setSellerInvoiceNumber("");
+        setCustomerId("");
+        setSourceInvoiceId("");
+        setItems([]);
+        setOverallDiscountPercent(0);
+        setInvoiceCurrency(storeSettings.currency || "تومان");
+        setExchangeRate(1);
+        setExchangeRateInput("1");
+
+        setInvoiceType("sale");
+        setInvoiceTitle("فاکتور فروش کالا");
+        setInvoicePaymentStatus("unpaid");
+        setInvoicePaidAmount(0);
+        setInvoicePaymentAccountId("");
+
+        setSuccessMsg("");
+        setPreviewInvoiceData(null);
+      }, 1500);
+
+      setActiveTab("list_sale", true);
+    } catch (err: any) {
+      console.error("Error executing transfer and submit, rolling back...", err);
+      for (let i = rollbackActions.length - 1; i >= 0; i--) {
+        try {
+          await rollbackActions[i]();
+        } catch (rErr) {
+          console.error("Error executing rollback action:", rErr);
+        }
+      }
+      customAlert(err.message || "خطایی در اجرای انتقال و ثبت فاکتور پیش آمد.");
+    } finally {
+      setSubmitting(false);
+      stopAppProcessing();
+    }
+  };
+
+const submitInvoice = async (e?: React.FormEvent) => {
+    if (e && typeof e.preventDefault === "function") {
+      e.preventDefault();
+    }
+    const isWarehouseDoc = activeTab === "create_warehouse_doc" || invoiceType === "warehouse_receipt" || invoiceType === "warehouse_remittance";
+    if (
+      (!customerId && !isWarehouseDoc) ||
+      (items || []).length === 0 ||
+      items.some((i) => !i.productId && !i.productName)
+    ) {
+      customAlert("لطفاً همه فیلدهای ضروری را پر کنید.");
+      return;
+    }
+    if (isWarehouseDoc && !invoiceWarehouseId) {
+      customAlert("لطفاً انبار را مشخص کنید.");
+      return;
+    }
+    if (
+      storeSettings.requireWarehouse &&
+      !activeTab.includes("warehouse") &&
+      activeTab !== "create_purchase" &&
+      invoiceType !== "purchase" &&
+      items.some(
+        (i) => products.find((p) => p.id === i.productId)?.type !== "service",
+      ) &&
+      !invoiceWarehouseId
+    ) {
+      customAlert(
+        "لطفاً برای فاکتور فروش شامل کالا، انبار را انتخاب کنید.",
+      );
+      return;
+    }
+    await saveInvoiceData();
+  };
+
+const handleInvoicePreviewTrigger = () => {
+    const isWarehouseDoc = activeTab === "create_warehouse_doc" || invoiceType === "warehouse_receipt" || invoiceType === "warehouse_remittance";
+    if (
+      (!isWarehouseDoc && !customerId) ||
+      (items || []).length === 0 ||
+      items.some((i) => !i.productId && !i.productName)
+    ) {
+      customAlert("لطفاً همه فیلدهای ضروری را پر کنید.");
+      return;
+    }
+
+    if (activeTab === "create_warehouse_doc" && !invoiceWarehouseId) {
+      customAlert("لطفاً انبار را مشخص کنید.");
+      return;
+    }
+
+    if (
+      storeSettings.requireWarehouse &&
+      !activeTab.includes("warehouse") &&
+      activeTab !== "create_purchase" &&
+      invoiceType !== "purchase" &&
+      items.some(
+        (i) => products.find((p) => p.id === i.productId)?.type !== "service",
+      ) &&
+      !invoiceWarehouseId
+    ) {
+      customAlert(
+        "لطفاً برای فاکتور فروش شامل کالا، انبار را انتخاب کنید.",
+      );
+      return;
+    }
+
+    const isNegativeStockAllowed = Boolean(
+      storeSettings?.allowNegativeStock === true ||
+      storeSettings?.allowNegativeStock === "true" ||
+      storeSettings?.allowNegativeStock === 1
+    );
+
+    if (invoiceType === "sale" && !isNegativeStockAllowed) {
+      for (let idx = 0; idx < (items || []).length; idx++) {
+        const item = items[idx];
+        if (!item || !item.productId) continue;
+        const prod = products.find((p) => p.id?.toString() === item.productId?.toString());
+        if (!prod || prod.type === "service") continue;
+
+        const targetWhId = (item.warehouseId || invoiceWarehouseId || "").toString();
+        const stockInfo = getProductStockInfo(prod.id);
+        const currentStock = targetWhId && stockInfo?.warehouses?.[targetWhId]
+          ? (stockInfo.warehouses[targetWhId].available ?? stockInfo.warehouses[targetWhId].physical ?? 0)
+          : (targetWhId ? 0 : (stockInfo?.totalAvailable ?? stockInfo?.totalPhysical ?? 0));
+
+        let originalQty = 0;
+        if (editingInvoiceId) {
+          const originalInvoice = invoices.find((i: any) => i.id?.toString() === editingInvoiceId.toString());
+          if (originalInvoice && originalInvoice.type === "sale" && Array.isArray(originalInvoice.items)) {
+            const originalItem = originalInvoice.items.find(
+              (oi: any) =>
+                oi.productId?.toString() === item.productId?.toString() &&
+                (oi.warehouseId?.toString() === targetWhId || (!oi.warehouseId && targetWhId === invoiceWarehouseId?.toString()))
+            );
+            if (originalItem) {
+              const origDir = originalItem.unitRatioDirection || (prod ? (prod.unitRatioDirection || getUnitRatioDirection(prod)) : undefined);
+              originalQty = convertQuantityToBaseUnit(
+                originalItem.quantity,
+                Boolean(originalItem.isSecondaryUnit),
+                Number(originalItem.unitRatio),
+                origDir
+              );
+            }
+          }
+        }
+
+        const dir = prod.unitRatioDirection || getUnitRatioDirection(prod);
+        const neededQty = convertQuantityToBaseUnit(
+          item.quantity,
+          Boolean(item.isSecondaryUnit),
+          Number(prod.unitRatio),
+          dir
+        );
+
+        if (currentStock + originalQty < neededQty) {
+          const whObj = warehouses.find((w: any) => w.id?.toString() === targetWhId);
+          const whName = whObj ? whObj.name : "انبار انتخاب شده";
+          const unitName = (item.isSecondaryUnit && prod.secondaryUnit) ? prod.secondaryUnit : (prod.unit || "عدد");
+          const availInBase = currentStock + originalQty;
+          const availDisplay = (item.isSecondaryUnit && dir === "main_to_secondary")
+            ? Number((availInBase * (prod.unitRatio || 1)).toFixed(2))
+            : ((item.isSecondaryUnit && prod.unitRatio && prod.unitRatio > 1)
+              ? Number((availInBase / prod.unitRatio).toFixed(2))
+              : availInBase);
+          const deficitInBase = neededQty - availInBase;
+          const deficitDisplay = (item.isSecondaryUnit && dir === "main_to_secondary")
+            ? Number((deficitInBase * (prod.unitRatio || 1)).toFixed(2))
+            : ((item.isSecondaryUnit && prod.unitRatio && prod.unitRatio > 1)
+              ? Number((deficitInBase / prod.unitRatio).toFixed(2))
+              : deficitInBase);
+
+          const rowEl = document.getElementById(`sale-invoice-item-row-${item.id}`);
+          if (rowEl) {
+            rowEl.scrollIntoView({ behavior: "smooth", block: "center" });
+          }
+
+          customAlert(`خطای کسری موجودی در ردیف ${idx + 1}:\nموجودی کالای «${prod.name}» در انبار «${whName}» برابر با ${availDisplay} ${unitName} است، در حالی که تعداد درخواستی ${item.quantity} ${unitName} می‌باشد (کسری: ${deficitDisplay} ${unitName}).\nردیف مربوطه با کادر قرمز رنگ مشخص گردید.`);
+          return;
+        }
+      }
+    }
+
+    if (
+      invoiceType === "purchase" &&
+      (invoicePaymentStatus === "paid" || (invoicePaymentStatus === "partial" && Number(invoicePaidAmount) > 0)) &&
+      !invoicePaymentAccountId
+    ) {
+      customAlert("لطفاً صندوق یا حساب بانکی پرداختی را مشخص کنید.");
+      return;
+    }
+
+    const finalInvoiceNumber =
+      invoiceMode === "auto" || !invoiceNumber
+        ? getInvoiceNumber(invoiceType)
+        : invoiceNumber;
+    const selectedCustomer = persons.find((p) => p.id === customerId);
+
+    const srcInvObj = sourceInvoiceId ? invoices.find((inv: any) => String(inv.id) === String(sourceInvoiceId) || String(inv.invoiceNumber) === String(sourceInvoiceId)) : null;
+
+    const previousSale = editingInvoiceId ? invoices.find(i=>String(i.id)===String(editingInvoiceId)) : undefined;
+    const tempPayload = {
+      ...(invoiceType === 'sale' ? {
+      exchangeRate,
+      postingId: generateId(),
+      previousTotal: previousSale && !previousSale.isDraft && previousSale.status !== 'draft' && String(previousSale.customerId) === String(customerId) ? Number(previousSale.totalAmount || 0) * Number(previousSale.exchangeRate || 1) : 0,
+      existingPaid: editingInvoiceId ? Number(invoices.find(i=>String(i.id)===String(editingInvoiceId))?.paidAmount || 0) : 0,
+      expectedVersion: invoices.find(i=>String(i.id)===String(editingInvoiceId || autoSaveInvoiceId))?.version,
+      } : {}),
+      invoiceNumber: finalInvoiceNumber,
+      sellerInvoiceNumber: sellerInvoiceNumber || "",
+      title:
+        invoiceTitle ||
+        (invoiceType === "sale" ? "فاکتور فروش کالا" : "فاکتور خرید کالا"),
+      description: invoiceDescription,
+      note: invoiceNote,
+      warehouseId: invoiceWarehouseId,
+      type: invoiceType,
+      currency: invoiceCurrency,
+      date:
+            convertToGregorian(date),
+          dueDate: invoiceDueDate ? (convertToGregorian(invoiceDueDate)) : null,
+              
+      customerId,
+      driverPersonId,
+      driverName,
+      driverPhone,
+      receiverPersonId,
+      receiverName,
+      receiverPhone,
+      vehiclePlateNumber,
+      shippingAddress,
+      
+      sourceInvoiceId, // Pass it correctly
+      sourceInvoiceNumber: srcInvObj?.invoiceNumber || (typeof sourceInvoiceId === 'string' && !sourceInvoiceId.includes('-') ? sourceInvoiceId : ""),
+      items: (items || []).map((item) => {
+        const prod = products.find(
+          (p) => p.id.toString() === String(item.productId),
+        );
+        return {
+
+          ...item,
+          warehouseId: item.warehouseId || invoiceWarehouseId || "",
+          productName: prod ? prod.name : item.productName || "کالای سفارشی",
+        };
+      }),
+      overallDiscountPercent,
+      totalAmount: calculateFinalTotal(),
+      paymentStatus: invoicePaymentStatus,
+      paidAmount: Number(invoicePaidAmount) || 0,
+    };
+
+    if (invoiceType === "sale") {
+      setSalePaymentModalPayload(tempPayload);
+      setIsSalePaymentModalOpen(true);
+      return;
+    }
+    saveInvoiceData(tempPayload);
+  };
+
+  const productStockMap = useMemo(() => {
+    try {
+      const { productSummaryMap } = calculateAllWarehouseStocks({
+        products: products || [],
+        warehouses: warehouses || [],
+        allDocs: invoices || [],
+      });
+      return productSummaryMap || {};
+    } catch (err) {
+      console.error("calculateAllWarehouseStocks failed in useAppController:", err);
+      return {};
+    }
+  }, [products, warehouses, invoices]);
+
+  const getProductStockInfo = (productId: string | number) => {
+    const info = productStockMap[productId.toString()];
+    if (info) return info;
+    return {
+      totalPhysical: 0,
+      totalReserved: 0,
+      totalAvailable: 0,
+      warehouses: {},
+    };
+  };
+
+const formatProductStockDetails = (product: any) => {
+    const info = getProductStockInfo(product.id);
+    let details = "";
+    const whCount = Object.keys(info.warehouses).filter(
+      (wid) => info.warehouses[wid].available > 0,
+    ).length;
+
+    if (whCount > 0) {
+      details =
+        ` | ` +
+        Object.keys(info.warehouses)
+          .filter((wid) => info.warehouses[wid].available > 0)
+          .map((wid) => {
+            const wName =
+              warehouses.find((w) => w.id.toString() === wid)?.name ||
+              "انبار نامشخص";
+            return `${wName}: ${info.warehouses[wid].available}`;
+          })
+          .join("، ");
+    }
+
+    return (
+      <div className="flex items-center gap-1.5 flex-wrap">
+        <span
+          className={
+            info.totalAvailable > 0
+              ? "text-emerald-600 font-bold"
+              : "text-rose-500 font-bold"
+          }
+        >
+          موجودی در دسترس: {info.totalAvailable} {product.unit || ""}
+        </span>
+        {info.totalReserved > 0 && (
+          <span className="text-amber-500 font-bold bg-amber-50 px-1 rounded">
+            (رزرو شده: {info.totalReserved})
+          </span>
+        )}
+        {(product.code || product.barcode) && (
+          <span className="text-slate-400 font-mono text-[10px] pr-1 border-r border-slate-200">
+            {product.code ? `کد: ${product.code}` : ""}{" "}
+            {product.barcode ? `| بارکد: ${product.barcode}` : ""}
+          </span>
+        )}
+        <span className="text-gray-400">{details}</span>
+      </div>
+    );
+  };
+
+const calculateProductCurrentStock = (productId: string | number) => {
+    return getProductStockInfo(productId).totalAvailable;
+  };
+
+  const personBalanceMap = useMemo(() => {
+    const map: Record<string, number> = {};
+
+    accountingDocuments.forEach((doc) => {
+      if (doc.status === "draft" || doc.isDeleted) return;
+      if (doc.items && Array.isArray(doc.items)) {
+        doc.items.forEach((item: any) => {
+          if (item.detailedAccountId) {
+            const pid = item.detailedAccountId.toString();
+            map[pid] =
+              (map[pid] || 0) + (Number(item.debit) || 0) - (Number(item.credit) || 0);
+          }
+        });
+      }
+    });
+
+    return map;
+  }, [accountingDocuments]);
+
+  const calculatePersonBalance = (personId: string | number) => {
+    const person = persons.find((p) => p.id.toString() === personId.toString());
+    if (!person) return { amount: 0, status: "بی‌حساب" };
+
+    const balance = personBalanceMap[personId.toString()] || 0;
+
+    if (balance > 0)
+      return {
+        amount: balance,
+        status: "بدهکار",
+        color: "text-rose-600",
+        bg: "bg-rose-50",
+      };
+    if (balance < 0)
+      return {
+        amount: Math.abs(balance),
+        status: "بستانکار",
+        color: "text-emerald-600",
+        bg: "bg-emerald-50",
+      };
+    return {
+      amount: 0,
+      status: "بی‌حساب",
+      color: "text-gray-500",
+      bg: "bg-gray-100",
+    };
+  };
+
+const renderPersonInfoBox = (
+    personId: string | number,
+    themeClass: string = "bg-gray-50 border-gray-100 text-gray-600",
+  ) => {
+    const person = persons.find(
+      (p) => p.id?.toString() === personId?.toString(),
+    );
+    if (!person) return null;
+    const bal = calculatePersonBalance(personId);
+    const personName = formatPersonName(person);
+    return (
+      <div
+        className={`mt-2 text-xs font-bold w-full ${themeClass} border rounded-lg p-3 flex flex-col gap-2`}
+      >
+        <div className="flex items-center justify-between pb-2 border-b border-black/5">
+          <div className="flex items-center gap-1.5 font-black text-slate-800 text-sm">
+            <User className="w-4 h-4 text-indigo-600 shrink-0" />
+            <span>{personName}</span>
+            {person.personCode && (
+              <span className="text-[11px] font-mono font-bold text-slate-500 bg-white/80 px-1.5 py-0.5 rounded border border-black/5">
+                کد: {toPersianDigits(person.personCode)}
+              </span>
+            )}
+          </div>
+          <span className="text-[11px] px-2 py-0.5 rounded-full font-bold bg-slate-100 text-slate-700">
+            {getRoleName(person.role)}
+          </span>
+        </div>
+        {(person.phone || person.address) && (
+          <div className="flex flex-col gap-1.5 pb-2 border-b border-black/5">
+            {person.phone && (
+              <div className="flex items-center gap-1.5 opacity-90 font-medium">
+                <Phone className="w-3.5 h-3.5" />
+                <span dir="ltr" className="text-right w-full">
+                  {person.phone}
+                </span>
+              </div>
+            )}
+            {person.address && (
+              <div className="flex gap-1.5 opacity-90 font-medium leading-relaxed">
+                <MapPin className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                <span>{person.address}</span>
+              </div>
+            )}
+          </div>
+        )}
+        <div className="flex justify-between items-center text-[11px] sm:text-xs">
+          <span className="opacity-80">مانده حساب فعلی:</span>
+          <span
+            className={`${bal.bg || "bg-white"} ${bal.color || "text-slate-800"} px-2.5 py-0.5 rounded shadow-sm border border-black/5`}
+          >
+            {bal.amount === 0
+              ? "صفر (بی‌حساب)"
+              : `${formatCurrency(bal.amount)} ${storeSettings.currency || "تومان"} (${bal.status})`}
+          </span>
+        </div>
+      </div>
+    );
+  };
+
+const calculateSubtotal = () =>
+    items.reduce((sum, item) => sum + (item.totalPrice || 0), 0);
+
+const calculateFinalTotal = () => {
+    const subtotal = calculateSubtotal();
+    const final = subtotal * (1 - overallDiscountPercent / 100);
+    return final > 0 ? final : 0;
+  };
+
+const invoiceOriginalTotal = () => {
+    return items.reduce(
+      (sum, item) => sum + (item.quantity || 0) * (item.unitPrice || 0),
+      0,
+    );
+  };
+
+const invoiceTotalDiscount = () => {
+    const original = invoiceOriginalTotal();
+    const final = calculateFinalTotal();
+    return Math.max(0, original - final);
+  };
+
+const formatCurrency = (amount: number | string | undefined | null) => {
+    return formatNumberUtil(amount, storeSettings);
+  };
+
+const toPersianDigits = (str: string | number | undefined | null) => {
+    if (str === null || str === undefined) return "";
+    const persianDigits = ["۰", "۱", "۲", "۳", "۴", "۵", "۶", "۷", "۸", "۹"];
+    return str.toString().replace(/\d/g, (x) => persianDigits[parseInt(x, 10)]);
+  };
+
+const currencyLabel =
+    activeTab === "create_sale" ||
+    activeTab === "create_purchase" ||
+    activeTab === "create_warehouse_doc" ||
+    activeTab === "create_sale_return" ||
+    activeTab === "create_purchase_return"
+      ? invoiceCurrency
+      : storeSettings.currency;
+
+const formatNumber = (num: number | string | undefined | null) => {
+    return formatNumberUtil(num, storeSettings);
+  };
+
+const openPayslip = (tx: any) => {
+    let parsed = null;
+    try {
+      parsed = tx.description ? JSON.parse(tx.description) : null;
+    } catch (e) {
+      console.error(e);
+    }
+    const employeeName =
+      persons.find((p) => p.id.toString() === tx.personId?.toString())?.name ||
+      "کارمند";
+    setViewingPayslip({
+      ...tx,
+      parsed,
+      computedPersonName: employeeName,
+    });
+  };
+
+const renderTabContent = () => {
+    const effectivePersonsList = (allPersons && allPersons.length > 0) ? allPersons : persons;
+    switch (activeTab) {
+      case "keyboard_receipt":
+        return (
+          <KeyboardReceiptPage
+            persons={effectivePersonsList}
+            accounts={accounts}
+            cashboxes={cashboxes}
+            storeSettings={storeSettings}
+            transactions={transactions}
+            fetchTransactions={fetchTransactions}
+            fetchAccounts={fetchAccounts}
+            fetchCashboxes={fetchCashboxes}
+            calculatePersonBalance={calculatePersonBalance}
+            onClose={() => setRawActiveTab("list_receive_receipt")}
+            showNotification={showNotification}
+            initialPersonId={receiptPersonId}
+          />
+        );
+      case "create_receive_receipt":
+        return (
+          <ReceiveReceiptModal formatNumber={formatNumber}
+            isOpen={true}
+            setActiveTab={setActiveTab}
+            onClose={() => setRawActiveTab("list_receive_receipt")}
+            receiptHasDraft={receiptHasDraft}
+            restoreReceiptDraft={restoreReceiptDraft}
+            discardReceiptDraft={discardReceiptDraft}
+            handleSubmitReceipt={handleSubmitReceipt}
+            receiptPersonId={receiptPersonId}
+            setReceiptPersonId={setReceiptPersonId}
+            setIsPersonModalOpen={setIsPersonModalOpen}
+            persons={effectivePersonsList}
+            getPersonDisplayName={getPersonDisplayName}
+            receiptMethod={receiptMethod}
+            setReceiptMethod={setReceiptMethod}
+            accounts={accounts}
+            cashboxes={cashboxes}
+            receiptAmount={receiptAmount}
+            setReceiptAmount={setReceiptAmount}
+            receiptDate={receiptDate}
+            setReceiptDate={setReceiptDate}
+            receiptNumber={receiptNumber}
+            lastCreatedReceipt={lastCreatedReceipt}
+            toPersianDigits={toPersianDigits}
+            storeSettings={storeSettings}
+            setPrintingTransaction={setPrintingTransaction}
+            setLastCreatedReceipt={setLastCreatedReceipt}
+            receiptSuccessMsg={receiptSuccessMsg}
+            setReceiptLinkedInvoices={setReceiptLinkedInvoices}
+            activePersonsOnly={activePersonsOnly}
+            mapPersonToOption={mapPersonToOption}
+            customPersonFilter={customPersonFilter}
+            renderPersonInfoBox={renderPersonInfoBox}
+            numToPersianWords={numToPersianWords}
+            receiptResourceType={receiptResourceType}
+            setReceiptResourceType={setReceiptResourceType}
+            receiptResourceId={receiptResourceId}
+            setReceiptResourceId={setReceiptResourceId}
+            receiptTargetPersonId={receiptTargetPersonId}
+            setReceiptTargetPersonId={setReceiptTargetPersonId}
+            receiptTransferDirection={receiptTransferDirection}
+            setReceiptTransferDirection={setReceiptTransferDirection}
+            calculatePersonBalance={calculatePersonBalance}
+            invoices={invoices}
+            getDefaultExchangeRate={getDefaultExchangeRate}
+            receiptLinkedInvoices={receiptLinkedInvoices}
+            formatDateDisplay={formatDateDisplay}
+            formatCurrency={formatCurrency}
+            customAlert={customAlert}
+            receiptCheckNumber={receiptCheckNumber}
+            setReceiptCheckNumber={setReceiptCheckNumber}
+            receiptCheckDueDate={receiptCheckDueDate}
+            setReceiptCheckDueDate={setReceiptCheckDueDate}
+            receiptCheckBankName={receiptCheckBankName}
+            setReceiptCheckBankName={setReceiptCheckBankName}
+            receiptNote={receiptNote}
+            setReceiptNote={setReceiptNote}
+          />
+        );
+      case "create_pay_receipt":
+        return (
+          <PayReceiptModal formatNumber={formatNumber}
+            isOpen={true}
+            setActiveTab={setActiveTab}
+            onClose={() => setRawActiveTab("list_pay_receipt")}
+            receiptHasDraft={receiptHasDraft}
+            restoreReceiptDraft={restoreReceiptDraft}
+            discardReceiptDraft={discardReceiptDraft}
+            handleSubmitReceipt={handleSubmitReceipt}
+            receiptPersonId={receiptPersonId}
+            setReceiptPersonId={setReceiptPersonId}
+            setIsPersonModalOpen={setIsPersonModalOpen}
+            persons={effectivePersonsList}
+            getPersonDisplayName={getPersonDisplayName}
+            receiptMethod={receiptMethod}
+            setReceiptMethod={setReceiptMethod}
+            accounts={accounts}
+            cashboxes={cashboxes}
+            receiptAmount={receiptAmount}
+            setReceiptAmount={setReceiptAmount}
+            receiptDate={receiptDate}
+            setReceiptDate={setReceiptDate}
+            receiptNumber={receiptNumber}
+            lastCreatedReceipt={lastCreatedReceipt}
+            toPersianDigits={toPersianDigits}
+            storeSettings={storeSettings}
+            setPrintingTransaction={setPrintingTransaction}
+            setLastCreatedReceipt={setLastCreatedReceipt}
+            receiptSuccessMsg={receiptSuccessMsg}
+            setReceiptLinkedInvoices={setReceiptLinkedInvoices}
+            activePersonsOnly={activePersonsOnly}
+            mapPersonToOption={mapPersonToOption}
+            customPersonFilter={customPersonFilter}
+            renderPersonInfoBox={renderPersonInfoBox}
+            numToPersianWords={numToPersianWords}
+            receiptResourceType={receiptResourceType}
+            setReceiptResourceType={setReceiptResourceType}
+            receiptResourceId={receiptResourceId}
+            setReceiptResourceId={setReceiptResourceId}
+            receiptTargetPersonId={receiptTargetPersonId}
+            setReceiptTargetPersonId={setReceiptTargetPersonId}
+            receiptTransferDirection={receiptTransferDirection}
+            setReceiptTransferDirection={setReceiptTransferDirection}
+            calculatePersonBalance={calculatePersonBalance}
+            invoices={invoices}
+            getDefaultExchangeRate={getDefaultExchangeRate}
+            receiptLinkedInvoices={receiptLinkedInvoices}
+            formatDateDisplay={formatDateDisplay}
+            formatCurrency={formatCurrency}
+            customAlert={customAlert}
+            receiptCheckbookId={receiptCheckbookId}
+            setReceiptCheckbookId={setReceiptCheckbookId}
+            checkbooks={checkbooks}
+            issuedChecks={issuedChecks}
+            receiptCheckNumber={receiptCheckNumber}
+            setReceiptCheckNumber={setReceiptCheckNumber}
+            receiptCheckDueDate={receiptCheckDueDate}
+            setReceiptCheckDueDate={setReceiptCheckDueDate}
+            receiptCheckBankName={receiptCheckBankName}
+            setReceiptCheckBankName={setReceiptCheckBankName}
+            receiptNote={receiptNote}
+            setReceiptNote={setReceiptNote}
+          />
+        );
+
+      case "create_warehouse_doc":
+        return (
+          <WarehouseDocCreate confirmAction={confirmAction} setIsPersonModalOpen={setIsPersonModalOpen} invoiceNumber={invoiceNumber} persons={effectivePersonsList} date={date} setDate={setDate} persian={persian} persian_fa={persian_fa} items={items} setItems={setItems} handleItemChange={handleItemChange} products={products} handleRemoveItem={handleRemoveItem} storeSettings={storeSettings} Package={Package} invoiceWarehouseId={invoiceWarehouseId} setInvoiceWarehouseId={setInvoiceWarehouseId} warehouses={warehouses} FastBarcodeScanner={FastBarcodeScanner} handleFastBarcodeScan={handleFastBarcodeScan} SearchableSelect={SearchableSelect} handleFastAddProduct={handleFastAddProduct} invoiceTitle={invoiceTitle} invoiceMode={invoiceMode} setInvoiceMode={setInvoiceMode} setInvoiceNumber={setInvoiceNumber} setInvoiceTitle={setInvoiceTitle} User={User} activePersonsOnly={activePersonsOnly} getRoleName={getRoleName} customerId={customerId} setCustomerId={setCustomerId} renderPersonInfoBox={renderPersonInfoBox} formatCurrency={formatCurrency} submitting={submitting} handleInvoicePreviewTrigger={handleInvoicePreviewTrigger} Plus={Plus} Trash2={Trash2} Save={Save} RefreshCw={RefreshCw} FileText={FileText} Tag={Tag} setInvoiceType={setInvoiceType} DatePicker={DatePicker} invoiceDescription={invoiceDescription} setInvoiceDescription={setInvoiceDescription} invoiceNote={invoiceNote} setInvoiceNote={setInvoiceNote} formatProductStockDetails={formatProductStockDetails} warehouseOperationType={warehouseOperationType} setWarehouseOperationType={setWarehouseOperationType} warehouseWizardStep={warehouseWizardStep} setWarehouseWizardStep={setWarehouseWizardStep} setSourceInvoiceId={setSourceInvoiceId} customAlert={customAlert} invoices={invoices} hasRemainingWarehouseItems={hasRemainingWarehouseItems} sourceInvoiceId={sourceInvoiceId} deletePreviousDocs={deletePreviousDocs} setDeletePreviousDocs={setDeletePreviousDocs} setInvoiceCurrency={setInvoiceCurrency} setExchangeRate={setExchangeRate} setExchangeRateInput={setExchangeRateInput} deleteInvoice={deleteInvoice} handleVoidInvoice={handleVoidInvoice} setInvoices={setInvoices} fetchInvoices={fetchInvoices} generateId={generateId} handleAddItem={handleAddItem} getProductStockInfo={getProductStockInfo} saveInvoiceData={saveInvoiceData} />
+        );
+
+      case "create_purchase_return":
+        return (
+          <PurchaseReturnInvoiceCreate setIsPersonModalOpen={setIsPersonModalOpen} hasDraft={hasDraft} restoreDraft={restoreDraft} clearDraft={clearDraft} successMsg={successMsg} editingInvoiceId={editingInvoiceId} invoiceNumber={invoiceNumber} toPersianDigits={toPersianDigits} persons={effectivePersonsList} date={date} setDate={setDate} persian={persian} persian_fa={persian_fa} items={items} setItems={setItems} handleItemChange={handleItemChange} products={products} handleRemoveItem={handleRemoveItem} calculateFinalTotal={calculateFinalTotal} accounts={accounts} storeSettings={storeSettings} CurrencyInput={CurrencyInput} Package={Package} invoiceWarehouseId={invoiceWarehouseId} setInvoiceWarehouseId={setInvoiceWarehouseId} warehouses={warehouses} FastBarcodeScanner={FastBarcodeScanner} handleFastBarcodeScan={handleFastBarcodeScan} SearchableSelect={SearchableSelect} handleFastAddProduct={handleFastAddProduct} handleBulkAddProducts={handleBulkAddProducts} handleAddBlankRow={handleAddBlankRow} handleDuplicateItem={handleDuplicateItem} handleIncrementQuantity={handleIncrementQuantity} productCategories={productCategories} setIsScannerOpen={setIsScannerOpen} ScanLine={ScanLine} setIsProductModalOpen={setIsProductModalOpen} Box={Box} invoiceTitle={invoiceTitle} invoiceMode={invoiceMode} setInvoiceMode={setInvoiceMode} setInvoiceNumber={setInvoiceNumber} setInvoiceTitle={setInvoiceTitle} User={User} activePersonsOnly={activePersonsOnly} getRoleName={getRoleName} customerId={customerId} setCustomerId={setCustomerId} renderPersonInfoBox={renderPersonInfoBox} Wallet={Wallet} invoicePaymentAccountId={invoicePaymentAccountId} setInvoicePaymentAccountId={setInvoicePaymentAccountId} invoicePaymentStatus={invoicePaymentStatus} setInvoicePaymentStatus={setInvoicePaymentStatus} setInvoicePaidAmount={setInvoicePaidAmount} DollarSign={DollarSign} invoicePaidAmount={invoicePaidAmount} overallDiscountPercent={overallDiscountPercent} setOverallDiscountPercent={setOverallDiscountPercent} formatCurrency={formatCurrency} invoiceOriginalTotal={invoiceOriginalTotal} invoiceCurrency={invoiceCurrency} invoiceTotalDiscount={invoiceTotalDiscount} numToPersianWords={numToPersianWords} submitting={submitting} saveInvoiceData={saveInvoiceData} handleInvoicePreviewTrigger={handleInvoicePreviewTrigger} formatNumber={formatNumber} Calculator={Calculator} calculateSubtotal={calculateSubtotal} />
+        );
+      case "create_purchase":
+        return (
+          <PurchaseInvoiceCreate setIsPersonModalOpen={setIsPersonModalOpen} hasDraft={hasDraft} restoreDraft={restoreDraft} clearDraft={clearDraft} successMsg={successMsg} editingInvoiceId={editingInvoiceId} invoiceNumber={invoiceNumber} toPersianDigits={toPersianDigits} persons={effectivePersonsList} date={date} setDate={setDate} persian={persian} persian_fa={persian_fa} items={items} setItems={setItems} handleItemChange={handleItemChange} products={products} handleRemoveItem={handleRemoveItem} calculateFinalTotal={calculateFinalTotal} accounts={accounts} storeSettings={storeSettings} CurrencyInput={CurrencyInput} Package={Package} invoiceWarehouseId={invoiceWarehouseId} setInvoiceWarehouseId={setInvoiceWarehouseId} warehouses={warehouses} FastBarcodeScanner={FastBarcodeScanner} handleFastBarcodeScan={handleFastBarcodeScan} SearchableSelect={SearchableSelect} handleFastAddProduct={handleFastAddProduct} handleBulkAddProducts={handleBulkAddProducts} handleAddBlankRow={handleAddBlankRow} handleDuplicateItem={handleDuplicateItem} handleIncrementQuantity={handleIncrementQuantity} productCategories={productCategories} setIsScannerOpen={setIsScannerOpen} ScanLine={ScanLine} setIsProductModalOpen={setIsProductModalOpen} Box={Box} invoiceTitle={invoiceTitle} sellerInvoiceNumber={sellerInvoiceNumber} setSellerInvoiceNumber={setSellerInvoiceNumber} invoiceMode={invoiceMode} setInvoiceMode={setInvoiceMode} setInvoiceNumber={setInvoiceNumber} setInvoiceTitle={setInvoiceTitle} User={User} activePersonsOnly={activePersonsOnly} getRoleName={getRoleName} customerId={customerId} setCustomerId={setCustomerId} renderPersonInfoBox={renderPersonInfoBox} Wallet={Wallet} invoicePaymentAccountId={invoicePaymentAccountId} setInvoicePaymentAccountId={setInvoicePaymentAccountId} invoicePaymentStatus={invoicePaymentStatus} setInvoicePaymentStatus={setInvoicePaymentStatus} setInvoicePaidAmount={setInvoicePaidAmount} DollarSign={DollarSign} invoicePaidAmount={invoicePaidAmount} overallDiscountPercent={overallDiscountPercent} setOverallDiscountPercent={setOverallDiscountPercent} formatCurrency={formatCurrency} invoiceOriginalTotal={invoiceOriginalTotal} invoiceCurrency={invoiceCurrency} invoiceTotalDiscount={invoiceTotalDiscount} numToPersianWords={numToPersianWords} submitting={submitting} saveInvoiceData={saveInvoiceData} handleInvoicePreviewTrigger={handleInvoicePreviewTrigger} formatNumber={formatNumber} Calculator={Calculator} calculateSubtotal={calculateSubtotal} handleApprovePurchaseInvoice={handleApprovePurchaseInvoice} />
+        );
+      case "create_sale_return":
+        return (
+          <SaleReturnInvoiceCreate setIsPersonModalOpen={setIsPersonModalOpen} hasDraft={hasDraft} restoreDraft={restoreDraft} clearDraft={clearDraft} successMsg={successMsg} editingInvoiceId={editingInvoiceId} invoiceNumber={invoiceNumber} toPersianDigits={toPersianDigits} date={date} setDate={setDate} persian={persian} persian_fa={persian_fa} items={items} setItems={setItems} handleItemChange={handleItemChange} products={products} handleRemoveItem={handleRemoveItem} calculateFinalTotal={calculateFinalTotal} storeSettings={storeSettings} CurrencyInput={CurrencyInput} Package={Package} invoiceWarehouseId={invoiceWarehouseId} setInvoiceWarehouseId={setInvoiceWarehouseId} warehouses={warehouses} FastBarcodeScanner={FastBarcodeScanner} handleFastBarcodeScan={handleFastBarcodeScan} SearchableSelect={SearchableSelect} handleFastAddProduct={handleFastAddProduct} handleBulkAddProducts={handleBulkAddProducts} handleAddBlankRow={handleAddBlankRow} handleDuplicateItem={handleDuplicateItem} handleIncrementQuantity={handleIncrementQuantity} productCategories={productCategories} setIsScannerOpen={setIsScannerOpen} ScanLine={ScanLine} setIsProductModalOpen={setIsProductModalOpen} Box={Box} invoiceTitle={invoiceTitle} invoiceMode={invoiceMode} setInvoiceMode={setInvoiceMode} setInvoiceNumber={setInvoiceNumber} setInvoiceTitle={setInvoiceTitle} User={User} activePersonsOnly={activePersonsOnly} getRoleName={getRoleName} customerId={customerId} setCustomerId={setCustomerId} renderPersonInfoBox={renderPersonInfoBox} overallDiscountPercent={overallDiscountPercent} setOverallDiscountPercent={setOverallDiscountPercent} formatCurrency={formatCurrency} invoiceOriginalTotal={invoiceOriginalTotal} invoiceCurrency={invoiceCurrency} invoiceTotalDiscount={invoiceTotalDiscount} numToPersianWords={numToPersianWords} submitting={submitting} saveInvoiceData={saveInvoiceData} handleInvoicePreviewTrigger={handleInvoicePreviewTrigger} formatNumber={formatNumber} Plus={Plus} Trash2={Trash2} CheckCircle={CheckCircle} History={History} Save={Save} RefreshCw={RefreshCw} FileText={FileText} Info={Info} Tag={Tag} invoiceType={invoiceType} setInvoiceType={setInvoiceType} DatePicker={DatePicker} invoiceDescription={invoiceDescription} setInvoiceDescription={setInvoiceDescription} invoiceNote={invoiceNote} setInvoiceNote={setInvoiceNote} calculateProductCurrentStock={calculateProductCurrentStock} formatProductStockDetails={formatProductStockDetails} activeTab={activeTab} calculateSubtotal={calculateSubtotal} />
+        );
+
+
+      case "create_sale":
+        return (
+          <SaleInvoiceCreate driverPersonId={driverPersonId} setDriverPersonId={setDriverPersonId} driverName={driverName} setDriverName={setDriverName} driverPhone={driverPhone} setDriverPhone={setDriverPhone} receiverPersonId={receiverPersonId} setReceiverPersonId={setReceiverPersonId} receiverName={receiverName} setReceiverName={setReceiverName} receiverPhone={receiverPhone} setReceiverPhone={setReceiverPhone} vehiclePlateNumber={vehiclePlateNumber} setVehiclePlateNumber={setVehiclePlateNumber} shippingAddress={shippingAddress} setShippingAddress={setShippingAddress} invoiceDueDate={invoiceDueDate} setInvoiceDueDate={setInvoiceDueDate} setIsPersonModalOpen={setIsPersonModalOpen} hasDraft={hasDraft} restoreDraft={restoreDraft} clearDraft={clearDraft} successMsg={successMsg} editingInvoiceId={editingInvoiceId} invoiceNumber={invoiceNumber} toPersianDigits={toPersianDigits} date={date} setDate={setDate} persian={persian} persian_fa={persian_fa} items={items} setItems={setItems} handleItemChange={handleItemChange} products={products} handleRemoveItem={handleRemoveItem} calculateFinalTotal={calculateFinalTotal} storeSettings={storeSettings} CurrencyInput={CurrencyInput} Package={Package} invoiceWarehouseId={invoiceWarehouseId} setInvoiceWarehouseId={setInvoiceWarehouseId} warehouses={warehouses} FastBarcodeScanner={FastBarcodeScanner} handleFastBarcodeScan={handleFastBarcodeScan} SearchableSelect={SearchableSelect} handleFastAddProduct={handleFastAddProduct} handleBulkAddProducts={handleBulkAddProducts} handleAddBlankRow={handleAddBlankRow} handleDuplicateItem={handleDuplicateItem} handleIncrementQuantity={handleIncrementQuantity} productCategories={productCategories} setIsScannerOpen={setIsScannerOpen} ScanLine={ScanLine} setIsProductModalOpen={setIsProductModalOpen} Box={Box} invoiceTitle={invoiceTitle} invoiceMode={invoiceMode} setInvoiceMode={setInvoiceMode} setInvoiceNumber={setInvoiceNumber} setInvoiceTitle={setInvoiceTitle} User={User} activePersonsOnly={activePersonsOnly} getRoleName={getRoleName} customerId={customerId} setCustomerId={setCustomerId} renderPersonInfoBox={renderPersonInfoBox} overallDiscountPercent={overallDiscountPercent} setOverallDiscountPercent={setOverallDiscountPercent} formatCurrency={formatCurrency} invoiceOriginalTotal={invoiceOriginalTotal} invoiceCurrency={invoiceCurrency} invoiceTotalDiscount={invoiceTotalDiscount} numToPersianWords={numToPersianWords} submitting={submitting} saveInvoiceData={saveInvoiceData} handleInvoicePreviewTrigger={handleInvoicePreviewTrigger} formatNumber={formatNumber} Plus={Plus} Trash2={Trash2} CheckCircle={CheckCircle} History={History} Save={Save} ShoppingCart={ShoppingCart} RefreshCw={RefreshCw} FileText={FileText} Info={Info} Tag={Tag} invoiceType={invoiceType} setInvoiceType={setInvoiceType} DatePicker={DatePicker} invoiceDescription={invoiceDescription} setInvoiceDescription={setInvoiceDescription} invoiceNote={invoiceNote} setInvoiceNote={setInvoiceNote} calculateProductCurrentStock={calculateProductCurrentStock} formatProductStockDetails={formatProductStockDetails} activeTab={activeTab} calculateSubtotal={calculateSubtotal} getProductStockInfo={getProductStockInfo} invoices={invoices} customAlert={customAlert} />
+        );
+
+      case "create_consignment": {
+        const editingConsignment = editingInvoiceId
+          ? invoices.find((i: any) => String(i.id) === String(editingInvoiceId))
+          : null;
+        return (
+          <ConsignmentInvoiceCreate
+            products={products}
+            warehouses={warehouses}
+            persons={effectivePersonsList}
+            editingInvoice={editingConsignment}
+            initialPersonId={customerId}
+            productCategories={productCategories}
+            onSuccess={(saved) => {
+              showNotification(`فاکتور امانی #${toPersianDigits(saved.invoiceNumber || saved.id)} با موفقیت ثبت شد.`, 'success');
+              setEditingInvoiceId(null);
+              fetchInvoices();
+              setActiveTab('list_consignment');
+            }}
+            onCancel={() => {
+              setEditingInvoiceId(null);
+              setActiveTab('list_consignment');
+            }}
+          />
+        );
+      }
+
+      case "sales_report":
+        return (
+          <SalesReport
+            showNotification={showNotification}
+            toPersianDigits={toPersianDigits}
+            formatCurrency={formatCurrency}
+            formatDateDisplay={formatDateDisplay}
+            setViewingInvoice={setViewingInvoice}
+            setActiveTab={setActiveTab}
+          />
+        );
+
+      case "list_sale":
+      case "list_sale_return":
+      case "list_purchase":
+      case "list_purchase_return":
+      case "list_consignment":
+      case "list_warehouse_docs": {
+        return (
+          <InvoicesList
+             handleFastWarehouseRemittance={handleFastWarehouseRemittance}
+             invoices={invoices} fetchInvoices={fetchInvoices} invoiceSearchQuery={invoiceSearchQuery} setInvoiceSearchQuery={setInvoiceSearchQuery} persons={effectivePersonsList} activeTab={activeTab} setActiveTab={setActiveTab} purchaseFilter={purchaseFilter} setPurchaseFilter={setPurchaseFilter} formatCurrency={formatCurrency} getPersonDisplayName={getPersonDisplayName} formatDateDisplay={formatDateDisplay}  numToPersianWords={numToPersianWords} setInvoiceWarehouseId={setInvoiceWarehouseId} warehouses={warehouses} setCustomerId={setCustomerId}  getRoleName={getRoleName} setEditingInvoiceId={setEditingInvoiceId} handleDeleteInvoice={handleDeleteInvoice}     storeSettings={storeSettings} invoiceCurrentPage={invoiceCurrentPage} setInvoiceCurrentPage={setInvoiceCurrentPage} invoicePageSize={invoicePageSize} setInvoicePageSize={setInvoicePageSize} toPersianDigits={toPersianDigits} listFilter={listFilter} setListFilter={setListFilter} invoiceGroupMode={invoiceGroupMode} setInvoiceGroupMode={setInvoiceGroupMode} List={List} clearDraft={clearDraft} setInvoiceType={setInvoiceType} setWarehouseOperationType={setWarehouseOperationType} Calendar={Calendar} renderPersonLink={renderPersonLink} products={products} setPricingWizardItems={setPricingWizardItems} setPricingWizardInvoice={setPricingWizardInvoice} setSuccessMsg={setSuccessMsg} setReceiptPersonId={setReceiptPersonId} setViewingInvoice={setViewingInvoice} handleEditInvoiceAction={handleEditInvoiceAction} handleFastWarehouseReceipt={handleFastWarehouseReceipt} handleVoidInvoice={handleVoidInvoice} handleApprovePurchaseInvoice={handleApprovePurchaseInvoice} handleApproveWarehouseReceipt={handleApproveWarehouseReceipt}
+          />
+        );
+      }
+      case "list_receive_receipt":
+      case "list_pay_receipt": {
+        return (
+          <ReceiptsList
+             transactions={transactions} activeTab={activeTab} persons={effectivePersonsList} getPersonDisplayName={getPersonDisplayName} formatCurrency={formatCurrency} formatDateDisplay={formatDateDisplay}  renderPersonLink={renderPersonLink} storeSettings={storeSettings} List={List} setActiveTab={setActiveTab} invoiceSearchQuery={invoiceSearchQuery} setInvoiceSearchQuery={setInvoiceSearchQuery} toPersianDigits={toPersianDigits} accounts={accounts} cashboxes={cashboxes} formatNumber={formatNumber} numToPersianWords={numToPersianWords} openPayslip={openPayslip} setPrintingTransaction={setPrintingTransaction} setEditingReceipt={setEditingReceipt} setIsEditReceiptModalOpen={setIsEditReceiptModalOpen} confirmAction={confirmAction} deleteTransaction={deleteTransaction} fetchTransactions={fetchTransactions} setPreviewReceiptData={setPreviewReceiptData}
+          />
+        );
+      }
+      case "product_categories": {
+        return (
+          <ProductCategoriesView products={products}
+            productCategories={productCategories}
+           
+            recalculating={recalculating}
+            submittingProduct={submittingProduct}
+            handleRecalculateStocks={handleRecalculateStocks}
+            handleGenerateDemoData={handleGenerateDemoData}
+            addProductCategory={addProductCategory}
+            updateProductCategory={updateProductCategory}
+            deleteProductCategory={deleteProductCategory}
+            getProductCategories={getProductCategories}
+            setProductCategories={setProductCategories}
+            confirmAction={confirmAction}
+            setSuccessMsg={setSuccessMsg}
+          />
+        );
+      }
+      default:
+        return (
+          <div className="text-center p-8 bg-white rounded-xl">
+            این بخش در حال بازسازی است
+          </div>
+        );
+    }
+  };
+
+  return {
+    newPersonTaxNumber, setNewPersonTaxNumber,
+    newPersonRegistrationNumber, setNewPersonRegistrationNumber,
+    newPersonRoles, setNewPersonRoles,
+    newPersonCategories, setNewPersonCategories,
+    duplicatePersonsWarning, setDuplicatePersonsWarning,
+
+    activeStoreId, setActiveStoreId, availableStores, setAvailableStores, isStoreSelectionOpen, setIsStoreSelectionOpen, productSearchTerm,
+    salePaymentModalPayload, setSalePaymentModalPayload,
+    isSalePaymentModalOpen, setIsSalePaymentModalOpen,
+    setProductSearchTerm,
+    isFastStocktaking,
+    authLoading,
+    requiresInitSetup,
+    activeFinancialYear,
+    hasCheckedFinancialYears,
+    isComposeOpen,
+    setIsComposeOpen,
+    priceChangeProduct,
+    setPriceChangeProduct,
+    confirmState,
+    setConfirmState,
+    confirmAction,
+    user,
+    signOut: handleAppSignOut,
+    activeTab,
+    setRawActiveTab,
+    setActiveTab,
+    systemModule,
+    setSystemModule,
+    isSidebarOpen,
+    setIsSidebarOpen,
+    isCalculatorOpen,
+    setIsCalculatorOpen,
+    isProfileModalOpen,
+    setIsProfileModalOpen,
+    setIsChangelogModalOpen,
+    isFullWidth,
+    setIsFullWidth,
+    menuLayout,
+    setMenuLayout,
+    expandedGroups,
+    setExpandedGroups,
+    persons,
+    setPersons,
+    personOpeningBalances,
+    isOpeningBalanceModalOpen,
+    setIsOpeningBalanceModalOpen,
+    editingOpeningBalanceId,
+    setEditingOpeningBalanceId,
+    selectedOpeningBalancePersonId,
+    setSelectedOpeningBalancePersonId,
+    openingBalanceAmount,
+    setOpeningBalanceAmount,
+    openingBalanceType,
+    setOpeningBalanceType,
+    openingBalanceDate,
+    setOpeningBalanceDate,
+    openingBalanceDescription,
+    setOpeningBalanceDescription,
+    openingBalanceSearch,
+    setOpeningBalanceSearch,
+    submittingOpeningBalance,
+    setSubmittingOpeningBalance,
+    personGroups,
+    personRoles,
+    personCategories,
+    products,
+    setProducts,
+    invoices,
+    accounts,
+    setAccounts,
+    cashboxes,
+    warehouses,
+    warehouseStocks,
+    loans,
+    setLoans,
+    installments,
+    setInstallments,
+    warehouseSubTab,
+    setWarehouseSubTab,
+    recalculating,
+    personSearchTerm,
+    setPersonSearchTerm,
+    selectedProductIds,
+    setSelectedProductIds,
+    whStockSearch,
+    setWhStockSearch,
+    selectedPersonGroup,
+    setSelectedPersonGroup,
+    selectedPersonRole,
+    setSelectedPersonRole,
+    personCurrentPage,
+    setPersonCurrentPage,
+    personPageSize,
+    setPersonPageSize,
+    personsViewMode,
+    setPersonsViewMode,
+    getRoleName,
+    getRoleBadgeClasses,
+    mapPersonToOption,
+    activePersonsOnly,
+    customPersonFilter,
+    renderPersonInfoBox,
+    filteredPersons,
+    transactions,
+    setTransactions,
+    payslips,
+    accountingDocuments,
+    checkbooks,
+    issuedChecks,
+    receivedChecks,
+    storeSettings,
+    setStoreSettings,
+    isGmailTheme,
+    loading,
+    setLoading,
+    sendNotification,
+    receiptNumber,
+    setReceiptPersonId,
+    receiptTargetPersonId,
+    setReceiptTargetPersonId,
+    receiptTransferDirection,
+    setReceiptTransferDirection,
+    printingTransaction,
+    setPrintingTransaction,
+    receiptLinkedInvoices,
+    submittingReceipt,
+    viewingPayslip,
+    setViewingPayslip,
+    printingPersonLedger,
+    setPrintingPersonLedger,
+    printingBarcodeProduct,
+    setPrintingBarcodeProduct,
+    ledgerPersonId,
+    setLedgerPersonId,
+    profilePersonId,
+    setProfilePersonId,
+    ledgerTab,
+    setLedgerTab,
+    reportDateRange,
+    setReportDateRange,
+    viewingInvoice,
+    setViewingInvoice,
+    viewingCheck,
+    setViewingCheck,
+    viewingAccountingDoc,
+    setViewingAccountingDoc,
+    isAccountingDocModalOpen,
+    setIsAccountingDocModalOpen,
+    editingAccountingDoc,
+    setEditingAccountingDoc,
+    pricingWizardInvoice,
+    setPricingWizardInvoice,
+    pricingWizardItems,
+    setPricingWizardItems,
+    previewInvoiceData,
+    setPreviewInvoiceData,
+    previewReceiptData,
+    setPreviewReceiptData,
+    editingReceipt,
+    setEditingReceipt,
+    isEditReceiptModalOpen,
+    setIsEditReceiptModalOpen,
+    showProductBarcodesList,
+    setShowProductBarcodesList,
+    invoiceType,
+    invoiceNumber,
+    date,
+    setCustomerId,
+    items,
+    submitting,
+    transferProposal,
+    setTransferProposal,
+    clearDraft,
+    notification,
+    setNotification,
+    showNotification,
+    setSuccessMsg,
+    customAlert,
+    successMsg,
+    isScannerOpen,
+    setIsScannerOpen,
+    isBulkImportOpen,
+    setIsBulkImportOpen,
+    handleBulkImportItems,
+    handleBarcodeScan,
+    productCategories,
+    selectedProductCategory,
+    setSelectedProductCategory,
+    productCurrentPage,
+    setProductCurrentPage,
+    productPageSize,
+    setProductPageSize,
+    historyProductId,
+    setHistoryProductId,
+    handleEditProduct,
+    handleGroupPriceUpdate,
+    calculateProductCurrentStock,
+    isCategoryModalOpen,
+    setIsCategoryModalOpen,
+    newCatName,
+    setNewCatName,
+    newCatParentId,
+    setNewCatParentId,
+    editingCategoryId,
+    newCatDesc,
+    setNewCatDesc,
+    submittingProduct,
+    setNewCashboxBalance,
+    setNewWarehouseName,
+    setNewWarehouseManager,
+    setNewWarehouseLocation,
+    setNewWarehouseIsActive,
+    handleSubmitPerson,
+    isProductModalOpen,
+    setIsProductModalOpen,
+    isFastProductModalOpen,
+    setIsFastProductModalOpen,
+    isGenerateBarcodesModalOpen,
+    setIsGenerateBarcodesModalOpen,
+    barcodeFormat,
+    setBarcodeFormat,
+    barcodePrefix,
+    setBarcodePrefix,
+    barcodeLength,
+    setBarcodeLength,
+    barcodeStartNumber,
+    setBarcodeStartNumber,
+    isGroupPriceModalOpen,
+    setIsGroupPriceModalOpen,
+    isPersonModalOpen,
+    setIsPersonModalOpen,
+    newPersonType,
+    setNewPersonType,
+    setNewPersonTitle,
+    setNewPersonAlias,
+    newPersonFirstName,
+    setNewPersonFirstName,
+    newPersonLastName,
+    setNewPersonLastName,
+    newPersonCompanyName,
+    setNewPersonCompanyName,
+    setNewPersonFatherName,
+    setNewPersonNationalId,
+    setNewPersonAddress,
+    setNewPersonImage,
+    newPersonRole,
+    setNewPersonRole,
+    setNewPersonAccountingCode,
+    newPersonPhone,
+    setNewPersonPhone,
+    setNewPersonContacts,
+    setNewPersonInitialBalance,
+    setNewPersonInitialBalanceType,
+    setNewPersonCreditLimit,
+    submittingPerson,
+    isPersonExtraModalOpen,
+    setIsPersonExtraModalOpen,
+    personExtraId,
+    setPersonExtraId,
+    setPersonBankName,
+    setPersonBankAcc,
+    setPersonCard,
+    setPersonSheba,
+    personBankAccounts,
+    setPersonBankAccounts,
+    personNotes,
+    setPersonNotes,
+    isPersonIOModalOpen,
+    setIsPersonIOModalOpen,
+    personIOAction,
+    setPersonIOAction,
+    isAccountModalOpen,
+    setIsAccountModalOpen,
+    isCashboxModalOpen,
+    setIsCashboxModalOpen,
+    isWarehouseModalOpen,
+    setIsWarehouseModalOpen,
+    viewingProduct,
+    setViewingProduct,
+    duplicateProductId,
+    setDuplicateProductId,
+    editingProductId,
+    setEditingProductId,
+    editingPersonId,
+    setEditingPersonId,
+    editingAccountId,
+    setEditingAccountId,
+    editingCashboxId,
+    setEditingCashboxId,
+    editingWarehouseId,
+    setEditingWarehouseId,
+    settingsForm,
+    setSettingsForm,
+    submittingSettings,
+    settingsTab,
+    setSettingsTab,
+    fetchInvoices,
+    fetchProducts,
+    handleExportProductsData,
+    handleDownloadProductsTemplate,
+    handleImportProductsData,
+    handleFastSaveProduct,
+    handleSaveCategory,
+    handleGenerateBarcodes,
+    allPersons,
+    fetchAllPersons,
+    fetchPersons,
+    fetchPersonOpeningBalances,
+    handleDeletePerson,
+    isGeneratingCodes,
+    handleGenerateMissingAccountingCodes,
+    fetchAccounts,
+    handleDeleteAccount,
+    fetchCashboxes,
+    fetchWarehouses,
+    setSalaryPersonId,
+    fetchTransactions,
+    fetchAccountingDocuments,
+    handleSubmitReceipt,
+    handleReceiptSubmit: handleSubmitReceipt,
+    confirmReceiptSubmit,
+    handleEditReceiptByCheck,
+    handleSaveReceipt,
+    handleDeleteCashbox,
+    handleDeleteWarehouse,
+    handleRecalculateStocks,
+    handleEditWarehouse,
+    handleToggleProductActive,
+    handleDuplicateProduct,
+    handleEditPerson,
+    handleEditAccount,
+    handleEditCashbox,
+    handleSaveSettings,
+    handleLogoUpload,
+    fetchDataSilent,
+    fetchData,
+    getLastPriceForProduct,
+    handleFastAddProduct,
+    handleFastBarcodeScan,
+    getPersonDisplayName,
+    renderPersonLink,
+    handleEditInvoiceAction,
+    handleDeleteInvoice,
+    handleVoidInvoice,
+    saveInvoiceData,
+    handleExecuteTransferAndSubmit,
+    formatProductStockDetails,
+    getProductStockInfo,
+    productStockMap,
+    calculatePersonBalance,
+    formatCurrency,
+    toPersianDigits,
+    formatNumber,
+    handleApprovePurchaseInvoice,
+    handleApproveWarehouseReceipt,
+    switchBusiness,
+    renderTabContent
+  };
+}

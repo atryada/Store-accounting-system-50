@@ -1,0 +1,54 @@
+[
+  {
+    "id": "default",
+    "name": "الکتریکی لوله و اتصالات بازیار",
+    "companyName": "الکتریکی لوله و اتصالات بازیار",
+    "calendarType": "jalali",
+    "currency": "USD",
+    "phone": "09301365100",
+    "address": "بیسب",
+    "activityField": "خرده‌فروشی و بازرگانی",
+    "taxPercent": 0,
+    "db_type": "postgres",
+    "db_name": "store_db9000"
+  },
+  {
+    "id": "store_kqe8_mvt77tez",
+    "name": "کسب و کار سوم 3",
+    "companyName": "کسب و کار سوم 3",
+    "calendarType": "jalali",
+    "currency": "تومان",
+    "phone": "",
+    "address": "",
+    "activityField": "خرده‌فروشی و بازرگانی",
+    "taxPercent": 0,
+    "db_type": "postgres",
+    "db_name": "store_store_kqe8_mvt77tez"
+  },
+  {
+    "id": "store_ldqe_mvt7992m",
+    "name": "فروشگاه و کسب‌وکار من 3",
+    "companyName": "فروشگاه و کسب‌وکار من 3",
+    "calendarType": "gregorian",
+    "currency": "USD",
+    "phone": "",
+    "address": "",
+    "activityField": "خرده‌فروشی و بازرگانی",
+    "taxPercent": 0,
+    "db_type": "postgres",
+    "db_name": "store_store_ldqe_mvt7992m"
+  },
+  {
+    "id": "store_8uns_mv2efr5n",
+    "name": "فروشگاه و کسب‌وکار من2",
+    "companyName": "فروشگاه و کسب‌وکار من2",
+    "calendarType": "jalali",
+    "currency": "EUR",
+    "phone": "",
+    "address": "",
+    "activityField": "خرده‌فروشی و بازرگانی",
+    "taxPercent": 0,
+    "db_type": "postgres",
+    "db_name": "store_store_8uns_mv2efr5n"
+  }
+]

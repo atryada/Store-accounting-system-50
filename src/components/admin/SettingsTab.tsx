@@ -1,0 +1,3442 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
+import * as lucide from 'lucide-react';
+import { SmsTemplateEditor } from './SmsTemplateEditor';
+import ZyXelGsmSettings from '../messaging/ZyXelGsmSettings';
+import MobilePermissionsManager from './MobilePermissionsManager';
+import ApiManagementCenter from './ApiManagementCenter';
+import QuickCodesSettingsTab from './QuickCodesSettingsTab';
+import { setGlobalStoreSettings, formatNumber } from '../../utils/format';
+
+export default function SettingsTab(props: any) {
+  const {
+    storeSettings, user,
+    settingsForm,
+    setSettingsForm,
+    CurrencyInput,
+    AlertTriangle,
+    AlertCircle,
+    confirmAction,
+    handleSaveSettings,
+    submittingSettings,
+    Box,
+    settingsTab,
+    setSettingsTab,
+    successMsg,
+    Trash2,
+    Image,
+    handleLogoUpload,
+    ChevronDown,
+    ChevronUp,
+    Check,
+    Globe,
+    CheckSquare,
+    productCategories,
+    ...rest
+  } = props;
+  
+  // Destruct icons
+  const { 
+    Settings, Save, Upload, Info, Bell, Shield, PaintBucket,
+    Store, DollarSign, FileText, CheckCircle, Smartphone, MapPin, Printer, Key, Mail, Building, Calculator, Plus, X, List, Hash, Tag, Activity, ArrowRight, ArrowLeft, Download, Sparkles,
+    Database, RefreshCw, Cpu, ShieldCheck, Sliders, Calendar, Search, ExternalLink, Layers, Keyboard, FolderTree, Coins, ChevronLeft
+  } = lucide as any;
+
+  const [smsCategoryFilter, setSmsCategoryFilter] = useState<'all' | 'invoices' | 'treasury' | 'warehouse' | 'checks' | 'loans'>('all');
+  const [smsSearchQuery, setSmsSearchQuery] = useState('');
+  const [notifySubTab, setNotifySubTab] = useState<'general' | 'zyxel_gsm' | 'security_alerts'>('general');
+  const [settingsCategory, setSettingsCategory] = useState<'system' | 'financial' | 'data'>('system');
+  const [settingsSearchQuery, setSettingsSearchQuery] = useState('');
+
+  // Automatically map settingsTab to its parent category
+  useEffect(() => {
+    if (['financial', 'financial_years', 'financial_years_hub', 'numbering', 'inventory_control', 'features'].includes(settingsTab)) {
+      setSettingsCategory('financial');
+    } else if (['businesses', 'businesses_hub', 'database', 'database_hub', 'reconciliation', 'reconciliation_hub', 'data_reconciliation', 'audit_logs', 'audit_logs_hub', 'system_logs', 'database_logs', 'diagnostics', 'diagnostics_hub', 'system_diagnostics', 'sync_manager'].includes(settingsTab)) {
+      setSettingsCategory('data');
+    } else {
+      setSettingsCategory('system');
+    }
+  }, [settingsTab]);
+
+  const allTabs = [
+    // 1. تنظیمات سیستم و عمومی
+    {
+      id: "general",
+      category: "system",
+      label: "اطلاعات پایه و هویت فروشگاه",
+      shortLabel: "پروفایل فروشگاه",
+      description: "نام فروشگاه، نشان‌واره (لوگو)، تم و پوسته، اطلاعات تماس و آدرس",
+      icon: Store,
+      badge: "عمومی",
+      badgeColor: "indigo",
+      keywords: ["نام", "فروشگاه", "لوگو", "پوسته", "تم", "تاریک", "روشن", "آدرس", "تلفن", "کد اقتصادی"],
+    },
+    {
+      id: "date_time",
+      category: "system",
+      label: "گاه‌شمار، تاریخ و ساعت سیستم",
+      shortLabel: "تاریخ و ساعت",
+      description: "تقویم شمسی/میلادی، فرمت‌های نمایش تاریخ، فرمت ۲۴ یا ۱۲ ساعته",
+      icon: Calendar || lucide.Calendar,
+      badge: "زمان",
+      badgeColor: "blue",
+      keywords: ["تقویم", "شمسی", "میلادی", "ساعت", "تاریخ", "زمان", "جلالی"],
+    },
+    {
+      id: "notification",
+      category: "system",
+      label: "سامانه پیامک و اطلاع‌رسانی",
+      shortLabel: "پیامک و ارتباطات",
+      description: "تنظیمات وب‌سرویس پیامک، پیامک‌های خودکار فاکتور و بدهکاران",
+      icon: Bell,
+      badge: "پیامک",
+      badgeColor: "amber",
+      keywords: ["پیامک", "اس ام اس", "درگاه", "کاوه نگار", "ملی پیامک", "اطلاع رسانی", "قالب", "هشدار"],
+    },
+    {
+      id: "printing",
+      category: "system",
+      label: "قالب چاپ و تنظیمات پرینتر",
+      shortLabel: "چاپ و پرینتر",
+      description: "اندازه کاغذ فاکتور، سربرگ و پانویس، پرینتر حرارتی و استودیو چاپ",
+      icon: Printer,
+      badge: "چاپ",
+      badgeColor: "purple",
+      keywords: ["چاپ", "پرینتر", "فاکتور", "A4", "A5", "حرارتی", "استودیو چاپ", "فیش پرینتر"],
+    },
+    {
+      id: "mobile_permissions",
+      category: "system",
+      label: "دسترسی‌های اپلیکیشن همراه",
+      shortLabel: "نسخه موبایل",
+      description: "سطوح دسترسی و مجوزهای ویژه کاربران در نسخه گوشی و تبلت",
+      icon: Smartphone,
+      badge: "موبایل",
+      badgeColor: "emerald",
+      keywords: ["موبایل", "اپلیکیشن", "دسترسی", "همراه", "گوشی", "تبلت"],
+    },
+    {
+      id: "api_management",
+      category: "system",
+      label: "مرکز کلیدهای API و ارتباطات",
+      shortLabel: "کلیدهای API",
+      description: "ایجاد و ابطال توکن‌های وب‌سرویس، وب‌هوک‌ها و ارتباطات نرم‌افزاری",
+      icon: Key || lucide.Key,
+      badge: "امنیت",
+      badgeColor: "slate",
+      keywords: ["API", "توکن", "وب سرویس", "کلید", "اتصال", "وب هوک"],
+    },
+    {
+      id: "quick_codes",
+      category: "system",
+      label: "کدهای دسترسی سریع (۲ رقمی)",
+      shortLabel: "کدهای سریع",
+      description: "شخصی‌سازی کدهای ۲ رقمی کیبورد جهت جابه‌جایی آنی میان صفحات",
+      icon: Keyboard || lucide.Keyboard,
+      badge: "سریع",
+      badgeColor: "teal",
+      keywords: ["کد سریع", "میانبر", "کیبورد", "دسترسی سریع", "کلید میانبر"],
+    },
+
+    // 2. تنظیمات مالی، حسابداری و انبارداری
+    {
+      id: "financial",
+      category: "financial",
+      label: "ارز، اعداد اعشاری و محاسبات",
+      shortLabel: "ارز و اعشار",
+      description: "واحد پول (تومان/ریال)، فعال‌سازی ارقام اعشار، تعداد اعشار و نرخ تسعیر",
+      icon: Calculator,
+      badge: "محاسبات",
+      badgeColor: "emerald",
+      keywords: ["ارز", "تومان", "ریال", "اعشار", "ممیز", "ارقام", "محاسبات", "نرخ تسعیر"],
+    },
+    {
+      id: "financial_years_hub",
+      category: "financial",
+      label: "سال‌های مالی و دوره‌های حسابداری",
+      shortLabel: "سال‌های مالی",
+      description: "مشاهده وضعیت سال مالی فعال، تعریف دوره مالی جدید و بستن حساب‌ها",
+      icon: Calendar || lucide.Calendar,
+      badge: "دوره مالی",
+      badgeColor: "indigo",
+      keywords: ["سال مالی", "دوره مالی", "افتتاحیه", "اختتامیه", "بستن حساب", "مانده اول دوره"],
+    },
+    {
+      id: "numbering",
+      category: "financial",
+      label: "شماره‌گذاری خودکار اسناد مالی",
+      shortLabel: "شماره‌گذاری اسناد",
+      description: "پیشوند و تعداد ارقام فاکتورها، رسید و حواله انبار، فیش حقوقی و چک‌ها",
+      icon: FileText,
+      badge: "سریال اسناد",
+      badgeColor: "blue",
+      keywords: ["شماره", "پیشوند", "سریال", "فاکتور", "رسید", "حواله", "حقوق", "چک"],
+    },
+    {
+      id: "inventory_control",
+      category: "financial",
+      label: "سیاست‌های انبارداری و کاردکس",
+      shortLabel: "کنترل موجودی",
+      description: "مجوز یا منع موجودی منفی، آستانه هشدار کسری و انبار پیش‌فرض",
+      icon: Box,
+      badge: "انبارداری",
+      badgeColor: "amber",
+      keywords: ["انبار", "موجودی منفی", "کسری موجودی", "کاردکس", "حداقل موجودی", "انبار پیش فرض"],
+    },
+    {
+      id: "features",
+      category: "financial",
+      label: "قوانین فروش، فاکتور و ارزش افزوده",
+      shortLabel: "فروش و مالیات",
+      description: "نرخ مالیات بر ارزش افزوده، بارکدخوان در فاکتور، گیت‌های اعتبارسنجی",
+      icon: Sliders || lucide.Sliders,
+      badge: "قوانین فروش",
+      badgeColor: "purple",
+      keywords: ["مالیات", "ارزش افزوده", "تخفیف", "بارکدخوان", "فروش", "اعتبارسنجی", "فاکتور"],
+    },
+
+    // 3. مدیریت داده‌ها و پشتیبان‌گیری
+    {
+      id: "businesses_hub",
+      category: "data",
+      label: "مدیریت کسب‌وکارها و دیتابیس‌ها",
+      shortLabel: "کسب‌وکارها",
+      description: "مدیریت چندشرکته، پایگاه‌های داده مجزا و سوییچ سریع میان دفاتر",
+      icon: Building,
+      badge: "چندکسب‌وکاره",
+      badgeColor: "blue",
+      keywords: ["کسب و کار", "دیتابیس", "پایگاه داده", "چند شعبه", "شرکت", "دفتر مالی"],
+    },
+    {
+      id: "database_hub",
+      category: "data",
+      label: "پشتیبان‌گیری و بازیابی داده‌ها",
+      shortLabel: "پشتیبان‌گیری",
+      description: "تولید فایل پشتیبان، بازیابی نسخه ذخیره‌شده و زمان‌بندی خودکار",
+      icon: Database || lucide.Database,
+      badge: "امنیت داده",
+      badgeColor: "emerald",
+      keywords: ["بک آپ", "پشتیبان", "بازیابی", "دانلود پشتیبان", "ریستور", "اکسپورت"],
+    },
+    {
+      id: "reconciliation_hub",
+      category: "data",
+      label: "تطبیق و بازسازی هوشمند داده‌ها",
+      shortLabel: "تطبیق و بازسازی",
+      description: "مغایرت‌گیری کاردکس، بازسازی مانده اشخاص و اصلاح تراز انبار و دفتر معین",
+      icon: RefreshCw || lucide.RefreshCw,
+      badge: "نگهداری",
+      badgeColor: "teal",
+      keywords: ["تطبیق", "بازسازی", "مغایرت", "کاردکس", "اصلاح مانده", "تراز انبار"],
+    },
+    {
+      id: "audit_logs_hub",
+      category: "data",
+      label: "مرکز ممیزی و لاگ‌های امنیتی",
+      shortLabel: "لاگ و ممیزی",
+      description: "ردیابی تغییرات اسناد توسط کاربران، لاگ وقایع پایگاه داده و خطاهای سرور",
+      icon: Activity,
+      badge: "ممیزی",
+      badgeColor: "slate",
+      keywords: ["لاگ", "ممیزی", "ردیابی", "لاگ کاربر", "لاگ سیستم", "تاریخچه تغییرات"],
+    },
+    {
+      id: "diagnostics_hub",
+      category: "data",
+      label: "پایش سلامت سیستم و عیب‌یابی",
+      shortLabel: "پایش سلامت",
+      description: "بررسی اتصال دیتابیس PostgreSQL، اسناد فاقد ثبت دوبل و همگام‌سازی ابری",
+      icon: Cpu || lucide.Cpu,
+      badge: "عیب‌یابی",
+      badgeColor: "rose",
+      keywords: ["عیب یابی", "سلامت", "تست دیتابیس", "پستگرس", "اسناد معوق", "همگام سازی"],
+    },
+  ];
+
+  const categories = [
+    {
+      id: "system",
+      label: "سیستم و عمومی",
+      icon: Sliders || lucide.Sliders,
+      count: allTabs.filter((t) => t.category === "system").length,
+      badgeColor: "indigo",
+    },
+    {
+      id: "financial",
+      label: "مالی و حسابداری",
+      icon: Calculator || lucide.Calculator,
+      count: allTabs.filter((t) => t.category === "financial").length,
+      badgeColor: "emerald",
+    },
+    {
+      id: "data",
+      label: "داده و پشتیبان",
+      icon: Database || lucide.Database,
+      count: allTabs.filter((t) => t.category === "data").length,
+      badgeColor: "blue",
+    },
+  ];
+
+  const isSearching = settingsSearchQuery.trim().length > 0;
+  const normalizedSearch = settingsSearchQuery.trim().toLowerCase();
+
+  const filteredTabs = allTabs.filter((tab) => {
+    if (isSearching) {
+      const matchLabel = tab.label.toLowerCase().includes(normalizedSearch);
+      const matchShort = tab.shortLabel?.toLowerCase().includes(normalizedSearch);
+      const matchDesc = tab.description.toLowerCase().includes(normalizedSearch);
+      const matchKeywords = tab.keywords?.some((k) => k.toLowerCase().includes(normalizedSearch));
+      return matchLabel || matchShort || matchDesc || matchKeywords;
+    }
+    return tab.category === settingsCategory;
+  });
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="bg-gray-50/50 rounded-2xl shadow-sm border border-gray-200 overflow-hidden max-w-7xl mx-auto h-[88vh] flex flex-col"
+    >
+      {/* Top Header */}
+      <div className="bg-gradient-to-l from-indigo-950 via-indigo-900 to-indigo-800 px-7 py-4 flex items-center justify-between shrink-0 shadow-md">
+        <div className="flex flex-col">
+          <div className="flex items-center gap-2 text-xs font-bold text-indigo-200/90 mb-1">
+            <span
+              className="hover:text-white transition-colors cursor-pointer"
+              onClick={() => {
+                setSettingsCategory("system");
+                setSettingsTab("general");
+              }}
+            >
+              مرکز جامع تنظیمات
+            </span>
+            <span>/</span>
+            <span>
+              {settingsCategory === "system"
+                ? "تنظیمات سیستم و عمومی"
+                : settingsCategory === "financial"
+                  ? "تنظیمات مالی و حسابداری"
+                  : "مدیریت داده و پشتیبان"}
+            </span>
+            <span>/</span>
+            <span className="text-amber-300 font-extrabold">
+              {allTabs.find((t) => t.id === settingsTab)?.shortLabel ||
+                allTabs.find((t) => t.id === settingsTab)?.label ||
+                "پیکربندی"}
+            </span>
+          </div>
+          <h1 className="text-lg font-black text-white flex items-center gap-2.5">
+            <Settings className="w-5 h-5 text-indigo-300" />
+            مرکز جامع تنظیمات و مدیریت سیستم
+          </h1>
+          <p className="mt-0.5 text-indigo-100/70 text-xs leading-relaxed">
+            مدیریت یکپارچه و ساختاریافته امکانات فروشگاه، قوانین حسابداری و انبار، و نگهداری دیتابیس
+          </p>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <button
+            onClick={(e) => {
+              e.preventDefault();
+              confirmAction(
+                "آیا از ذخیره تنظیمات اطمینان دارید؟",
+                () => handleSaveSettings(e as any),
+              );
+            }}
+            disabled={submittingSettings}
+            className="px-5 py-2.5 bg-white text-indigo-700 hover:bg-indigo-50 rounded-xl font-black transition-all shadow-sm flex items-center gap-2 cursor-pointer border-none disabled:opacity-50 text-xs"
+          >
+            {submittingSettings ? (
+              <span className="w-4 h-4 border-2 border-indigo-700/30 border-t-indigo-700 rounded-full animate-spin"></span>
+            ) : (
+              <Save className="w-4 h-4 text-indigo-700" />
+            )}
+            <span>ذخیره تنظیمات</span>
+          </button>
+        </div>
+      </div>
+
+      <div className="flex flex-1 overflow-hidden">
+        {/* Unified 3-Category Sidebar */}
+        <div className="w-80 bg-white border-l border-gray-200 shrink-0 flex flex-col overflow-hidden">
+          {/* 1. Category Switcher */}
+          <div className="p-3 border-b border-gray-200 bg-gray-50/70">
+            <div className="text-[11px] font-black text-gray-500 mb-2 px-1 flex items-center justify-between">
+              <span>دسته‌بندی کلان تنظیمات</span>
+              <span className="text-[10px] text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full font-bold">
+                ۳ شاخه اصلی
+              </span>
+            </div>
+            <div className="grid grid-cols-3 gap-1.5 p-1 bg-gray-200/70 rounded-xl">
+              {categories.map((cat) => {
+                const CatIcon = cat.icon;
+                const isSelected = settingsCategory === cat.id && !settingsSearchQuery;
+                return (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    onClick={() => {
+                      setSettingsSearchQuery("");
+                      setSettingsCategory(cat.id as any);
+                      const firstTabOfCat = allTabs.find((t) => t.category === cat.id);
+                      if (firstTabOfCat) {
+                        setSettingsTab(firstTabOfCat.id);
+                      }
+                    }}
+                    className={`flex flex-col items-center justify-center py-2 px-1 rounded-lg transition-all cursor-pointer relative ${
+                      isSelected
+                        ? "bg-white text-indigo-700 shadow-sm font-black"
+                        : "text-gray-600 hover:text-gray-900 hover:bg-white/50 font-bold"
+                    }`}
+                  >
+                    <CatIcon className={`w-4 h-4 mb-1 ${isSelected ? "text-indigo-600" : "text-gray-500"}`} />
+                    <span className="text-[11px] leading-tight text-center">{cat.label}</span>
+                    <span className={`text-[9px] px-1.5 py-0.2 mt-0.5 rounded-full font-bold ${
+                      isSelected ? "bg-indigo-100 text-indigo-800" : "bg-gray-300/60 text-gray-600"
+                    }`}>
+                      {cat.count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 2. Fast Settings Search */}
+          <div className="p-3 border-b border-gray-100">
+            <div className="relative">
+              <input
+                type="text"
+                value={settingsSearchQuery}
+                onChange={(e) => setSettingsSearchQuery(e.target.value)}
+                placeholder="جستجو در تمام تنظیمات..."
+                className="w-full pl-8 pr-9 py-2 text-xs font-bold rounded-xl border border-gray-200 bg-gray-50/50 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all outline-none"
+              />
+              <Search className="w-4 h-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              {settingsSearchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSettingsSearchQuery("")}
+                  className="absolute left-2.5 top-1/2 -translate-y-1/2 p-0.5 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-200"
+                  title="پاک کردن جستجو"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+            {settingsSearchQuery && (
+              <div className="mt-1.5 px-1 flex items-center justify-between text-[10px] text-gray-500 font-bold">
+                <span>نتیجه: {filteredTabs.length} مورد</span>
+                <button
+                  type="button"
+                  onClick={() => setSettingsSearchQuery("")}
+                  className="text-indigo-600 hover:underline cursor-pointer"
+                >
+                  پاک کردن فیلتر
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* 3. Sub-tabs List */}
+          <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-1">
+            {filteredTabs.map((tab) => {
+              const TabIcon = tab.icon;
+              const isActive =
+                settingsTab === tab.id ||
+                (tab.id === "financial_years_hub" && settingsTab === "financial_years") ||
+                (tab.id === "database_hub" && settingsTab === "database") ||
+                (tab.id === "businesses_hub" && settingsTab === "businesses") ||
+                (tab.id === "reconciliation_hub" &&
+                  (settingsTab === "reconciliation" || settingsTab === "data_reconciliation")) ||
+                (tab.id === "audit_logs_hub" &&
+                  (settingsTab === "audit_logs" ||
+                    settingsTab === "system_logs" ||
+                    settingsTab === "database_logs")) ||
+                (tab.id === "diagnostics_hub" &&
+                  (settingsTab === "diagnostics" || settingsTab === "system_diagnostics"));
+
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => {
+                    setSettingsTab(tab.id);
+                    if (tab.category !== settingsCategory) {
+                      setSettingsCategory(tab.category as any);
+                    }
+                  }}
+                  className={`w-full text-right p-2.5 rounded-xl transition-all cursor-pointer flex flex-col gap-1 border ${
+                    isActive
+                      ? "bg-indigo-50/90 border-indigo-200 text-indigo-900 shadow-xs"
+                      : "border-transparent text-gray-700 hover:bg-gray-50 hover:border-gray-200/80"
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div
+                        className={`p-1.5 rounded-lg shrink-0 ${
+                          isActive
+                            ? "bg-indigo-600 text-white shadow-2xs"
+                            : "bg-gray-100 text-gray-500"
+                        }`}
+                      >
+                        <TabIcon className="w-4 h-4" />
+                      </div>
+                      <span className="text-xs font-black truncate">{tab.label}</span>
+                    </div>
+                    {tab.badge && (
+                      <span
+                        className={`text-[9px] px-1.5 py-0.5 rounded-md font-extrabold shrink-0 ${
+                          isActive
+                            ? "bg-indigo-200 text-indigo-800"
+                            : "bg-gray-100 text-gray-600"
+                        }`}
+                      >
+                        {tab.badge}
+                      </span>
+                    )}
+                  </div>
+                  <p
+                    className={`text-[10px] leading-relaxed line-clamp-1 pr-7 ${
+                      isActive ? "text-indigo-700/80" : "text-gray-400"
+                    }`}
+                  >
+                    {tab.description}
+                  </p>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+                      {/* Content Area */}
+                      <div className="flex-1 bg-gray-50/30 overflow-y-auto custom-scrollbar p-6 lg:p-8">
+                        {successMsg && (
+                          <div className="mb-6 bg-emerald-50 text-emerald-700 px-4 py-3 rounded-xl flex items-center gap-2 border border-emerald-100 shadow-sm">
+                            <CheckCircle className="w-5 h-5" />
+                            <span className="font-bold">{successMsg}</span>
+                          </div>
+                        )}
+
+                        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+                          {settingsTab === "general" && (
+                            <div className="flex flex-col gap-8">
+                              <div>
+                                <h3 className="text-lg font-black text-gray-800 mb-6 flex items-center gap-2">
+                                  <Store className="w-5 h-5 text-indigo-500" />
+                                  پروفایل کسب و کار
+                                </h3>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div className="w-full text-right bg-white p-5 rounded-2xl border border-gray-200 shadow-sm md:col-span-2">
+                                  <div className="flex items-center justify-between mb-4">
+                                    <div>
+                                      <label className="block text-sm font-bold text-gray-800 mb-1">
+                                        استفاده از اعداد اعشاری در مقادیر و مبالغ
+                                      </label>
+                                      <p className="text-xs text-gray-500">
+                                        در صورت فعال بودن، در تمامی صفحات و بخش‌ها (مانند فاکتورها، رسیدها، گزارش بدهکاران و بستانکاران debts_credits، گزارشات مالی و دفاتر حساب) ارقام اعشار نمایش داده می‌شود.
+                                      </p>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const nextState = !settingsForm.use_decimals;
+                                        const updated = { ...settingsForm, use_decimals: nextState };
+                                        setSettingsForm(updated);
+                                        setGlobalStoreSettings(updated);
+                                      }}
+                                      className={`w-12 h-6 rounded-full p-1 transition-colors cursor-pointer ${settingsForm.use_decimals ? "bg-indigo-600" : "bg-gray-300"}`}
+                                      title="فعال / غیرفعال‌سازی اعداد اعشاری"
+                                    >
+                                      <div className={`bg-white w-4 h-4 rounded-full shadow-sm transition-transform transform ${settingsForm.use_decimals ? "-translate-x-6" : "translate-x-0"}`}></div>
+                                    </button>
+                                  </div>
+                                  
+                                  {settingsForm.use_decimals && (
+                                    <div className="mt-4 pt-4 border-t border-gray-100 space-y-4">
+                                      <div>
+                                        <label className="block text-sm font-bold text-gray-700 mb-2">
+                                          تعداد ارقام اعشار مجاز
+                                        </label>
+                                        <select
+                                          value={settingsForm.decimal_places || 2}
+                                          onChange={(e) => {
+                                            const places = parseInt(e.target.value, 10);
+                                            const updated = { ...settingsForm, decimal_places: places };
+                                            setSettingsForm(updated);
+                                            setGlobalStoreSettings(updated);
+                                          }}
+                                          className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-indigo-500 shadow-sm text-right bg-white"
+                                          dir="rtl"
+                                        >
+                                          <option value={1}>۱ رقم اعشار (مثال: ۱۲.۵)</option>
+                                          <option value={2}>۲ رقم اعشار (مثال: ۱۲.۵۰)</option>
+                                          <option value={3}>۳ رقم اعشار (مثال: ۱۲.۵۰۰)</option>
+                                          <option value={4}>۴ رقم اعشار (مثال: ۱۲.۵۰۰۰)</option>
+                                        </select>
+                                      </div>
+
+                                      {/* Live Preview Box */}
+                                      <div className="bg-indigo-50/70 border border-indigo-100 p-4 rounded-xl flex flex-col sm:flex-row items-center justify-between gap-3">
+                                        <div className="text-right">
+                                          <span className="text-xs font-black text-indigo-900 block mb-0.5">
+                                            پیش‌نمایش زنده نحوه نمایش مبالغ در سیستم:
+                                          </span>
+                                          <span className="text-[11px] text-indigo-700">
+                                            بر اساس {settingsForm.decimal_places || 2} رقم اعشار
+                                          </span>
+                                        </div>
+                                        <div className="flex items-center gap-2 font-mono font-black text-indigo-900 bg-white px-3 py-1.5 rounded-lg border border-indigo-200 shadow-xs text-sm" dir="ltr">
+                                          <span>{formatNumber(1250000.758, settingsForm)}</span>
+                                          <span className="text-xs text-slate-500">{settingsForm.currency || "تومان"}</span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+
+                                  <div className="w-full text-right md:col-span-2">
+                                    <label className="block text-sm font-bold text-gray-700 mb-2">
+                                      لوگو فروشگاه / شرکت
+                                    </label>
+                                    <div className="flex items-center gap-4 bg-gray-50 p-4 rounded-xl border border-gray-200">
+                                      {settingsForm.logoUrl ? (
+                                        <div className="relative group">
+                                          <img
+                                            src={settingsForm.logoUrl}
+                                            alt="Logo preview"
+                                            className="w-16 h-16 object-contain rounded bg-white shadow-sm border border-gray-100"
+                                          />
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              setSettingsForm({
+                                                ...settingsForm,
+                                                logoUrl: "",
+                                              })
+                                            }
+                                            className="absolute -top-2 -right-2 bg-red-100 text-red-600 p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
+                                          >
+                                            <Trash2 className="w-3 h-3" />
+                                          </button>
+                                        </div>
+                                      ) : (
+                                        <div className="w-16 h-16 bg-white border border-gray-200 rounded-lg flex items-center justify-center text-gray-400 shadow-sm">
+                                          <Image className="w-6 h-6" />
+                                        </div>
+                                      )}
+                                      <div className="flex-1">
+                                        <label className="cursor-pointer bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg text-sm font-bold hover:bg-gray-50 transition-colors shadow-sm inline-block">
+                                          انتخاب تصویر جدید
+                                          <input
+                                            type="file"
+                                            accept="image/*"
+                                            className="hidden"
+                                            onChange={handleLogoUpload}
+                                          />
+                                        </label>
+                                        <p className="text-xs text-gray-500 mt-2 font-medium">
+                                          حداکثر حجم فایل ۲ مگابایت. فرمت‌های
+                                          JPG و PNG.
+                                        </p>
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <div className="w-full text-right md:col-span-2">
+                                    <label className="block text-sm font-bold text-gray-700 mb-2">
+                                      نام فروشگاه / شرکت
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={settingsForm.storeName}
+                                      onChange={(e) =>
+                                        setSettingsForm({
+                                          ...settingsForm,
+                                          storeName: e.target.value,
+                                        })
+                                      }
+                                      className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-indigo-500 shadow-sm font-medium"
+                                      required
+                                    />
+                                  </div>
+                                  <div className="w-full text-right">
+                                    <label className="block text-sm font-bold text-gray-700 mb-2">
+                                      تلفن تماس
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={settingsForm.phone || ""}
+                                      onChange={(e) =>
+                                        setSettingsForm({
+                                          ...settingsForm,
+                                          phone: e.target.value,
+                                        })
+                                      }
+                                      className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-indigo-500 shadow-sm font-medium"
+                                      dir="ltr"
+                                    />
+                                  </div>
+                                  <div className="w-full text-right">
+                                    <label className="block text-sm font-bold text-gray-700 mb-2">
+                                      آدرس
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={settingsForm.address || ""}
+                                      onChange={(e) =>
+                                        setSettingsForm({
+                                          ...settingsForm,
+                                          address: e.target.value,
+                                        })
+                                      }
+                                      className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-indigo-500 shadow-sm font-medium"
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="border-t border-gray-100 pt-8">
+                                <h3 className="text-lg font-black text-gray-800 mb-6 flex items-center gap-2">
+                                  <Globe className="w-5 h-5 text-indigo-500" />
+                                  منطقه و شخصی‌سازی ظاهر
+                                </h3>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                  <div className="w-full text-right">
+                                    <label className="block text-sm font-bold text-gray-700 mb-2">
+                                      فونت سیستم
+                                    </label>
+                                    <select
+                                      value={
+                                        settingsForm.fontFamily || "Vazirmatn"
+                                      }
+                                      onChange={(e) =>
+                                        setSettingsForm({
+                                          ...settingsForm,
+                                          fontFamily: e.target.value,
+                                        })
+                                      }
+                                      className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-indigo-500 shadow-sm font-bold"
+                                    >
+                                      <option value="Vazirmatn">
+                                        وزیرمتن (Vazirmatn)
+                                      </option>
+                                      <option value="IRANYekanXFaNum">
+                                        ایران یکان (IRANYekanX)
+                                      </option>
+                                      <option value="Lalezar">
+                                        لاله‌زار (Lalezar)
+                                      </option>
+                                      <option value="Readex Pro">
+                                        ریدکس پرو (Readex Pro)
+                                      </option>
+                                      <option value="Cairo">
+                                        قاهره (Cairo)
+                                      </option>
+                                      <option value="Amiri">
+                                        امیری (Amiri)
+                                      </option>
+                                      <option value="Changa">
+                                        چنگا (Changa)
+                                      </option>
+                                      <option value="Tahoma">
+                                        تاهوما (Tahoma)
+                                      </option>
+                                    </select>
+                                  </div>
+                                  <div className="w-full text-right">
+                                    <label className="block text-sm font-bold text-gray-700 mb-2">
+                                      پوسته و تم سیستم
+                                    </label>
+                                    <select
+                                      value={settingsForm.theme || "classic"}
+                                      onChange={(e) => {
+                                        const val = e.target.value;
+                                        setSettingsForm({
+                                          ...settingsForm,
+                                          theme: val,
+                                        });
+                                        if (props.setStoreSettings) {
+                                          props.setStoreSettings({ ...storeSettings, theme: val });
+                                        }
+                                        if (typeof window !== 'undefined' && window.localStorage) {
+                                          try {
+                                            localStorage.setItem('app_theme', val);
+                                          } catch (_) {}
+                                        }
+                                        if (typeof document !== 'undefined') {
+                                          if (val === 'dark') {
+                                            document.documentElement.classList.add('dark', 'theme-dark');
+                                            document.body.classList.add('theme-dark');
+                                          } else {
+                                            document.documentElement.classList.remove('dark', 'theme-dark');
+                                            document.body.classList.remove('theme-dark');
+                                          }
+                                        }
+                                      }}
+                                      className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-indigo-500 shadow-sm font-bold"
+                                    >
+                                      <option value="dark">🌙 تم تاریک اداری و ارگونومیک (Slate Dark)</option>
+                                      <option value="persian_admin_lte">پوسته Persian AdminLTE (جدید)</option>
+                                      <option value="classic">
+                                        کلاسیک سرمه‌ای (Classic Indigo)
+                                      </option>
+                                      <option value="ocean">
+                                        آبی اقیانوسی (Ocean Blue)
+                                      </option>
+                                      <option value="emerald">
+                                        سبز زمردین (Emerald Green)
+                                      </option>
+                                      <option value="rose">
+                                        سرخ رُز (Rose Red)
+                                      </option>
+                                      <option value="hacker">
+                                        سیستم امنیتی (CIA Hacker)
+                                      </option>
+                                      <option value="gmail">
+                                        گوگل جیمیل (Google Gmail)
+                                      </option>
+                                    </select>
+                                  </div>
+                                  <div className="w-full text-right">
+                                    <label className="block text-sm font-bold text-gray-700 mb-2">
+                                      چیدمان منو
+                                    </label>
+                                    <select
+                                      value={settingsForm.menuLayout || "vertical"}
+                                      onChange={(e) =>
+                                        setSettingsForm({
+                                          ...settingsForm,
+                                          menuLayout: e.target.value as "vertical" | "horizontal",
+                                        })
+                                      }
+                                      className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-indigo-500 shadow-sm font-bold"
+                                    >
+                                      <option value="vertical">منوی عمودی (کناری)</option>
+                                      <option value="horizontal">منوی افقی (بالا)</option>
+                                    </select>
+                                  </div>
+                                  <div className="w-full text-right">
+                                    <label className="block text-sm font-bold text-gray-700 mb-2">
+                                      عرض صفحه
+                                    </label>
+                                    <select
+                                      value={settingsForm.isFullWidth ? "full" : "boxed"}
+                                      onChange={(e) =>
+                                        setSettingsForm({
+                                          ...settingsForm,
+                                          isFullWidth: e.target.value === "full",
+                                        })
+                                      }
+                                      className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-indigo-500 shadow-sm font-bold"
+                                    >
+                                      <option value="boxed">کلاسیک (محدود)</option>
+                                      <option value="full">تمام صفحه (گسترده)</option>
+                                    </select>
+                                  </div>
+                                  <div className="w-full text-right">
+                                    <label className="block text-sm font-bold text-gray-700 mb-2">
+                                      واحد پولی (غیرقابل تغییر)
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={storeSettings.currency}
+                                      disabled
+                                      className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-gray-500 shadow-sm font-bold cursor-not-allowed"
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {settingsTab === "features" && (
+                            <div>
+                              <h3 className="text-lg font-black text-gray-800 mb-6 flex items-center gap-2">
+                                <Box className="w-5 h-5 text-indigo-500" />
+                                پیکربندی رفتار انبار و فاکتورها
+                              </h3>
+                              <div className="grid gap-4">
+                                <label className="flex items-start gap-4 p-5 border border-gray-200 rounded-xl hover:bg-gray-50/80 cursor-pointer transition-all shadow-sm">
+                                  <div className="mt-0.5">
+                                    <input
+                                      type="checkbox"
+                                      checked={
+                                        settingsForm.allowNegativeStock || false
+                                      }
+                                      onChange={(e) =>
+                                        setSettingsForm({
+                                          ...settingsForm,
+                                          allowNegativeStock: e.target.checked,
+                                        })
+                                      }
+                                      className="w-5 h-5 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500"
+                                    />
+                                  </div>
+                                  <div className="flex-1">
+                                    <div className="font-bold text-gray-900 mb-1">
+                                      مجوز فروش موجودی منفی انبار
+                                    </div>
+                                    <div className="text-sm text-gray-500 font-medium leading-relaxed">
+                                      اجازه ثبت فاکتور فروش برای کالاهایی که
+                                      موجودی فعلی آن‌ها صفر یا کمتر از مقدار
+                                      درخواستی است. (مناسب برای پیش‌فروش یا عدم
+                                      ثبت دقیق ورود کالاها)
+                                    </div>
+                                  </div>
+                                </label>
+
+                                <label className="flex items-start gap-4 p-5 border border-gray-200 rounded-xl hover:bg-gray-50/80 cursor-pointer transition-all shadow-sm">
+                                  <div className="mt-0.5">
+                                    <input
+                                      type="checkbox"
+                                      checked={
+                                        settingsForm.requireWarehouse || false
+                                      }
+                                      onChange={(e) =>
+                                        setSettingsForm({
+                                          ...settingsForm,
+                                          requireWarehouse: e.target.checked,
+                                        })
+                                      }
+                                      className="w-5 h-5 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500"
+                                    />
+                                  </div>
+                                  <div className="flex-1">
+                                    <div className="font-bold text-gray-900 mb-1">
+                                      الزام انتخاب انبار در سطرهای فاکتور
+                                    </div>
+                                    <div className="text-sm text-gray-500 font-medium leading-relaxed">
+                                      هنگام ثبت فاکتورهای فروش و خرید، کاربر
+                                      ملزم به مشخص کردن انبار برای هر کالا خواهد
+                                      بود. (در غیر این‌صورت انبار پیش‌فرض لحاظ
+                                      می‌شود)
+                                    </div>
+                                  </div>
+                                </label>
+
+                                <label className="flex items-start gap-4 p-5 border border-gray-200 rounded-xl hover:bg-gray-50/80 cursor-pointer transition-all shadow-sm">
+                                  <div className="mt-0.5">
+                                    <input
+                                      type="checkbox"
+                                      checked={
+                                        settingsForm.allowDuplicateInvoiceRows ||
+                                        false
+                                      }
+                                      onChange={(e) =>
+                                        setSettingsForm({
+                                          ...settingsForm,
+                                          allowDuplicateInvoiceRows:
+                                            e.target.checked,
+                                        })
+                                      }
+                                      className="w-5 h-5 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500"
+                                    />
+                                  </div>
+                                  <div className="flex-1">
+                                    <div className="font-bold text-gray-900 mb-1">
+                                      مجوز تکرار کالا در سطرهای مجزا
+                                    </div>
+                                    <div className="text-sm text-gray-500 font-medium leading-relaxed">
+                                      در صورت فعال بودن، افزودن کالای تکراری به
+                                      فاکتور، یک سطر جدید ایجاد می‌کند. در غیر
+                                      اینصورت، صرفاً تعداد همان کالای قبلی در
+                                      فاکتور اضافه خواهد شد.
+                                    </div>
+                                  </div>
+                                </label>
+
+                                <div className="p-5 border border-gray-200 rounded-xl bg-white shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+                                  <div>
+                                    <div className="font-bold text-gray-900 mb-1 flex items-center gap-2">
+                                      <Hash className="w-4 h-4 text-indigo-500" />
+                                      تعداد ارقام اعشار مجاز برای مقادیر کالاها (تعداد/وزن/طول)
+                                    </div>
+                                    <div className="text-sm text-gray-500 font-medium leading-relaxed">
+                                      دقت ارقام اعشار قابل ثبت برای کالاهای وزنی و طولی (مانند کیلوگرم، متر، لیتر) در فاکتورها و اسناد انبار (پیش‌فرض: ۲ رقم اعشار).
+                                    </div>
+                                  </div>
+                                  <div className="w-full md:w-56 shrink-0">
+                                    <select
+                                      value={settingsForm.quantityDecimals !== undefined ? Number(settingsForm.quantityDecimals) : 2}
+                                      onChange={(e) =>
+                                        setSettingsForm({
+                                          ...settingsForm,
+                                          quantityDecimals: parseInt(e.target.value, 10),
+                                        })
+                                      }
+                                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-bold text-gray-800 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none cursor-pointer"
+                                    >
+                                      <option value={0}>بدون اعشار (صرفاً عدد صحیح)</option>
+                                      <option value={1}>۱ رقم اعشار (دقت ۰.۱)</option>
+                                      <option value={2}>۲ رقم اعشار (دقت ۰.۰۱ - پیش‌فرض)</option>
+                                      <option value={3}>۳ رقم اعشار (دقت ۰.۰۰۱ - گرم و میلیمتر)</option>
+                                      <option value={4}>۴ رقم اعشار (دقت ۰.۰۰۰۱ - فوق دقیق)</option>
+                                    </select>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {settingsTab === "date_time" && (
+                            <div className="space-y-8">
+                              <div>
+                                <h3 className="text-lg font-black text-gray-800 mb-6 flex items-center gap-2">
+                                  <lucide.Calendar className="w-5 h-5 text-indigo-500" />
+                                  تنظیمات نمایش تاریخ و ساعت
+                                </h3>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                  <div>
+                                    <label className="block text-sm font-bold text-gray-700 mb-2">
+                                      تقویم پایه
+                                    </label>
+                                    <select
+                                      value={settingsForm.calendarType || "jalali"}
+                                      onChange={(e) =>
+                                        setSettingsForm({ ...settingsForm, calendarType: e.target.value })
+                                      }
+                                      className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-bold"
+                                    >
+                                      <option value="jalali">شمسی (جلالی)</option>
+                                      <option value="gregorian">میلادی (Gregorian)</option>
+                                    </select>
+                                  </div>
+                                  
+                                  <div>
+                                    <label className="block text-sm font-bold text-gray-700 mb-2">
+                                      فرمت نمایش تاریخ
+                                    </label>
+                                    <select
+                                      value={settingsForm.dateFormat || "YYYY/MM/DD"}
+                                      onChange={(e) =>
+                                        setSettingsForm({ ...settingsForm, dateFormat: e.target.value })
+                                      }
+                                      className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-bold"
+                                    >
+                                      <option value="YYYY/MM/DD">سال/ماه/روز (مثال: ۱۴۰۳/۰۵/۱۰)</option>
+                                      <option value="DD/MM/YYYY">روز/ماه/سال (مثال: ۱۰/۰۵/۱۴۰۳)</option>
+                                      <option value="monthName">روز و نام ماه (مثال: ۱۰ مرداد ۱۴۰۳)</option>
+                                      <option value="dayMonthName">روز هفته، روز و نام ماه (مثال: پنجشنبه ۱۰ مرداد ۱۴۰۳)</option>
+                                    </select>
+                                  </div>
+
+                                  {(settingsForm.dateFormat === "YYYY/MM/DD" || settingsForm.dateFormat === "DD/MM/YYYY") && (
+                                    <div>
+                                      <label className="block text-sm font-bold text-gray-700 mb-2">
+                                        جداکننده تاریخ
+                                      </label>
+                                      <select
+                                        value={settingsForm.dateSeparator || "/"}
+                                        onChange={(e) =>
+                                          setSettingsForm({ ...settingsForm, dateSeparator: e.target.value })
+                                        }
+                                        className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-bold"
+                                      >
+                                        <option value="/">اسلش ( / )</option>
+                                        <option value="-">خط تیره ( - )</option>
+                                        <option value=".">نقطه ( . )</option>
+                                      </select>
+                                    </div>
+                                  )}
+
+                                  <div>
+                                    <label className="block text-sm font-bold text-gray-700 mb-2">
+                                      فرمت سال
+                                    </label>
+                                    <select
+                                      value={settingsForm.dateYearFormat || "YYYY"}
+                                      onChange={(e) =>
+                                        setSettingsForm({ ...settingsForm, dateYearFormat: e.target.value })
+                                      }
+                                      className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-bold"
+                                    >
+                                      <option value="YYYY">۴ رقمی (مثال: ۱۴۰۳)</option>
+                                      <option value="YY">۲ رقمی (مثال: ۰۳)</option>
+                                    </select>
+                                  </div>
+                                </div>
+                                
+                                <div className="mt-8 border-t border-gray-100 pt-8">
+                                  <h4 className="text-base font-bold text-gray-800 mb-6 flex items-center gap-2">
+                                    تنظیمات نمایش ساعت
+                                  </h4>
+                                  <div className="grid gap-4">
+                                    <label className="flex items-start gap-4 p-5 border border-gray-200 rounded-xl hover:bg-gray-50/80 cursor-pointer transition-all shadow-sm">
+                                      <div className="mt-0.5">
+                                        <input
+                                          type="checkbox"
+                                          checked={settingsForm.dateShowTime !== false}
+                                          onChange={(e) =>
+                                            setSettingsForm({ ...settingsForm, dateShowTime: e.target.checked })
+                                          }
+                                          className="w-5 h-5 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500"
+                                        />
+                                      </div>
+                                      <div className="flex-1">
+                                        <div className="font-bold text-gray-900 mb-1">
+                                          نمایش ساعت کنار تاریخ
+                                        </div>
+                                        <div className="text-sm text-gray-500 font-medium">
+                                          در گزارش‌ها و فاکتورها در صورت وجود ساعت ذخیره شده، زمان نیز کنار تاریخ نمایش داده می‌شود.
+                                        </div>
+                                      </div>
+                                    </label>
+                                    
+                                    {settingsForm.dateShowTime !== false && (
+                                      <div className="mt-2 pl-10">
+                                        <label className="block text-sm font-bold text-gray-700 mb-2">
+                                          فرمت ساعت
+                                        </label>
+                                        <select
+                                          value={settingsForm.dateTimeFormat || "24"}
+                                          onChange={(e) =>
+                                            setSettingsForm({ ...settingsForm, dateTimeFormat: e.target.value })
+                                          }
+                                          className="w-full md:w-1/2 px-4 py-3 rounded-xl border border-gray-200 bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-bold"
+                                        >
+                                          <option value="24">۲۴ ساعته (مثال: ۱۴:۳۰)</option>
+                                          <option value="12">۱۲ ساعته (مثال: ۰۲:۳۰ ب.ظ)</option>
+                                        </select>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {settingsTab === "financial" && (
+                            <div>
+                              <h3 className="text-lg font-black text-gray-800 mb-6 flex items-center gap-2">
+                                <Calculator className="w-5 h-5 text-indigo-500" />
+                                تنظیمات پایه مالی و حسابداری
+                              </h3>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div className="w-full text-right">
+                                  <label className="block text-sm font-bold text-gray-700 mb-2">
+                                    درصد مالیات بر ارزش افزوده پیش‌فرض
+                                  </label>
+                                  <div className="relative">
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      max="100"
+                                      value={
+                                        settingsForm.default_tax_percent !==
+                                        undefined
+                                          ? settingsForm.default_tax_percent
+                                          : 0
+                                      }
+                                      onChange={(e) =>
+                                        setSettingsForm({
+                                          ...settingsForm,
+                                          default_tax_percent:
+                                            parseFloat(e.target.value) || 0,
+                                        })
+                                      }
+                                      className="w-full px-4 py-3 pl-12 rounded-xl border border-gray-300 focus:ring-2 focus:ring-indigo-500 shadow-sm font-bold text-left"
+                                      dir="ltr"
+                                    />
+                                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 font-bold">
+                                      %
+                                    </span>
+                                  </div>
+                                  <p className="text-xs text-gray-500 mt-2 font-medium">
+                                    این درصد هنگام ایجاد فاکتور جدید به صورت
+                                    خودکار اعمال می‌شود.
+                                  </p>
+                                </div>
+
+                                <div className="w-full text-right">
+                                  <label className="block text-sm font-bold text-gray-700 mb-2">
+                                    درصد تخفیف پیش‌فرض خطوط
+                                  </label>
+                                  <div className="relative">
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      max="100"
+                                      value={
+                                        settingsForm.default_discount_percent !==
+                                        undefined
+                                          ? settingsForm.default_discount_percent
+                                          : 0
+                                      }
+                                      onChange={(e) =>
+                                        setSettingsForm({
+                                          ...settingsForm,
+                                          default_discount_percent:
+                                            parseFloat(e.target.value) || 0,
+                                        })
+                                      }
+                                      className="w-full px-4 py-3 pl-12 rounded-xl border border-gray-300 focus:ring-2 focus:ring-indigo-500 shadow-sm font-bold text-left"
+                                      dir="ltr"
+                                    />
+                                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 font-bold">
+                                      %
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="mt-8 border-t border-gray-100 pt-8">
+                                <h4 className="text-md font-black text-gray-800 mb-4">
+                                  اسناد حسابداری
+                                </h4>
+                                <label className="flex items-start gap-4 p-5 border border-gray-200 rounded-xl hover:bg-gray-50/80 cursor-pointer transition-all shadow-sm">
+                                  <div className="mt-0.5">
+                                    <input
+                                      type="checkbox"
+                                      checked={
+                                        settingsForm.auto_generate_accounting_docs !==
+                                        false
+                                      }
+                                      onChange={(e) =>
+                                        setSettingsForm({
+                                          ...settingsForm,
+                                          auto_generate_accounting_docs:
+                                            e.target.checked,
+                                        })
+                                      }
+                                      className="w-5 h-5 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500"
+                                    />
+                                  </div>
+                                  <div className="flex-1">
+                                    <div className="font-bold text-gray-900 mb-1">
+                                      صدور خودکار اسناد حسابداری
+                                    </div>
+                                    <div className="text-sm text-gray-500 font-medium leading-relaxed">
+                                      با ثبت هر فاکتور یا رسید مالی، سیستم به
+                                      صورت خودکار سند حسابداری متناظر با آن را
+                                      در دفتر روزنامه ثبت می‌کند. غیرفعال‌سازی
+                                      این گزینه نیازمند ثبت دستی اسناد است.
+                                    </div>
+                                  </div>
+                                </label>
+                              </div>
+                              <div className="mt-8 border-t border-gray-100 pt-8">
+                                <h4 className="text-md font-black text-gray-800 mb-4 flex items-center gap-2">
+                                  <lucide.ShieldCheck className="w-5 h-5 text-emerald-500" />
+                                  تأییدیه چک‌های با مبلغ بالا (Maker-Checker)
+                                </h4>
+                                <div className="p-5 border border-gray-200 rounded-xl bg-gray-50/50 shadow-sm">
+                                  <div className="flex flex-col gap-4">
+                                    <div>
+                                      <label className="block text-sm font-bold text-gray-700 mb-2">
+                                        سقف مبلغ برای ثبت مستقیم (بدون نیاز به تأیید)
+                                      </label>
+                                      <div className="relative">
+                                        <CurrencyInput
+                                          value={settingsForm.checkApprovalThreshold || 0}
+                                          onChange={(val) => setSettingsForm({ ...settingsForm, checkApprovalThreshold: val })}
+                                          className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 font-bold"
+                                        />
+                                      </div>
+                                      <p className="text-xs text-gray-500 mt-2 font-medium">
+                                        اگر مبلغ چک بیشتر از این مقدار باشد، وضعیت چک «در انتظار تأیید» خواهد بود و باید توسط مدیر مالی تأیید شود. (عدد 0 به معنی عدم نیاز به تأیید است)
+                                      </p>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {settingsTab === "numbering" && (
+                            <div>
+                              <h3 className="text-lg font-black text-gray-800 mb-6 flex items-center gap-2">
+                                <FileText className="w-5 h-5 text-indigo-500" />
+                                الگوی شماره‌گذاری اسناد
+                              </h3>
+                              <p className="text-sm text-gray-600 font-medium mb-6 bg-indigo-50 p-4 rounded-xl border border-indigo-100">
+                                پیشوند نمایشی، شماره شروع و تعداد ارقام ثابت
+                                برای هر نوع سند را تنظیم کنید.
+                              </p>
+
+                              <div className="space-y-8">
+                                {[
+                                  {
+                                    title: "فروش و انبار",
+                                    items: [
+                                      {
+                                        key: "sale",
+                                        label: "فاکتور فروش",
+                                        defaultPrefix: "INV-",
+                                      },
+                                      {
+                                        key: "proforma",
+                                        label: "پیش‌فاکتور",
+                                        defaultPrefix: "PF-",
+                                      },
+                                      {
+                                        key: "purchase",
+                                        label: "فاکتور خرید",
+                                        defaultPrefix: "PUR-",
+                                      },
+                                      {
+                                        key: "sale_return",
+                                        label: "برگشت از فروش",
+                                        defaultPrefix: "RTN-S-",
+                                      },
+                                      {
+                                        key: "purchase_return",
+                                        label: "برگشت از خرید",
+                                        defaultPrefix: "RTN-P-",
+                                      },
+                                      {
+                                        key: "warehouse_receipt",
+                                        label: "رسید انبار (ورود)",
+                                        defaultPrefix: "REC-",
+                                      },
+                                      {
+                                        key: "warehouse_remittance",
+                                        label: "حواله انبار (خروج)",
+                                        defaultPrefix: "REM-",
+                                      },
+                                    ],
+                                  },
+                                  {
+                                    title: "خزانه‌داری",
+                                    items: [
+                                      {
+                                        key: "receive_receipt",
+                                        label: "رسید دریافت",
+                                        defaultPrefix: "RD-",
+                                      },
+                                      {
+                                        key: "pay_receipt",
+                                        label: "رسید پرداخت",
+                                        defaultPrefix: "PD-",
+                                      },
+                                      {
+                                        key: "salary",
+                                        label: "فیش حقوقی",
+                                        defaultPrefix: "PAY-",
+                                      },
+                                    ],
+                                  },
+                                  {
+                                    title: "سایر",
+                                    items: [
+                                      {
+                                        key: "person",
+                                        label: "کد شخص/مشتری",
+                                        defaultPrefix: "P-",
+                                      },
+                                      {
+                                        key: "product",
+                                        label: "کد کالا/خدمات",
+                                        defaultPrefix: "PRD-",
+                                      },
+                                      {
+                                        key: "accounting_document",
+                                        label: "سند حسابداری",
+                                        defaultPrefix: "ACC-",
+                                      },
+                                    ],
+                                  },
+                                ].map((section, sIndex) => (
+                                  <div
+                                    key={sIndex}
+                                    className="overflow-hidden border border-gray-200 rounded-xl bg-white shadow-sm"
+                                  >
+                                    <div className="bg-gray-50 px-5 py-3 border-b border-gray-200 font-black text-gray-800">
+                                      {section.title}
+                                    </div>
+                                    <table className="w-full text-sm text-right">
+                                      <thead className="bg-gray-50/50 text-gray-500 font-bold text-xs">
+                                        <tr>
+                                          <th className="p-4 border-b border-gray-200 w-1/5">
+                                            نوع فرم
+                                          </th>
+                                          <th className="p-4 border-b border-gray-200 w-1/5">
+                                            پیشوند نمادین
+                                          </th>
+                                          <th className="p-4 border-b border-gray-200 w-1/5">
+                                            شماره شروع
+                                          </th>
+                                          <th className="p-4 border-b border-gray-200 w-1/5">
+                                            تعداد ارقام ثابت
+                                          </th>
+                                          <th className="p-4 border-b border-gray-200 w-1/5">
+                                            آخرین شماره صادره
+                                          </th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-gray-100">
+                                        {section.items.map((doc) => (
+                                          <tr
+                                            key={doc.key}
+                                            className="hover:bg-gray-50/50 transition-colors"
+                                          >
+                                            <td className="p-4 font-bold text-gray-800 border-l border-gray-100">
+                                              {doc.label}
+                                            </td>
+                                            <td className="p-4 border-l border-gray-100">
+                                              <input
+                                                type="text"
+                                                value={
+                                                  settingsForm[
+                                                    `prefix_${doc.key}`
+                                                  ] || ""
+                                                }
+                                                onChange={(e) =>
+                                                  setSettingsForm({
+                                                    ...settingsForm,
+                                                    [`prefix_${doc.key}`]:
+                                                      e.target.value,
+                                                  })
+                                                }
+                                                className="w-full px-3 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-indigo-500 font-mono text-left bg-white shadow-sm"
+                                                dir="ltr"
+                                                placeholder={doc.defaultPrefix}
+                                              />
+                                            </td>
+                                            <td className="p-4 border-l border-gray-100">
+                                              <input
+                                                type="number"
+                                                value={
+                                                  settingsForm[
+                                                    `start_${doc.key}`
+                                                  ] || ""
+                                                }
+                                                onChange={(e) =>
+                                                  setSettingsForm({
+                                                    ...settingsForm,
+                                                    [`start_${doc.key}`]:
+                                                      e.target.value,
+                                                  })
+                                                }
+                                                className="w-full px-3 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-indigo-500 font-mono text-left bg-white shadow-sm"
+                                                dir="ltr"
+                                                placeholder="1000"
+                                              />
+                                            </td>
+                                            <td className="p-4">
+                                              <input
+                                                type="number"
+                                                min="1"
+                                                max="15"
+                                                value={
+                                                  settingsForm[
+                                                    `len_${doc.key}`
+                                                  ] || ""
+                                                }
+                                                onChange={(e) =>
+                                                  setSettingsForm({
+                                                    ...settingsForm,
+                                                    [`len_${doc.key}`]:
+                                                      parseInt(
+                                                        e.target.value,
+                                                      ) || "",
+                                                  })
+                                                }
+                                                className="w-full px-3 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-indigo-500 font-mono text-left bg-white shadow-sm"
+                                                dir="ltr"
+                                                placeholder="6"
+                                              />
+                                            </td>
+                                            <td className="p-4">
+                                              <input
+                                                type="number"
+                                                value={
+                                                  settingsForm.doc_counters?.[doc.key] !== undefined ? settingsForm.doc_counters[doc.key] : ""
+                                                }
+                                                onChange={(e) =>
+                                                  setSettingsForm({
+                                                    ...settingsForm,
+                                                    doc_counters: {
+                                                      ...(settingsForm.doc_counters || {}),
+                                                      [doc.key]: e.target.value === '' ? undefined : parseInt(e.target.value)
+                                                    }
+                                                  })
+                                                }
+                                                className="w-full px-3 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-emerald-500 font-mono text-left bg-emerald-50 text-emerald-900 shadow-sm"
+                                                dir="ltr"
+                                                placeholder="محاسبه خودکار"
+                                              />
+                                            </td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {settingsTab === "printing" && (
+                            <div>
+                              <h3 className="text-lg font-black text-gray-800 mb-4 flex items-center gap-2">
+                                <Printer className="w-5 h-5 text-indigo-500" />
+                                تنظیمات و استودیوی طراحی چاپ
+                              </h3>
+
+                              {/* Print Studio Hub Banner */}
+                              <div className="bg-gradient-to-l from-indigo-900 to-indigo-700 text-white rounded-2xl p-5 mb-8 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
+                                <div className="space-y-1 text-right">
+                                  <div className="flex items-center gap-2">
+                                    <Sparkles className="w-4 h-4 text-indigo-200" />
+                                    <h4 className="font-black text-sm">مرکز متمرکز مدیریت و طراحی چاپ سیستم</h4>
+                                  </div>
+                                  <p className="text-xs text-indigo-100/90 leading-relaxed max-w-xl font-medium">
+                                    برای طراحی بصری قالب‌ها با پیش‌نمایش زنده در انواع قطع کاغذ (A4، A5، فیش حرارتی ۸۰mm)، روشن/خاموش کردن ستون‌ها، تنظیم کادرهای امضا و مدیریت قالب‌های پیش‌فرض، وارد استودیوی چاپ شوید.
+                                  </p>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => props.setActiveTab ? props.setActiveTab("print_studio") : (window.location.href = "/print_studio")}
+                                  className="px-5 py-2.5 bg-white text-indigo-700 hover:bg-indigo-50 rounded-xl font-black text-xs transition-all shadow-sm flex items-center gap-2 shrink-0 cursor-pointer"
+                                >
+                                  <Printer className="w-4 h-4 text-indigo-600" />
+                                  <span>ورود به استودیو طراحی چاپ</span>
+                                </button>
+                              </div>
+
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                <div className="space-y-6">
+                                  <div className="w-full text-right">
+                                    <label className="block text-sm font-bold text-gray-700 mb-2">
+                                      قالب چاپ فاکتور
+                                    </label>
+                                    <select
+                                      value={
+                                        settingsForm.invoicePrintFormat || "standard"
+                                      }
+                                      onChange={(e) =>
+                                        setSettingsForm({
+                                          ...settingsForm,
+                                          invoicePrintFormat: e.target.value,
+                                        })
+                                      }
+                                      className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-indigo-500 shadow-sm font-bold"
+                                    >
+                                      <option value="standard">استاندارد (کلاسیک)</option>
+                                      <option value="official">رسمی (مورد تایید دارایی)</option>
+                                      <option value="minimal">ساده و مینیمال</option>
+                                      <option value="compact">فشرده (دو فاکتور در A4)</option>
+                                      <option value="thermal">حرارتی (فیش‌پرینتر)</option>
+                                    </select>
+                                  </div>
+
+                                  <div className="w-full text-right">
+                                    <label className="block text-sm font-bold text-gray-700 mb-2">
+                                      سایز پیش‌فرض کاغذ
+                                    </label>
+                                    <select
+                                      value={
+                                        settingsForm.print_paper_size || "A4"
+                                      }
+                                      onChange={(e) =>
+                                        setSettingsForm({
+                                          ...settingsForm,
+                                          print_paper_size: e.target.value,
+                                        })
+                                      }
+                                      className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-indigo-500 shadow-sm font-bold"
+                                    >
+                                      <option value="A4">A4 (استاندارد)</option>
+                                      <option value="A5">A5 (نصف صفحه)</option>
+                                      <option value="receipt80">
+                                        فیش پرینتر عرض 80mm
+                                      </option>
+                                      <option value="receipt58">
+                                        فیش پرینتر عرض 58mm
+                                      </option>
+                                    </select>
+                                  </div>
+                                  <div className="w-full text-right">
+                                    <label className="block text-sm font-bold text-gray-700 mb-2">
+                                      نمایش لوگو در فاکتور
+                                    </label>
+                                    <select
+                                      value={
+                                        settingsForm.print_show_logo !== false
+                                          ? "true"
+                                          : "false"
+                                      }
+                                      onChange={(e) =>
+                                        setSettingsForm({
+                                          ...settingsForm,
+                                          print_show_logo:
+                                            e.target.value === "true",
+                                        })
+                                      }
+                                      className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-indigo-500 shadow-sm font-bold"
+                                    >
+                                      <option value="true">
+                                        بله، نمایش داده شود
+                                      </option>
+                                      <option value="false">
+                                        خیر، مخفی شود
+                                      </option>
+                                    </select>
+                                  </div>
+                                  <div className="w-full text-right">
+                                    <label className="block text-sm font-bold text-gray-700 mb-2">
+                                      نمایش خلاصه وضعیت مالی مشتری
+                                    </label>
+                                    <select
+                                      value={
+                                        settingsForm.print_show_financial !==
+                                        false
+                                          ? "true"
+                                          : "false"
+                                      }
+                                      onChange={(e) =>
+                                        setSettingsForm({
+                                          ...settingsForm,
+                                          print_show_financial:
+                                            e.target.value === "true",
+                                        })
+                                      }
+                                      className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-indigo-500 shadow-sm font-bold"
+                                    >
+                                      <option value="true">
+                                        بله، نمایش داده شود
+                                      </option>
+                                      <option value="false">
+                                        خیر، مخفی شود
+                                      </option>
+                                    </select>
+                                  </div>
+                                </div>
+
+                                <div className="space-y-6">
+                                  <div className="w-full text-right">
+                                    <label className="block text-sm font-bold text-gray-700 mb-2">
+                                      عنوان امضاکننده اول (چپ)
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={
+                                        settingsForm.print_signature_1 || ""
+                                      }
+                                      onChange={(e) =>
+                                        setSettingsForm({
+                                          ...settingsForm,
+                                          print_signature_1: e.target.value,
+                                        })
+                                      }
+                                      className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-indigo-500 shadow-sm font-medium"
+                                      placeholder="مثال: مهر و امضای خریدار"
+                                    />
+                                  </div>
+                                  <div className="w-full text-right">
+                                    <label className="block text-sm font-bold text-gray-700 mb-2">
+                                      عنوان امضاکننده دوم (وسط)
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={
+                                        settingsForm.print_signature_2 || ""
+                                      }
+                                      onChange={(e) =>
+                                        setSettingsForm({
+                                          ...settingsForm,
+                                          print_signature_2: e.target.value,
+                                        })
+                                      }
+                                      className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-indigo-500 shadow-sm font-medium"
+                                      placeholder="مثال: تحویل‌دهنده"
+                                    />
+                                  </div>
+                                  <div className="w-full text-right">
+                                    <label className="block text-sm font-bold text-gray-700 mb-2">
+                                      عنوان امضاکننده سوم (راست)
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={
+                                        settingsForm.print_signature_3 || ""
+                                      }
+                                      onChange={(e) =>
+                                        setSettingsForm({
+                                          ...settingsForm,
+                                          print_signature_3: e.target.value,
+                                        })
+                                      }
+                                      className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-indigo-500 shadow-sm font-medium"
+                                      placeholder="مثال: مهر و امضای فروشنده"
+                                    />
+                                  </div>
+                                </div>
+
+                                <div className="w-full text-right md:col-span-2">
+                                  <label className="block text-sm font-bold text-gray-700 mb-2">
+                                    یادداشت ثابت انتهای فاکتورها (فوتر)
+                                  </label>
+                                  <textarea
+                                    value={settingsForm.print_footer_note || ""}
+                                    onChange={(e) =>
+                                      setSettingsForm({
+                                        ...settingsForm,
+                                        print_footer_note: e.target.value,
+                                      })
+                                    }
+                                    className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-indigo-500 shadow-sm font-medium h-24"
+                                    placeholder="قوانین تعویض کالا یا تشکر از خرید و ..."
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {settingsTab === "inventory_control" && (
+                            <div className="space-y-8">
+                              <div>
+                                <h3 className="text-lg font-black text-gray-800 mb-6 flex items-center gap-2">
+                                  <Box className="w-5 h-5 text-indigo-500" />
+                                  تنظیمات کنترل موجودی و انبار
+                                </h3>
+                                <div className="space-y-6">
+                                  <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl border border-gray-100">
+                                    <div className="text-right">
+                                      <h4 className="font-bold text-gray-800">سیستم کنترل موجودی</h4>
+                                      <p className="text-xs text-gray-500 mt-1">فعال‌سازی هشدارهای کمبود موجودی و پیشنهادات شارژ انبار</p>
+                                    </div>
+                                    <label className="flex items-center cursor-pointer">
+                                      <div className={`w-12 h-6 rounded-full p-1 transition-colors ${settingsForm.inventoryControlEnabled ? "bg-indigo-600" : "bg-gray-300"}`}>
+                                        <div className={`bg-white w-4 h-4 rounded-full shadow-sm transition-transform transform ${settingsForm.inventoryControlEnabled ? "-translate-x-6" : "translate-x-0"}`}></div>
+                                      </div>
+                                      <input
+                                        type="checkbox"
+                                        className="hidden"
+                                        checked={settingsForm.inventoryControlEnabled || false}
+                                        onChange={(e) =>
+                                          setSettingsForm({ ...settingsForm, inventoryControlEnabled: e.target.checked })
+                                        }
+                                      />
+                                    </label>
+                                  </div>
+
+                                  {settingsForm.inventoryControlEnabled && (
+                                    <div className="bg-white p-6 rounded-xl border border-gray-200 grid grid-cols-1 md:grid-cols-2 gap-6">
+                                      <div className="md:col-span-2 flex items-center justify-between p-4 bg-amber-50 rounded-xl border border-amber-100">
+                                        <div className="text-right">
+                                          <h4 className="font-bold text-gray-800">اعلان خودکار نیاز به شارژ موجودی</h4>
+                                          <p className="text-xs text-gray-500 mt-1">نمایش پیام هشدار برای اقلامی که به نقطه سفارش رسیده‌اند</p>
+                                        </div>
+                                        <label className="flex items-center cursor-pointer">
+                                          <div className={`w-12 h-6 rounded-full p-1 transition-colors ${settingsForm.autoReplenishPrompt ? "bg-amber-500" : "bg-gray-300"}`}>
+                                            <div className={`bg-white w-4 h-4 rounded-full shadow-sm transition-transform transform ${settingsForm.autoReplenishPrompt ? "-translate-x-6" : "translate-x-0"}`}></div>
+                                          </div>
+                                          <input
+                                            type="checkbox"
+                                            className="hidden"
+                                            checked={settingsForm.autoReplenishPrompt || false}
+                                            onChange={(e) =>
+                                              setSettingsForm({ ...settingsForm, autoReplenishPrompt: e.target.checked })
+                                            }
+                                          />
+                                        </label>
+                                      </div>
+
+                                      <div className="md:col-span-2">
+                                        <h4 className="font-bold text-sm text-gray-700 mb-4 text-right">آستانه هشدار موجودی (نقطه سفارش) بر اساس دسته‌بندی</h4>
+                                        <div className="space-y-3">
+                                          {[].map(cat => (
+                                            <div key={cat.id} className="flex items-center gap-4 bg-gray-50 p-3 rounded-xl border border-gray-100">
+                                              <span className="flex-1 text-right font-medium text-sm text-gray-800">{cat.name}</span>
+                                              <input
+                                                type="number"
+                                                min="0"
+                                                value={(settingsForm.lowStockThresholdsByCategory || {})[cat.id] ?? ""}
+                                                onChange={(e) => {
+                                                  const val = e.target.value === "" ? undefined : Number(e.target.value);
+                                                  setSettingsForm({
+                                                    ...settingsForm,
+                                                    lowStockThresholdsByCategory: {
+                                                      ...(settingsForm.lowStockThresholdsByCategory || {}),
+                                                      [cat.id]: val
+                                                    }
+                                                  });
+                                                }}
+                                                placeholder="مثال: 10"
+                                                className="w-24 px-3 py-2 rounded-lg border border-gray-300 text-center focus:ring-2 focus:ring-indigo-500"
+                                                dir="ltr"
+                                              />
+                                            </div>
+                                          ))}
+                                          {[].length === 0 && (
+                                            <p className="text-sm text-gray-500 text-right">هیچ دسته‌بندی ثبت نشده است.</p>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {settingsTab === "notification" && (
+                            <div className="space-y-6">
+                              {/* Sub-tab Switcher for Notification Settings */}
+                              <div className="flex border border-gray-200 bg-white rounded-2xl p-1.5 shadow-xs">
+                                <button
+                                  type="button"
+                                  onClick={() => setNotifySubTab("general")}
+                                  className={`flex-1 py-3 px-4 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                                    notifySubTab === "general"
+                                      ? "bg-indigo-600 text-white shadow-sm"
+                                      : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
+                                  }`}
+                                >
+                                  <Bell className="w-4 h-4" />
+                                  درگاه‌ها و الگوهای اطلاع‌رسانی
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setNotifySubTab("zyxel_gsm")}
+                                  className={`flex-1 py-3 px-4 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                                    notifySubTab === "zyxel_gsm"
+                                      ? "bg-indigo-600 text-white shadow-sm"
+                                      : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
+                                  }`}
+                                >
+                                  <Smartphone className="w-4 h-4" />
+                                  مودم سیم‌کارتی ZyXEL 3G (پورت USB)
+                                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/30 text-indigo-100 border border-indigo-300/30">
+                                    ارسال و دریافت مستقیم
+                                  </span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setNotifySubTab("security_alerts")}
+                                  className={`flex-1 py-3 px-4 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                                    notifySubTab === "security_alerts"
+                                      ? "bg-rose-600 text-white shadow-sm"
+                                      : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
+                                  }`}
+                                >
+                                  <lucide.ShieldAlert className="w-4 h-4 text-rose-300" />
+                                  هشدارهای امنیتی مدیر (فعالیت‌های حساس)
+                                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-700 font-bold border border-rose-300/40">
+                                    حذف فاکتور و تنظیمات
+                                  </span>
+                                </button>
+                              </div>
+
+                              {notifySubTab === "zyxel_gsm" ? (
+                                <ZyXelGsmSettings
+                                  storeSettings={storeSettings}
+                                  onUpdateSettings={(key, val) =>
+                                    setSettingsForm({ ...settingsForm, [key]: val })
+                                  }
+                                />
+                              ) : notifySubTab === "security_alerts" ? (
+                                <div className="space-y-6">
+                                  <div className="bg-gradient-to-r from-rose-50 via-white to-amber-50 p-6 rounded-3xl border border-rose-200/80">
+                                    <div className="flex items-center gap-3 mb-2">
+                                      <div className="w-10 h-10 rounded-2xl bg-rose-100 flex items-center justify-center text-rose-700">
+                                        <lucide.ShieldAlert className="w-6 h-6" />
+                                      </div>
+                                      <div>
+                                        <h3 className="text-base font-black text-rose-950">
+                                          تنظیمات اعلان بلادرنگ فعالیت‌های حساس به مدیر سیستم
+                                        </h3>
+                                        <p className="text-xs font-bold text-rose-700/80 mt-0.5">
+                                          ارسال فوری نوتیفیکیشن، هشدار صوتی و پیام دسکتاپ هنگام وقوع رویدادهای پرخطر و حساس در سیستم
+                                        </p>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div className="bg-white p-6 rounded-3xl border border-gray-200/90 shadow-xs space-y-4">
+                                    <h4 className="text-sm font-black text-gray-800 flex items-center gap-2">
+                                      <lucide.Sliders className="w-4 h-4 text-indigo-600" />
+                                      رویدادهای حساس مشمول ارسال اعلان
+                                    </h4>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                      <label className="flex items-start gap-3 p-4 rounded-2xl border border-gray-200 bg-gray-50/50 hover:bg-gray-50 cursor-pointer transition-all">
+                                        <input
+                                          type="checkbox"
+                                          checked={settingsForm.notify_on_invoice_delete !== false}
+                                          onChange={(e) => setSettingsForm({ ...settingsForm, notify_on_invoice_delete: e.target.checked })}
+                                          className="mt-1 rounded text-rose-600 focus:ring-rose-500 w-4 h-4"
+                                        />
+                                        <div>
+                                          <span className="block text-xs font-black text-gray-900">
+                                            حذف فاکتورها (فروش، خرید، برگشتی و پیش‌فاکتور)
+                                          </span>
+                                          <span className="block text-[11px] font-bold text-gray-500 mt-1">
+                                            ارسال هشدار فوری با ذکر شماره فاکتور، مبلغ، نام کاربر و آدرس IP هنگام حذف فاکتور
+                                          </span>
+                                        </div>
+                                      </label>
+
+                                      <label className="flex items-start gap-3 p-4 rounded-2xl border border-gray-200 bg-gray-50/50 hover:bg-gray-50 cursor-pointer transition-all">
+                                        <input
+                                          type="checkbox"
+                                          checked={settingsForm.notify_on_settings_change !== false}
+                                          onChange={(e) => setSettingsForm({ ...settingsForm, notify_on_settings_change: e.target.checked })}
+                                          className="mt-1 rounded text-rose-600 focus:ring-rose-500 w-4 h-4"
+                                        />
+                                        <div>
+                                          <span className="block text-xs font-black text-gray-900">
+                                            تغییر تنظیمات مالی و پیکربندی سیستم
+                                          </span>
+                                          <span className="block text-[11px] font-bold text-gray-500 mt-1">
+                                            ارسال اعلان هنگام تغییر در درصد مالیات، ارزش افزوده، نام فروشگاه یا سال مالی
+                                          </span>
+                                        </div>
+                                      </label>
+
+                                      <label className="flex items-start gap-3 p-4 rounded-2xl border border-gray-200 bg-gray-50/50 hover:bg-gray-50 cursor-pointer transition-all">
+                                        <input
+                                          type="checkbox"
+                                          checked={settingsForm.notify_on_financial_doc_delete !== false}
+                                          onChange={(e) => setSettingsForm({ ...settingsForm, notify_on_financial_doc_delete: e.target.checked })}
+                                          className="mt-1 rounded text-rose-600 focus:ring-rose-500 w-4 h-4"
+                                        />
+                                        <div>
+                                          <span className="block text-xs font-black text-gray-900">
+                                            حذف تراکنش‌های مالی و اسناد حسابداری
+                                          </span>
+                                          <span className="block text-[11px] font-bold text-gray-500 mt-1">
+                                            ارسال اعلان در صورت حذف رسید پرداخت، دریافت وجه یا سند حسابداری دوبل
+                                          </span>
+                                        </div>
+                                      </label>
+
+                                      <label className="flex items-start gap-3 p-4 rounded-2xl border border-gray-200 bg-gray-50/50 hover:bg-gray-50 cursor-pointer transition-all">
+                                        <input
+                                          type="checkbox"
+                                          checked={settingsForm.notify_on_check_delete !== false}
+                                          onChange={(e) => setSettingsForm({ ...settingsForm, notify_on_check_delete: e.target.checked })}
+                                          className="mt-1 rounded text-rose-600 focus:ring-rose-500 w-4 h-4"
+                                        />
+                                        <div>
+                                          <span className="block text-xs font-black text-gray-900">
+                                            حذف یا تغییرات حساس چک‌های صیادی
+                                          </span>
+                                          <span className="block text-[11px] font-bold text-gray-500 mt-1">
+                                            ارسال هشدار فوری هنگام حذف چک دریافتی/پرداختی یا برگشت خوردن چک
+                                          </span>
+                                        </div>
+                                      </label>
+
+                                      <label className="flex items-start gap-3 p-4 rounded-2xl border border-gray-200 bg-gray-50/50 hover:bg-gray-50 cursor-pointer transition-all">
+                                        <input
+                                          type="checkbox"
+                                          checked={settingsForm.notify_on_user_change !== false}
+                                          onChange={(e) => setSettingsForm({ ...settingsForm, notify_on_user_change: e.target.checked })}
+                                          className="mt-1 rounded text-rose-600 focus:ring-rose-500 w-4 h-4"
+                                        />
+                                        <div>
+                                          <span className="block text-xs font-black text-gray-900">
+                                            حذف یا تغییر سطوح دسترسی کاربران
+                                          </span>
+                                          <span className="block text-[11px] font-bold text-gray-500 mt-1">
+                                            ارسال هشدار در صورت حذف کاربر، تغییر نقش به مدیر یا تغییر وضعیت فعال/غیرفعال
+                                          </span>
+                                        </div>
+                                      </label>
+
+                                      <label className="flex items-start gap-3 p-4 rounded-2xl border border-gray-200 bg-gray-50/50 hover:bg-gray-50 cursor-pointer transition-all">
+                                        <input
+                                          type="checkbox"
+                                          checked={settingsForm.notify_sound_enabled !== false}
+                                          onChange={(e) => setSettingsForm({ ...settingsForm, notify_sound_enabled: e.target.checked })}
+                                          className="mt-1 rounded text-indigo-600 focus:ring-indigo-500 w-4 h-4"
+                                        />
+                                        <div>
+                                          <span className="block text-xs font-black text-gray-900">
+                                            پخش صدای زنگ هشدار (Chime Audio)
+                                          </span>
+                                          <span className="block text-[11px] font-bold text-gray-500 mt-1">
+                                            پخش ملایم زنگ هشدار در مرورگر هنگام دریافت اعلان حساس جدید
+                                          </span>
+                                        </div>
+                                      </label>
+                                    </div>
+                                  </div>
+
+                                  <div className="bg-slate-50 p-6 rounded-3xl border border-slate-200/80 flex flex-col sm:flex-row items-center justify-between gap-4">
+                                    <div>
+                                      <h4 className="text-xs font-black text-slate-800">
+                                        تست و بررسی عملکرد مرکز اعلان‌های حساس
+                                      </h4>
+                                      <p className="text-[11px] font-bold text-slate-500 mt-0.5">
+                                        یک اعلان آزمایشی با اولویت بالا به زنگوله و بنر شناور ارسال نموده و پخش صدا را آزمایش کنید.
+                                      </p>
+                                    </div>
+
+                                    <button
+                                      type="button"
+                                      onClick={async () => {
+                                        try {
+                                          const testAlert = {
+                                            id: 'notif_test_' + Date.now(),
+                                            userId: 'admin',
+                                            targetRole: 'admin',
+                                            title: 'هشدار امنیتی آزمایشی: حذف فاکتور نمونه',
+                                            message: 'این پیام تست جهت بررسی اتصال زنگوله اعلان‌ها و هشدار صوتی مدیر ارسال شده است.',
+                                            type: 'critical',
+                                            read: false,
+                                            createdAt: new Date().toISOString(),
+                                            metadata: {
+                                              action: 'DELETE',
+                                              entityType: 'invoices',
+                                              actorUsername: user?.username || 'admin',
+                                              actorName: user?.name || 'مدیر سیستم',
+                                              ip: '127.0.0.1',
+                                              timestamp: Date.now()
+                                            }
+                                          };
+                                          await fetch('/api/data/notifications', {
+                                            method: 'POST',
+                                            headers: {
+                                              'Content-Type': 'application/json',
+                                              'Authorization': 'Bearer ' + (sessionStorage.getItem('access_token') || localStorage.getItem('access_token') || '')
+                                            },
+                                            body: JSON.stringify([testAlert])
+                                          });
+                                          alert('اعلان آزمایشی با موفقیت ارسال شد. زنگوله بالای صفحه را بررسی کنید.');
+                                        } catch (e) {
+                                          alert('خطا در ارسال اعلان آزمایشی');
+                                        }
+                                      }}
+                                      className="px-5 py-2.5 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white font-black text-xs shadow-sm transition-all active:scale-95 flex items-center gap-2 shrink-0 cursor-pointer"
+                                    >
+                                      <lucide.Sparkles className="w-4 h-4" />
+                                      <span>ارسال اعلان آزمایشی به مدیر</span>
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="space-y-8">
+                                  <div>
+                                    <h3 className="text-lg font-black text-gray-800 mb-6 flex items-center gap-2">
+                                      <Bell className="w-5 h-5 text-indigo-500" />
+                                      درگاه‌های ارتباطی
+                                    </h3>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                      <div className="w-full text-right md:col-span-2">
+                                        <label className="block text-sm font-bold text-gray-700 mb-2">
+                                          سرویس اصلی پیام‌رسان
+                                        </label>
+                                        <div className="flex flex-wrap gap-4">
+                                          {[
+                                            { id: "none", label: "غیرفعال" },
+                                            {
+                                              id: "sms",
+                                              label: "سامانه پیامکی ابری (API)",
+                                            },
+                                            {
+                                              id: "whatsapp",
+                                              label: "واتساپ بیزینس",
+                                            },
+                                            {
+                                              id: "gsm",
+                                              label: "مودم سیم‌کارتی ZyXEL 3G (پورت USB)",
+                                            },
+                                          ].map((method) => (
+                                            <label
+                                              key={method.id}
+                                              className={`flex-1 flex items-center justify-center gap-2 p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                                                settingsForm.notify_method ===
+                                                method.id
+                                                  ? "border-indigo-600 bg-indigo-50 text-indigo-700 shadow-sm"
+                                                  : "border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50"
+                                              }`}
+                                            >
+                                              <input
+                                                type="radio"
+                                                name="notify_method"
+                                                className="hidden"
+                                                checked={
+                                                  settingsForm.notify_method ===
+                                                  method.id
+                                                }
+                                                onChange={() =>
+                                                  setSettingsForm({
+                                                    ...settingsForm,
+                                                    notify_method: method.id,
+                                                    notify_api_key:
+                                                      method.id === "gsm" &&
+                                                      !settingsForm.notify_api_key
+                                                        ? "USB-Serial (115200 bps) - ZyXEL 3G"
+                                                        : settingsForm.notify_api_key,
+                                                  })
+                                                }
+                                              />
+                                              <span className="font-bold text-sm">
+                                                {method.label}
+                                              </span>
+                                            </label>
+                                          ))}
+                                        </div>
+                                      </div>
+
+                                      {/* ZyXEL 3G USB Quick Banner if GSM selected */}
+                                      {settingsForm.notify_method === "gsm" && (
+                                        <div className="md:col-span-2 p-4 bg-gradient-to-r from-indigo-50 via-purple-50 to-indigo-50 border border-indigo-200 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                          <div className="flex items-center gap-3">
+                                            <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0 shadow-sm">
+                                              <Smartphone className="w-5 h-5" />
+                                            </div>
+                                            <div>
+                                              <h4 className="font-bold text-indigo-950 text-sm">
+                                                مودم ZyXEL 3G به عنوان درگاه اصلی پیامک انتخاب شده است
+                                              </h4>
+                                              <p className="text-xs text-indigo-800 mt-0.5">
+                                                اتصال مستقیم پورت USB، تست سیگنال، ارسال و صندوق ورودی پیامک‌ها در تب اختصاصی در دسترس است.
+                                              </p>
+                                            </div>
+                                          </div>
+                                          <button
+                                            type="button"
+                                            onClick={() => setNotifySubTab("zyxel_gsm")}
+                                            className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-all shadow-sm cursor-pointer whitespace-nowrap"
+                                          >
+                                            پیکربندی و اتصال پورت مودم ZyXEL
+                                          </button>
+                                        </div>
+                                      )}
+
+                                      {settingsForm.notify_method &&
+                                        settingsForm.notify_method !== "none" && (
+                                          <>
+                                            <div className="w-full text-right md:col-span-2">
+                                              <label className="block text-sm font-bold text-gray-700 mb-2">
+                                                کلید API / تنظیمات درگاه / پورت سریال USB
+                                              </label>
+                                              <input
+                                                type="text"
+                                                value={
+                                                  settingsForm.notify_api_key || ""
+                                                }
+                                                onChange={(e) =>
+                                                  setSettingsForm({
+                                                    ...settingsForm,
+                                                    notify_api_key: e.target.value,
+                                                  })
+                                                }
+                                                className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-indigo-500 shadow-sm font-mono text-left"
+                                                placeholder={
+                                                  settingsForm.notify_method === "gsm"
+                                                    ? "USB-Serial (115200 bps) - ZyXEL 3G"
+                                                    : "Token or Port"
+                                                }
+                                                dir="ltr"
+                                              />
+                                            </div>
+                                            <div className="w-full text-right md:col-span-2">
+                                              <label className="block text-sm font-bold text-gray-700 mb-2">
+                                                خط فرستنده / شماره سیم‌کارت مودم
+                                              </label>
+                                              <input
+                                                type="text"
+                                                value={
+                                                  settingsForm.notify_sender_number ||
+                                                  ""
+                                                }
+                                                onChange={(e) =>
+                                                  setSettingsForm({
+                                                    ...settingsForm,
+                                                    notify_sender_number:
+                                                      e.target.value,
+                                                  })
+                                                }
+                                                className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-indigo-500 shadow-sm font-mono text-left"
+                                                placeholder="0912..."
+                                                dir="ltr"
+                                              />
+                                            </div>
+                                          </>
+                                        )}
+                                    </div>
+                                  </div>
+
+                              <div className="border-t border-gray-100 pt-8" id="sms-notification-triggers-section">
+                                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+                                  <div>
+                                    <h3 className="text-lg font-black text-gray-800 flex items-center gap-2">
+                                      <CheckSquare className="w-5 h-5 text-indigo-600" />
+                                      رویدادهای خودکار ارسال پیامک بر اساس بخش‌های سیستم
+                                    </h3>
+                                    <p className="text-xs text-gray-500 mt-1">
+                                      فعال یا غیرفعال‌سازی ارسال پیامک برای هر یک از بخش‌های ۱۲ گانه سیستم
+                                    </p>
+                                  </div>
+
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <button
+                                      type="button"
+                                      id="btn-enable-all-sms"
+                                      onClick={() => {
+                                        setSettingsForm({
+                                          ...settingsForm,
+                                          notify_on_purchase_invoice: true,
+                                          notify_on_sale_invoice: true,
+                                          notify_on_return_invoices: true,
+                                          notify_on_sale_return: true,
+                                          notify_on_purchase_return: true,
+                                          notify_on_receive: true,
+                                          notify_on_payment: true,
+                                          notify_on_warehouse_receipt: true,
+                                          notify_on_warehouse_remittance: true,
+                                          notify_on_invoice_due: true,
+                                          notify_on_receivable_check: true,
+                                          notify_on_payable_check: true,
+                                          notify_on_debtors: true,
+                                          notify_on_installment: true,
+                                          notify_on_invoice: true,
+                                          notify_on_receipt: true,
+                                          smsDebtThresholdEnabled: true,
+                                        });
+                                      }}
+                                      className="px-3 py-1.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 rounded-lg text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
+                                    >
+                                      <CheckCircle className="w-3.5 h-3.5" />
+                                      فعال‌سازی همه
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      id="btn-disable-all-sms"
+                                      onClick={() => {
+                                        setSettingsForm({
+                                          ...settingsForm,
+                                          notify_on_purchase_invoice: false,
+                                          notify_on_sale_invoice: false,
+                                          notify_on_return_invoices: false,
+                                          notify_on_sale_return: false,
+                                          notify_on_purchase_return: false,
+                                          notify_on_receive: false,
+                                          notify_on_payment: false,
+                                          notify_on_warehouse_receipt: false,
+                                          notify_on_warehouse_remittance: false,
+                                          notify_on_invoice_due: false,
+                                          notify_on_receivable_check: false,
+                                          notify_on_payable_check: false,
+                                          notify_on_debtors: false,
+                                          notify_on_installment: false,
+                                          notify_on_invoice: false,
+                                          notify_on_receipt: false,
+                                        });
+                                      }}
+                                      className="px-3 py-1.5 bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-200 rounded-lg text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
+                                    >
+                                      <X className="w-3.5 h-3.5" />
+                                      غیرفعال‌سازی همه
+                                    </button>
+                                  </div>
+                                </div>
+
+                                {(() => {
+                                  const allNotificationItems = [
+                                    {
+                                      id: 'notify_on_purchase_invoice',
+                                      title: 'فاکتور خرید',
+                                      category: 'invoices',
+                                      categoryLabel: 'فاکتورها',
+                                      desc: 'ارسال خودکار پیامک هنگام ثبت، تایید یا ویرایش فاکتور خرید اقلام به طرف حساب یا مدیر سیستم.',
+                                      icon: lucide.ShoppingBag || FileText,
+                                      colorClass: 'from-amber-500 to-orange-600',
+                                      badgeClass: 'bg-amber-50 text-amber-700 border-amber-200',
+                                      checked: !!settingsForm.notify_on_purchase_invoice,
+                                      toggle: () => {
+                                        setSettingsForm({
+                                          ...settingsForm,
+                                          notify_on_purchase_invoice: !settingsForm.notify_on_purchase_invoice,
+                                        });
+                                      }
+                                    },
+                                    {
+                                      id: 'notify_on_sale_invoice',
+                                      title: 'فاکتور فروش',
+                                      category: 'invoices',
+                                      categoryLabel: 'فاکتورها',
+                                      desc: 'ارسال خودکار پیامک صورتحساب شامل شماره فاکتور، مبلغ کل و لینک مشاهده به خریدار.',
+                                      icon: lucide.FileText || FileText,
+                                      colorClass: 'from-blue-500 to-indigo-600',
+                                      badgeClass: 'bg-blue-50 text-blue-700 border-blue-200',
+                                      checked: settingsForm.notify_on_sale_invoice !== undefined ? !!settingsForm.notify_on_sale_invoice : (settingsForm.notify_on_invoice !== undefined ? !!settingsForm.notify_on_invoice : true),
+                                      toggle: () => {
+                                        const nextVal = !(settingsForm.notify_on_sale_invoice !== undefined ? settingsForm.notify_on_sale_invoice : true);
+                                        setSettingsForm({
+                                          ...settingsForm,
+                                          notify_on_sale_invoice: nextVal,
+                                          notify_on_invoice: nextVal,
+                                        });
+                                      }
+                                    },
+                                    {
+                                      id: 'notify_on_return_invoices',
+                                      title: 'فاکتور برگشت از خرید و برگشت از فروش',
+                                      category: 'invoices',
+                                      categoryLabel: 'فاکتورها',
+                                      desc: 'ارسال پیامک تایید مرجوعی کالا در برگشت از فروش برای خریدار و برگشت از خرید برای تأمین‌کننده.',
+                                      icon: lucide.RotateCcw || Activity,
+                                      colorClass: 'from-rose-500 to-pink-600',
+                                      badgeClass: 'bg-rose-50 text-rose-700 border-rose-200',
+                                      checked: !!settingsForm.notify_on_return_invoices,
+                                      toggle: () => {
+                                        const nextVal = !settingsForm.notify_on_return_invoices;
+                                        setSettingsForm({
+                                          ...settingsForm,
+                                          notify_on_return_invoices: nextVal,
+                                          notify_on_sale_return: nextVal,
+                                          notify_on_purchase_return: nextVal,
+                                        });
+                                      }
+                                    },
+                                    {
+                                      id: 'notify_on_receive',
+                                      title: 'دریافت',
+                                      category: 'treasury',
+                                      categoryLabel: 'خزانه‌داری و مالی',
+                                      desc: 'ارسال پیامک تایید رسید دریافت وجه نقد، حواله بانکی یا تراکنش پوز به پرداخت‌کننده وجه.',
+                                      icon: lucide.ArrowDownLeft || ArrowRight,
+                                      colorClass: 'from-emerald-500 to-teal-600',
+                                      badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+                                      checked: settingsForm.notify_on_receive !== undefined ? !!settingsForm.notify_on_receive : (settingsForm.notify_on_receipt !== undefined ? !!settingsForm.notify_on_receipt : true),
+                                      toggle: () => {
+                                        const nextVal = !(settingsForm.notify_on_receive !== undefined ? settingsForm.notify_on_receive : true);
+                                        setSettingsForm({
+                                          ...settingsForm,
+                                          notify_on_receive: nextVal,
+                                          notify_on_receipt: nextVal,
+                                        });
+                                      }
+                                    },
+                                    {
+                                      id: 'notify_on_payment',
+                                      title: 'پرداخت',
+                                      category: 'treasury',
+                                      categoryLabel: 'خزانه‌داری و مالی',
+                                      desc: 'ارسال پیامک رسید پرداخت وجه، تسویه بدهی یا صدور سند پرداختی به دریافت‌کننده وجه.',
+                                      icon: lucide.ArrowUpRight || ArrowLeft,
+                                      colorClass: 'from-violet-500 to-purple-600',
+                                      badgeClass: 'bg-violet-50 text-violet-700 border-violet-200',
+                                      checked: settingsForm.notify_on_payment !== undefined ? !!settingsForm.notify_on_payment : (settingsForm.notify_on_receipt !== undefined ? !!settingsForm.notify_on_receipt : true),
+                                      toggle: () => {
+                                        const nextVal = !(settingsForm.notify_on_payment !== undefined ? settingsForm.notify_on_payment : true);
+                                        setSettingsForm({
+                                          ...settingsForm,
+                                          notify_on_payment: nextVal,
+                                        });
+                                      }
+                                    },
+                                    {
+                                      id: 'notify_on_warehouse_receipt',
+                                      title: 'رسید ورود به انبار',
+                                      category: 'warehouse',
+                                      categoryLabel: 'انبارداری و کالا',
+                                      desc: 'ارسال پیامک تایید ثبت ورود کالا به انبار به انباردار، مدیر بازرگانی یا تحویل‌دهنده کالا.',
+                                      icon: lucide.PackagePlus || Box,
+                                      colorClass: 'from-cyan-500 to-blue-600',
+                                      badgeClass: 'bg-cyan-50 text-cyan-700 border-cyan-200',
+                                      checked: !!settingsForm.notify_on_warehouse_receipt,
+                                      toggle: () => {
+                                        setSettingsForm({
+                                          ...settingsForm,
+                                          notify_on_warehouse_receipt: !settingsForm.notify_on_warehouse_receipt,
+                                        });
+                                      }
+                                    },
+                                    {
+                                      id: 'notify_on_warehouse_remittance',
+                                      title: 'رسید خروج',
+                                      category: 'warehouse',
+                                      categoryLabel: 'انبارداری و کالا',
+                                      desc: 'ارسال پیامک صدور حواله خروج کالا و تحویل بار به تحویل‌گیرنده کالا یا راننده حمل بار.',
+                                      icon: lucide.Truck || Box,
+                                      colorClass: 'from-sky-500 to-indigo-600',
+                                      badgeClass: 'bg-sky-50 text-sky-700 border-sky-200',
+                                      checked: !!settingsForm.notify_on_warehouse_remittance,
+                                      toggle: () => {
+                                        setSettingsForm({
+                                          ...settingsForm,
+                                          notify_on_warehouse_remittance: !settingsForm.notify_on_warehouse_remittance,
+                                        });
+                                      }
+                                    },
+                                    {
+                                      id: 'notify_on_invoice_due',
+                                      title: 'سررسید فاکتور',
+                                      category: 'invoices',
+                                      categoryLabel: 'فاکتورها',
+                                      desc: 'ارسال پیامک یادآوری موعد تسویه فاکتورهای نسیه و مهلت‌دار به مشتریان قبل یا در روز سررسید.',
+                                      icon: lucide.CalendarClock || Activity,
+                                      colorClass: 'from-orange-500 to-amber-600',
+                                      badgeClass: 'bg-orange-50 text-orange-700 border-orange-200',
+                                      checked: settingsForm.notify_on_invoice_due !== undefined ? !!settingsForm.notify_on_invoice_due : true,
+                                      toggle: () => {
+                                        setSettingsForm({
+                                          ...settingsForm,
+                                          notify_on_invoice_due: !(settingsForm.notify_on_invoice_due !== undefined ? settingsForm.notify_on_invoice_due : true),
+                                        });
+                                      }
+                                    },
+                                    {
+                                      id: 'notify_on_receivable_check',
+                                      title: 'چک دریافتنی',
+                                      category: 'checks',
+                                      categoryLabel: 'اسناد تجاری و چک',
+                                      desc: 'ارسال پیامک تایید ثبت چک دریافتی و یادآوری موعد سررسید وصول چک صیادی به مشتری و خزانه‌دار.',
+                                      icon: lucide.CheckCircle2 || CheckCircle,
+                                      colorClass: 'from-teal-500 to-emerald-600',
+                                      badgeClass: 'bg-teal-50 text-teal-700 border-teal-200',
+                                      checked: settingsForm.notify_on_receivable_check !== undefined ? !!settingsForm.notify_on_receivable_check : true,
+                                      toggle: () => {
+                                        setSettingsForm({
+                                          ...settingsForm,
+                                          notify_on_receivable_check: !(settingsForm.notify_on_receivable_check !== undefined ? settingsForm.notify_on_receivable_check : true),
+                                        });
+                                      }
+                                    },
+                                    {
+                                      id: 'notify_on_payable_check',
+                                      title: 'چک پرداختنی',
+                                      category: 'checks',
+                                      categoryLabel: 'اسناد تجاری و چک',
+                                      desc: 'ارسال پیامک صدور چک و هشدار موعد سررسید پاس شدن چک‌های صادره به مدیر جهت تامین موجودی حساب.',
+                                      icon: lucide.CreditCard || DollarSign,
+                                      colorClass: 'from-indigo-500 to-purple-600',
+                                      badgeClass: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+                                      checked: settingsForm.notify_on_payable_check !== undefined ? !!settingsForm.notify_on_payable_check : true,
+                                      toggle: () => {
+                                        setSettingsForm({
+                                          ...settingsForm,
+                                          notify_on_payable_check: !(settingsForm.notify_on_payable_check !== undefined ? settingsForm.notify_on_payable_check : true),
+                                        });
+                                      }
+                                    },
+                                    {
+                                      id: 'notify_on_debtors',
+                                      title: 'بدهکاران',
+                                      category: 'treasury',
+                                      categoryLabel: 'خزانه‌داری و مالی',
+                                      desc: 'ارسال خودکار پیامک هشدار عبور از سقف مجاز اعتبار و پیامک‌های دوره‌ای پیگیری مطالبات بدهکاران.',
+                                      icon: lucide.AlertTriangle || AlertTriangle,
+                                      colorClass: 'from-red-500 to-rose-600',
+                                      badgeClass: 'bg-red-50 text-red-700 border-red-200',
+                                      checked: settingsForm.notify_on_debtors !== undefined ? !!settingsForm.notify_on_debtors : (settingsForm.smsDebtThresholdEnabled !== undefined ? !!settingsForm.smsDebtThresholdEnabled : true),
+                                      toggle: () => {
+                                        const nextVal = !(settingsForm.notify_on_debtors !== undefined ? settingsForm.notify_on_debtors : true);
+                                        setSettingsForm({
+                                          ...settingsForm,
+                                          notify_on_debtors: nextVal,
+                                          smsDebtThresholdEnabled: nextVal,
+                                        });
+                                      }
+                                    },
+                                    {
+                                      id: 'notify_on_installment',
+                                      title: 'قسط',
+                                      category: 'loans',
+                                      categoryLabel: 'اقساط و وام',
+                                      desc: 'ارسال پیامک تایید پرداخت هر قسط، پیامک یادآوری موعد سررسید اقساط و پیامک اخطار معوقات وام.',
+                                      icon: lucide.Coins || Calculator,
+                                      colorClass: 'from-amber-600 to-yellow-600',
+                                      badgeClass: 'bg-amber-50 text-amber-800 border-amber-200',
+                                      checked: settingsForm.notify_on_installment !== undefined ? !!settingsForm.notify_on_installment : true,
+                                      toggle: () => {
+                                        setSettingsForm({
+                                          ...settingsForm,
+                                          notify_on_installment: !(settingsForm.notify_on_installment !== undefined ? settingsForm.notify_on_installment : true),
+                                        });
+                                      }
+                                    },
+                                  ];
+
+                                  const filteredItems = allNotificationItems.filter(item => {
+                                    const matchesCategory = smsCategoryFilter === 'all' || item.category === smsCategoryFilter;
+                                    const matchesSearch = !smsSearchQuery.trim() || 
+                                      item.title.includes(smsSearchQuery.trim()) || 
+                                      item.desc.includes(smsSearchQuery.trim()) ||
+                                      item.categoryLabel.includes(smsSearchQuery.trim());
+                                    return matchesCategory && matchesSearch;
+                                  });
+
+                                  const activeCount = allNotificationItems.filter(it => it.checked).length;
+
+                                  return (
+                                    <div className="space-y-4">
+                                      {/* Filter Bar */}
+                                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-gray-50 p-3 rounded-xl border border-gray-200">
+                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                          {[
+                                            { id: 'all', label: `همه (${allNotificationItems.length})` },
+                                            { id: 'invoices', label: 'فاکتورها (۴)' },
+                                            { id: 'treasury', label: 'مالی و خزانه‌داری (۳)' },
+                                            { id: 'warehouse', label: 'انبارداری (۲)' },
+                                            { id: 'checks', label: 'اسناد و چک (۲)' },
+                                            { id: 'loans', label: 'اقساط (۱)' },
+                                          ].map(tab => (
+                                            <button
+                                              key={tab.id}
+                                              type="button"
+                                              onClick={() => setSmsCategoryFilter(tab.id as any)}
+                                              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                                                smsCategoryFilter === tab.id
+                                                  ? 'bg-indigo-600 text-white shadow-sm'
+                                                  : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'
+                                              }`}
+                                            >
+                                              {tab.label}
+                                            </button>
+                                          ))}
+                                        </div>
+
+                                        <div className="flex items-center gap-3">
+                                          <div className="text-xs font-bold text-gray-500">
+                                            {activeCount} بخش از {allNotificationItems.length} فعال
+                                          </div>
+                                          <div className="relative">
+                                            <input
+                                              type="text"
+                                              value={smsSearchQuery}
+                                              onChange={(e) => setSmsSearchQuery(e.target.value)}
+                                              placeholder="جستجوی بخش..."
+                                              className="text-xs px-3 py-1.5 pr-8 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white w-36 sm:w-44"
+                                            />
+                                            <lucide.Search className="w-3.5 h-3.5 text-gray-400 absolute right-2.5 top-1/2 -translate-y-1/2" />
+                                          </div>
+                                        </div>
+                                      </div>
+
+                                      {/* Grid of 12 Section Cards */}
+                                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                                        {filteredItems.map(item => {
+                                          const IconComp = item.icon;
+                                          return (
+                                            <div
+                                              key={item.id}
+                                              id={`sms-card-${item.id}`}
+                                              onClick={item.toggle}
+                                              className={`relative p-4 rounded-xl border transition-all duration-200 cursor-pointer select-none flex flex-col justify-between ${
+                                                item.checked
+                                                  ? 'bg-white border-indigo-200 shadow-sm ring-1 ring-indigo-50 hover:shadow-md'
+                                                  : 'bg-gray-50/70 border-gray-200 opacity-80 hover:opacity-100 hover:bg-white'
+                                              }`}
+                                            >
+                                              <div>
+                                                {/* Top Row: Icon + Category + Switch */}
+                                                <div className="flex items-center justify-between gap-2 mb-3">
+                                                  <div className="flex items-center gap-2.5">
+                                                    <div className={`w-9 h-9 rounded-lg bg-gradient-to-tr ${item.colorClass} text-white flex items-center justify-center shadow-sm shrink-0`}>
+                                                      <IconComp className="w-4.5 h-4.5" />
+                                                    </div>
+                                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${item.badgeClass}`}>
+                                                      {item.categoryLabel}
+                                                    </span>
+                                                  </div>
+
+                                                  {/* iOS-style Toggle */}
+                                                  <div
+                                                    className={`w-11 h-6 rounded-full p-0.5 transition-colors duration-200 ease-in-out shrink-0 ${
+                                                      item.checked ? 'bg-indigo-600' : 'bg-gray-300'
+                                                    }`}
+                                                  >
+                                                    <div
+                                                      className={`bg-white w-5 h-5 rounded-full shadow-md transform transition-transform duration-200 ease-in-out ${
+                                                        item.checked ? '-translate-x-5' : 'translate-x-0'
+                                                      }`}
+                                                    />
+                                                  </div>
+                                                </div>
+
+                                                {/* Title */}
+                                                <h4 className="text-sm font-extrabold text-gray-900 mb-1.5 flex items-center gap-1.5">
+                                                  {item.title}
+                                                </h4>
+
+                                                {/* Description */}
+                                                <p className="text-xs text-gray-500 leading-relaxed min-h-[36px]">
+                                                  {item.desc}
+                                                </p>
+                                              </div>
+
+                                              {/* Bottom Status Indicator */}
+                                              <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between">
+                                                <span className="text-[11px] text-gray-400">
+                                                  وضعیت ارسال:
+                                                </span>
+                                                <span className={`inline-flex items-center gap-1 text-xs font-bold ${
+                                                  item.checked ? 'text-emerald-600' : 'text-gray-400'
+                                                }`}>
+                                                  <span className={`w-2 h-2 rounded-full ${item.checked ? 'bg-emerald-500 animate-pulse' : 'bg-gray-300'}`} />
+                                                  {item.checked ? 'فعال (ارسال پیامک)' : 'غیرفعال'}
+                                                </span>
+                                              </div>
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+
+                                      {/* Extra balance report option */}
+                                      <div className="p-3 bg-white border border-gray-200 rounded-xl flex items-center justify-between shadow-sm">
+                                        <div className="flex items-center gap-3">
+                                          <div className="w-8 h-8 rounded-lg bg-gray-100 text-gray-600 flex items-center justify-center">
+                                            <lucide.Wallet className="w-4 h-4" />
+                                          </div>
+                                          <div>
+                                            <span className="text-xs font-bold text-gray-800">
+                                              ارسال مانده حساب در متن پیامک‌ها
+                                            </span>
+                                            <p className="text-[11px] text-gray-500">
+                                              درج خودکار آخرین مانده حساب شخص در انتهای پیامک‌های صادره (بدهکار / بستانکار)
+                                            </p>
+                                          </div>
+                                        </div>
+                                        <label className="flex items-center gap-2 cursor-pointer">
+                                          <input
+                                            type="checkbox"
+                                            checked={settingsForm.notify_on_balance || false}
+                                            onChange={(e) =>
+                                              setSettingsForm({
+                                                ...settingsForm,
+                                                notify_on_balance: e.target.checked,
+                                              })
+                                            }
+                                            className="w-4 h-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500"
+                                          />
+                                          <span className="text-xs font-bold text-gray-700">فعال</span>
+                                        </label>
+                                      </div>
+                                    </div>
+                                  );
+                                })()}
+                              </div>
+
+                              {/* Advanced SMS Templates Editor with Dynamic Variables Dropdown */}
+                              <SmsTemplateEditor
+                                settingsForm={settingsForm}
+                                setSettingsForm={setSettingsForm}
+                                storeName={settingsForm.store_name}
+                                currency={settingsForm.currency}
+                              />
+
+                              <div className="border-t border-gray-100 pt-8">
+                                <div className="flex items-center justify-between mb-6">
+                                  <h3 className="text-lg font-black text-gray-800 flex items-center gap-2">
+                                    <AlertTriangle className="w-5 h-5 text-rose-500" />
+                                    هشدار سقف اعتباری مشتریان
+                                  </h3>
+                                  <label className="flex items-center gap-2 cursor-pointer">
+                                    <span className="font-bold text-sm text-gray-600">
+                                      فعال‌سازی سیستم هشدار
+                                    </span>
+                                    <div
+                                      className={`w-12 h-6 rounded-full p-1 transition-colors ${settingsForm.smsDebtThresholdEnabled ? "bg-indigo-600" : "bg-gray-300"}`}
+                                    >
+                                      <div
+                                        className={`bg-white w-4 h-4 rounded-full shadow-sm transition-transform transform ${settingsForm.smsDebtThresholdEnabled ? "-translate-x-6" : "translate-x-0"}`}
+                                      ></div>
+                                    </div>
+                                    <input
+                                      type="checkbox"
+                                      className="hidden"
+                                      checked={
+                                        settingsForm.smsDebtThresholdEnabled ||
+                                        false
+                                      }
+                                      onChange={(e) =>
+                                        setSettingsForm({
+                                          ...settingsForm,
+                                          smsDebtThresholdEnabled:
+                                            e.target.checked,
+                                        })
+                                      }
+                                    />
+                                  </label>
+                                </div>
+
+                                {settingsForm.smsDebtThresholdEnabled && (
+                                  <div className="bg-rose-50/50 p-6 rounded-xl border border-rose-100 grid grid-cols-1 gap-6">
+                                    <div className="w-full text-right">
+                                      <label className="block text-sm font-bold text-gray-700 mb-2">
+                                        سقف مجاز بدهی عمومی (تومان)
+                                      </label>
+                                      <CurrencyInput
+                                        value={
+                                          settingsForm.smsDebtThresholdAmount ||
+                                          ""
+                                        }
+                                        onChange={(e: any) =>
+                                          setSettingsForm({
+                                            ...settingsForm,
+                                            smsDebtThresholdAmount:
+                                              Number(e.target.value) || 0,
+                                          })
+                                        }
+                                        placeholder="مثال: 50,000,000"
+                                        className="w-full md:w-1/2 px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-indigo-500 shadow-sm"
+                                        currencyLabel="تومان"
+                                      />
+                                    </div>
+                                    <div className="w-full text-right">
+                                      <label className="block text-sm font-bold text-gray-700 mb-2">
+                                        متن پیامک هشدار
+                                      </label>
+                                      <textarea
+                                        value={
+                                          settingsForm.smsDebtThresholdMessage ||
+                                          "مشتری گرامی، مانده بدهی شما از سقف مجاز عبور کرده است. لطفا نسبت به تسویه حساب اقدام نمایید."
+                                        }
+                                        onChange={(e) =>
+                                          setSettingsForm({
+                                            ...settingsForm,
+                                            smsDebtThresholdMessage:
+                                              e.target.value,
+                                          })
+                                        }
+                                        className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-indigo-500 shadow-sm transition-all h-24"
+                                      />
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* NEW SECTION: In-App Debtor Notification */}
+                              <div className="border-t border-gray-100 pt-8 mt-8">
+                                <div className="flex items-center justify-between mb-6">
+                                  <h3 className="text-lg font-black text-gray-800 flex items-center gap-2">
+                                    <AlertCircle className="w-5 h-5 text-amber-500" />
+                                    هشدار درون برنامه‌ای بدهکاران
+                                  </h3>
+                                  <label className="flex items-center gap-2 cursor-pointer">
+                                    <span className="font-bold text-sm text-gray-600">
+                                      فعال‌سازی سیستم هشدار
+                                    </span>
+                                    <div
+                                      className={`w-12 h-6 rounded-full p-1 transition-colors ${settingsForm.debtorNotificationEnabled ? "bg-indigo-600" : "bg-gray-300"}`}
+                                    >
+                                      <div
+                                        className={`bg-white w-4 h-4 rounded-full shadow-sm transition-transform transform ${settingsForm.debtorNotificationEnabled ? "-translate-x-6" : "translate-x-0"}`}
+                                      ></div>
+                                    </div>
+                                    <input
+                                      type="checkbox"
+                                      className="hidden"
+                                      checked={settingsForm.debtorNotificationEnabled || false}
+                                      onChange={(e) =>
+                                        setSettingsForm({
+                                          ...settingsForm,
+                                          debtorNotificationEnabled: e.target.checked,
+                                        })
+                                      }
+                                    />
+                                  </label>
+                                </div>
+                                {settingsForm.debtorNotificationEnabled && (
+                                  <div className="bg-amber-50/50 p-6 rounded-xl border border-amber-100 grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div className="w-full text-right">
+                                      <label className="block text-sm font-bold text-gray-700 mb-2">
+                                        سقف مجاز بدهی (تومان)
+                                      </label>
+                                      <CurrencyInput
+                                        value={settingsForm.debtorNotificationThreshold || ""}
+                                        onChange={(e: any) =>
+                                          setSettingsForm({
+                                            ...settingsForm,
+                                            debtorNotificationThreshold: Number(e.target.value) || 0,
+                                          })
+                                        }
+                                        placeholder="مثال: 50,000,000"
+                                        className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-indigo-500 shadow-sm"
+                                        currencyLabel="تومان"
+                                      />
+                                    </div>
+
+                                    <div className="w-full text-right">
+                                      <label className="block text-sm font-bold text-gray-700 mb-2">
+                                        حداقل روزهای گذشته از سررسید (معوقه)
+                                      </label>
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        value={settingsForm.debtorNotificationMinOverdueDays ?? 0}
+                                        onChange={(e) =>
+                                          setSettingsForm({
+                                            ...settingsForm,
+                                            debtorNotificationMinOverdueDays: Number(e.target.value) || 0,
+                                          })
+                                        }
+                                        placeholder="0 (تمام بدهکاران)"
+                                        className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-indigo-500 shadow-sm text-left font-bold"
+                                        dir="ltr"
+                                      />
+                                    </div>
+
+                                    <div className="w-full text-right md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6">
+                                      <div>
+                                        <label className="block text-sm font-bold text-gray-700 mb-2">
+                                          زمان تکرار هشدار (در صورت عدم بررسی)
+                                        </label>
+                                        <div className="flex gap-2">
+                                          <input
+                                            type="number"
+                                            min="1"
+                                            value={settingsForm.debtorNotificationRepeatValue || 1}
+                                            onChange={(e) =>
+                                              setSettingsForm({
+                                                ...settingsForm,
+                                                debtorNotificationRepeatValue: Number(e.target.value) || 1,
+                                              })
+                                            }
+                                            className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-indigo-500 shadow-sm text-left"
+                                            dir="ltr"
+                                          />
+                                          <select
+                                            value={settingsForm.debtorNotificationRepeatUnit || 60}
+                                            onChange={(e) =>
+                                              setSettingsForm({
+                                                ...settingsForm,
+                                                debtorNotificationRepeatUnit: Number(e.target.value),
+                                              })
+                                            }
+                                            className="w-32 px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-indigo-500 shadow-sm"
+                                          >
+                                            <option value={1}>دقیقه</option>
+                                            <option value={60}>ساعت</option>
+                                            <option value={1440}>روز</option>
+                                            <option value={43200}>ماه</option>
+                                          </select>
+                                        </div>
+                                      </div>
+
+                                      <div>
+                                        <label className="block text-sm font-bold text-gray-700 mb-2">
+                                          زمان نمایش مجدد (پس از بررسی)
+                                        </label>
+                                        <div className="flex gap-2">
+                                          <input
+                                            type="number"
+                                            min="1"
+                                            value={settingsForm.debtorNotificationRedisplayValue || 1}
+                                            onChange={(e) =>
+                                              setSettingsForm({
+                                                ...settingsForm,
+                                                debtorNotificationRedisplayValue: Number(e.target.value) || 1,
+                                              })
+                                            }
+                                            className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-indigo-500 shadow-sm text-left"
+                                            dir="ltr"
+                                          />
+                                          <select
+                                            value={settingsForm.debtorNotificationRedisplayUnit || 1440}
+                                            onChange={(e) =>
+                                              setSettingsForm({
+                                                ...settingsForm,
+                                                debtorNotificationRedisplayUnit: Number(e.target.value),
+                                              })
+                                            }
+                                            className="w-32 px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-indigo-500 shadow-sm"
+                                          >
+                                            <option value={1}>دقیقه</option>
+                                            <option value={60}>ساعت</option>
+                                            <option value={1440}>روز</option>
+                                            <option value={43200}>ماه</option>
+                                          </select>
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    <div className="w-full text-right">
+                                      <label className="block text-sm font-bold text-gray-700 mb-2">
+                                        مکان نمایش هشدار
+                                      </label>
+                                      <select
+                                        value={settingsForm.debtorNotificationLocation || "top-right"}
+                                        onChange={(e) =>
+                                          setSettingsForm({
+                                            ...settingsForm,
+                                            debtorNotificationLocation: e.target.value,
+                                          })
+                                        }
+                                        className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-indigo-500 shadow-sm"
+                                      >
+                                        <option value="top-right">بالا راست</option>
+                                        <option value="top-left">بالا چپ</option>
+                                        <option value="bottom-right">پایین راست</option>
+                                        <option value="bottom-left">پایین چپ</option>
+                                        <option value="top-center">بالا وسط</option>
+                                        <option value="bottom-center">پایین وسط</option>
+                                        <option value="modal">پاپ‌آپ (Modal)</option>
+                                      </select>
+                                    </div>
+                                    <div className="w-full text-right">
+                                      <label className="block text-sm font-bold text-gray-700 mb-2">
+                                        رنگ پس‌زمینه هشدار
+                                      </label>
+                                      <div className="flex items-center gap-3">
+                                          <input
+                                            type="color"
+                                            value={settingsForm.debtorNotificationColor || "#ef4444"}
+                                            onChange={(e) =>
+                                              setSettingsForm({
+                                                ...settingsForm,
+                                                debtorNotificationColor: e.target.value,
+                                              })
+                                            }
+                                            className="w-12 h-12 rounded-xl border border-gray-300 focus:ring-2 focus:ring-indigo-500 shadow-sm cursor-pointer p-1 bg-white"
+                                          />
+                                          <span className="text-gray-500 font-mono text-sm uppercase" dir="ltr">
+                                              {settingsForm.debtorNotificationColor || "#ef4444"}
+                                          </span>
+                                      </div>
+                                    </div>
+                                    <div className="w-full text-right">
+                                      <label className="block text-sm font-bold text-gray-700 mb-2">
+                                        اولویت نمایش بدهکاران
+                                      </label>
+                                      <select
+                                        value={settingsForm.debtorNotificationOrder || "largest"}
+                                        onChange={(e) =>
+                                          setSettingsForm({
+                                            ...settingsForm,
+                                            debtorNotificationOrder: e.target.value as 'random' | 'largest' | 'smallest',
+                                          })
+                                        }
+                                        className="w-full rounded-xl border border-gray-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 shadow-sm px-4 py-3 bg-gray-50/50"
+                                      >
+                                        <option value="largest">بیشترین بدهی (نزولی)</option>
+                                        <option value="smallest">کمترین بدهی (صعودی)</option>
+                                        <option value="random">تصادفی</option>
+                                      </select>
+                                    </div>
+                                    <div className="w-full text-right bg-white/70 dark:bg-slate-800/60 p-4 rounded-xl border border-gray-200 dark:border-slate-700">
+                                      <div className="flex items-center justify-between mb-2">
+                                        <span className="font-bold text-sm text-gray-700 dark:text-slate-200">
+                                          بسته شدن خودکار پاپ‌آپ
+                                        </span>
+                                        <input
+                                          type="checkbox"
+                                          checked={settingsForm.debtorNotificationAutoClose !== false}
+                                          onChange={(e) =>
+                                            setSettingsForm({
+                                              ...settingsForm,
+                                              debtorNotificationAutoClose: e.target.checked,
+                                            })
+                                          }
+                                          className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500"
+                                        />
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        <input
+                                          type="number"
+                                          min="3"
+                                          max="60"
+                                          disabled={settingsForm.debtorNotificationAutoClose === false}
+                                          value={settingsForm.debtorNotificationAutoCloseDuration ?? 12}
+                                          onChange={(e) =>
+                                            setSettingsForm({
+                                              ...settingsForm,
+                                              debtorNotificationAutoCloseDuration: Number(e.target.value) || 12,
+                                            })
+                                          }
+                                          className="w-20 px-3 py-1.5 rounded-xl border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-center font-bold text-sm disabled:opacity-50"
+                                          dir="ltr"
+                                        />
+                                        <span className="text-xs font-bold text-gray-600 dark:text-slate-400">
+                                          ثانیه (با هاور ماوس متوقف می‌شود)
+                                        </span>
+                                      </div>
+                                    </div>
+
+                                    <div className="w-full text-right bg-white/70 dark:bg-slate-800/60 p-4 rounded-xl border border-gray-200 dark:border-slate-700 flex items-center justify-between">
+                                      <div>
+                                        <span className="font-bold text-sm text-gray-700 dark:text-slate-200 block">
+                                          صدای هشدار صوتی
+                                        </span>
+                                        <span className="text-[11px] text-gray-500 dark:text-slate-400">
+                                          پخش آلارم هنگام باز شدن پاپ‌آپ
+                                        </span>
+                                      </div>
+                                      <input
+                                        type="checkbox"
+                                        checked={settingsForm.debtorNotificationSound !== false}
+                                        onChange={(e) =>
+                                          setSettingsForm({
+                                            ...settingsForm,
+                                            debtorNotificationSound: e.target.checked,
+                                          })
+                                        }
+                                        className="w-5 h-5 rounded text-indigo-600 focus:ring-indigo-500"
+                                      />
+                                    </div>
+
+                                    <div className="w-full text-right md:col-span-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          localStorage.removeItem("lastDebtorNotificationTime");
+                                          localStorage.removeItem("lastDebtorNotificationClickTime");
+                                          if (props.showNotification) {
+                                            props.showNotification("تایمر هشدار بازنشانی شد؛ پاپ‌آپ در صفحه نمایش داده خواهد شد.", "info");
+                                          }
+                                        }}
+                                        className="w-full px-4 py-3 rounded-xl bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/80 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 text-xs font-black transition flex items-center justify-center gap-2 cursor-pointer shadow-3xs"
+                                      >
+                                        <span>تست فوری و نمایش پاپ‌آپ بدهکاران</span>
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                        {settingsTab === "mobile_permissions" && (
+                          <MobilePermissionsManager
+                            users={props.users || []}
+                            showNotification={props.showNotification}
+                          />
+                        )}
+
+                        {settingsTab === "api_management" && (
+                          <ApiManagementCenter
+                            users={props.users || []}
+                            showNotification={props.showNotification}
+                          />
+                        )}
+
+                        {settingsTab === "quick_codes" && (
+                          <QuickCodesSettingsTab
+                            showNotification={props.showNotification}
+                            confirmAction={props.confirmAction}
+                          />
+                        )}
+
+                        {(settingsTab === "financial_years" || settingsTab === "financial_years_hub") && (
+                          <div className="flex flex-col gap-6">
+                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-gray-100">
+                              <div>
+                                <h3 className="text-lg font-black text-gray-800 flex items-center gap-2">
+                                  <lucide.Calendar className="w-5 h-5 text-indigo-600" />
+                                  مدیریت سال‌های مالی و دوره‌های حسابداری
+                                </h3>
+                                <p className="text-xs text-gray-500 mt-1">
+                                  کنترل دوره‌های مالی فعال، ثبت اسناد افتتاحیه و اختتامیه، و استانداردهای تاریخ و گاه‌شمار
+                                </p>
+                              </div>
+                              {props.setActiveTab && (
+                                <button
+                                  type="button"
+                                  onClick={() => props.setActiveTab("financial_years")}
+                                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black transition-all shadow-xs flex items-center gap-1.5 cursor-pointer self-start"
+                                >
+                                  <lucide.ExternalLink className="w-4 h-4" />
+                                  <span>ورود به مدیریت کامل سال‌های مالی</span>
+                                </button>
+                              )}
+                            </div>
+
+                            {/* Active Fiscal Year Card */}
+                            <div className="bg-gradient-to-br from-indigo-50/70 to-blue-50/40 p-5 rounded-2xl border border-indigo-100">
+                              <div className="flex items-start justify-between flex-wrap gap-3">
+                                <div>
+                                  <span className="text-[10px] font-black uppercase tracking-wider text-indigo-600 bg-indigo-100/80 px-2 py-0.5 rounded-md">
+                                    دوره مالی فعال سیستم
+                                  </span>
+                                  <h4 className="text-base font-extrabold text-slate-800 mt-2">
+                                    {props.activeFinancialYear?.name || "سال مالی جاری"}
+                                  </h4>
+                                  <p className="text-xs text-slate-600 mt-1">
+                                    {props.activeFinancialYear ? (
+                                      <>
+                                        شروع: <span className="font-mono font-bold">{props.activeFinancialYear.startDate}</span> | پایان: <span className="font-mono font-bold">{props.activeFinancialYear.endDate}</span>
+                                      </>
+                                    ) : (
+                                      "سال مالی تعریف‌شده در سیستم در دسترس است."
+                                    )}
+                                  </p>
+                                </div>
+                                <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 text-xs font-black">
+                                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                                  <span>فعال و آماده ثبت سند</span>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Quick Action Navigation Grid */}
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                              <div 
+                                onClick={() => props.setActiveTab && props.setActiveTab("financial_years")}
+                                className="p-4 bg-white rounded-xl border border-gray-200 hover:border-indigo-400 hover:shadow-xs transition-all cursor-pointer flex flex-col justify-between group"
+                              >
+                                <div>
+                                  <div className="w-9 h-9 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center mb-3 group-hover:scale-105 transition-transform">
+                                    <lucide.Calendar className="w-5 h-5" />
+                                  </div>
+                                  <h5 className="text-xs font-black text-slate-800">تعریف و بستن سال مالی</h5>
+                                  <p className="text-[11px] text-gray-500 mt-1">
+                                    تعریف دوره مالی جدید، بررسی وضعیت دوره‌ها و صدور سند اختتامیه
+                                  </p>
+                                </div>
+                                <div className="mt-3 text-[11px] font-extrabold text-indigo-600 flex items-center gap-1">
+                                  <span>ورود به سال‌های مالی</span>
+                                  <lucide.ChevronLeft className="w-3.5 h-3.5" />
+                                </div>
+                              </div>
+
+                              <div 
+                                onClick={() => props.setActiveTab && props.setActiveTab("chart_of_accounts")}
+                                className="p-4 bg-white rounded-xl border border-gray-200 hover:border-teal-400 hover:shadow-xs transition-all cursor-pointer flex flex-col justify-between group"
+                              >
+                                <div>
+                                  <div className="w-9 h-9 rounded-lg bg-teal-50 text-teal-600 flex items-center justify-center mb-3 group-hover:scale-105 transition-transform">
+                                    <lucide.FolderTree className="w-5 h-5" />
+                                  </div>
+                                  <h5 className="text-xs font-black text-slate-800">کدینگ حساب‌ها (کل و معین)</h5>
+                                  <p className="text-[11px] text-gray-500 mt-1">
+                                    ساختار درختی حساب‌های دوبل، تطبیق حساب‌های تفصیلی و سرفصل‌ها
+                                  </p>
+                                </div>
+                                <div className="mt-3 text-[11px] font-extrabold text-teal-600 flex items-center gap-1">
+                                  <span>شجره حساب‌ها</span>
+                                  <lucide.ChevronLeft className="w-3.5 h-3.5" />
+                                </div>
+                              </div>
+
+                              <div 
+                                onClick={() => props.setActiveTab && props.setActiveTab("opening_balances")}
+                                className="p-4 bg-white rounded-xl border border-gray-200 hover:border-amber-400 hover:shadow-xs transition-all cursor-pointer flex flex-col justify-between group"
+                              >
+                                <div>
+                                  <div className="w-9 h-9 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center mb-3 group-hover:scale-105 transition-transform">
+                                    <lucide.Coins className="w-5 h-5" />
+                                  </div>
+                                  <h5 className="text-xs font-black text-slate-800">مانده‌های اول دوره اشخاص</h5>
+                                  <p className="text-[11px] text-gray-500 mt-1">
+                                    تنظیم و تثبیت مانده حساب آغازین مشتریان، تامین‌کنندگان و پرسنل
+                                  </p>
+                                </div>
+                                <div className="mt-3 text-[11px] font-extrabold text-amber-600 flex items-center gap-1">
+                                  <span>مانده اول دوره</span>
+                                  <lucide.ChevronLeft className="w-3.5 h-3.5" />
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {(settingsTab === "businesses" || settingsTab === "businesses_hub") && (
+                          <div className="flex flex-col gap-6">
+                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-gray-100">
+                              <div>
+                                <h3 className="text-lg font-black text-gray-800 flex items-center gap-2">
+                                  <Building className="w-5 h-5 text-indigo-600" />
+                                  مدیریت کسب‌وکارها و پایگاه‌های داده (Multi-Business)
+                                </h3>
+                                <p className="text-xs text-gray-500 mt-1">
+                                  پیکربندی چندین کسب‌وکار، شرکت یا فروشگاه با پایگاه‌های داده مستقل در PostgreSQL
+                                </p>
+                              </div>
+                              {props.setActiveTab && (
+                                <button
+                                  type="button"
+                                  onClick={() => props.setActiveTab("businesses")}
+                                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black transition-all shadow-xs flex items-center gap-1.5 cursor-pointer self-start"
+                                >
+                                  <lucide.ExternalLink className="w-4 h-4" />
+                                  <span>ورود به مدیریت کسب‌وکارها</span>
+                                </button>
+                              )}
+                            </div>
+
+                            <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200">
+                              <div className="flex items-center justify-between flex-wrap gap-3">
+                                <div>
+                                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 bg-slate-200 px-2 py-0.5 rounded-md">
+                                    کسب‌وکار فعال کنونی
+                                  </span>
+                                  <h4 className="text-base font-extrabold text-slate-900 mt-2">
+                                    {storeSettings?.storeName || "کسب‌وکار اصلی"}
+                                  </h4>
+                                  <p className="text-xs text-slate-500 mt-1">
+                                    شناسه دیتابیس فعال: <span className="font-mono font-bold text-indigo-600">{props.activeStoreId || 'default'}</span>
+                                  </p>
+                                </div>
+                                <div className="px-3 py-1 bg-indigo-50 border border-indigo-200 rounded-xl text-xs font-black text-indigo-700">
+                                  محیط مجزا و ایزوله
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="p-5 bg-white rounded-2xl border border-gray-200">
+                              <h4 className="text-xs font-black text-gray-700 mb-2">امکانات مدیریت چندکسب‌وکاره:</h4>
+                              <ul className="text-xs text-gray-600 space-y-2 list-disc list-inside leading-relaxed">
+                                <li>تعریف کسب‌وکار و پایگاه داده نامحدود بدون نیاز به نصب دوباره برنامه</li>
+                                <li>جابه‌جایی فوق‌سریع میان پایگاه‌های داده از طریق منوی سوییچر بالای صفحه</li>
+                                <li>پشتیبان‌گیری و بازیابی مجزا برای هر کسب‌وکار به صورت کاملاً مستقل</li>
+                              </ul>
+                              <div className="mt-4 pt-4 border-t border-gray-100 flex gap-3">
+                                <button
+                                  type="button"
+                                  onClick={() => props.setActiveTab && props.setActiveTab("businesses")}
+                                  className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-black transition-colors cursor-pointer"
+                                >
+                                  ایجاد کسب‌وکار جدید یا تغییر دیتابیس
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {(settingsTab === "database" || settingsTab === "database_hub") && (
+                          <div className="flex flex-col gap-6">
+                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-gray-100">
+                              <div>
+                                <h3 className="text-lg font-black text-gray-800 flex items-center gap-2">
+                                  <lucide.Database className="w-5 h-5 text-indigo-600" />
+                                  مدیریت، پشتیبان‌گیری و بازیابی پایگاه داده
+                                </h3>
+                                <p className="text-xs text-gray-500 mt-1">
+                                  تهیه فایل نسخه پشتیبان، بارگذاری و بازگردانی دیتابیس و زمان‌بندی خودکار پشتیبان
+                                </p>
+                              </div>
+                              {props.setActiveTab && (
+                                <button
+                                  type="button"
+                                  onClick={() => props.setActiveTab("database")}
+                                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black transition-all shadow-xs flex items-center gap-1.5 cursor-pointer self-start"
+                                >
+                                  <lucide.ExternalLink className="w-4 h-4" />
+                                  <span>ورود به مرکز پشتیبان‌گیری</span>
+                                </button>
+                              )}
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div className="p-5 bg-gradient-to-br from-emerald-50/50 to-teal-50/30 rounded-2xl border border-emerald-100 flex flex-col justify-between">
+                                <div>
+                                  <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center mb-3">
+                                    <lucide.Download className="w-5 h-5" />
+                                  </div>
+                                  <h4 className="text-sm font-black text-slate-800">پشتیبان‌گیری کامل (Full Backup)</h4>
+                                  <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                                    تولید نسخه پشتیبان امن و رمزنگاری‌شده شامل فاکتورها، انبار، چک‌ها، اسناد دوبل و مشتریان.
+                                  </p>
+                                </div>
+                                <div className="mt-4 pt-3 border-t border-emerald-100/60">
+                                  <button
+                                    type="button"
+                                    onClick={() => props.setActiveTab && props.setActiveTab("database")}
+                                    className="w-full py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black transition-colors cursor-pointer text-center"
+                                  >
+                                    دانلود پشتیبان یا ورود به پنل دیتابیس
+                                  </button>
+                                </div>
+                              </div>
+
+                              <div className="p-5 bg-gradient-to-br from-indigo-50/50 to-blue-50/30 rounded-2xl border border-indigo-100 flex flex-col justify-between">
+                                <div>
+                                  <div className="w-10 h-10 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center mb-3">
+                                    <lucide.RefreshCw className="w-5 h-5" />
+                                  </div>
+                                  <h4 className="text-sm font-black text-slate-800">پشتیبان‌گیری زمان‌بندی‌شده خودکار</h4>
+                                  <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                                    تنظیم بازه‌های زمانی روزانه یا هفتگی برای پشتیبان‌گیری خودکار بدون نیاز به اقدام کاربر.
+                                  </p>
+                                </div>
+                                <div className="mt-4 pt-3 border-t border-indigo-100/60">
+                                  <button
+                                    type="button"
+                                    onClick={() => props.setActiveTab && props.setActiveTab("backup_config")}
+                                    className="w-full py-2 px-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black transition-colors cursor-pointer text-center"
+                                  >
+                                    تنظیمات زمان‌بندی پشتیبان
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {(settingsTab === "reconciliation" || settingsTab === "reconciliation_hub" || settingsTab === "data_reconciliation") && (
+                          <div className="flex flex-col gap-6">
+                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-gray-100">
+                              <div>
+                                <h3 className="text-lg font-black text-gray-800 flex items-center gap-2">
+                                  <lucide.RefreshCw className="w-5 h-5 text-indigo-600" />
+                                  تطبیق و بازسازی هوشمند داده‌ها (Data Reconciliation)
+                                </h3>
+                                <p className="text-xs text-gray-500 mt-1">
+                                  مغایرت‌گیری تراز انبار، همگام‌سازی کاردکس کالاها و اصلاح مانده حساب‌ها
+                                </p>
+                              </div>
+                              {props.setActiveTab && (
+                                <button
+                                  type="button"
+                                  onClick={() => props.setActiveTab("data_reconciliation")}
+                                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black transition-all shadow-xs flex items-center gap-1.5 cursor-pointer self-start"
+                                >
+                                  <lucide.ExternalLink className="w-4 h-4" />
+                                  <span>ورود به مرکز تطبیق داده‌ها</span>
+                                </button>
+                              )}
+                            </div>
+
+                            <div className="p-5 bg-white rounded-2xl border border-gray-200 space-y-4">
+                              <h4 className="text-xs font-black text-slate-800">عملیات بازسازی و تطبیق شامل:</h4>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                                <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                                  <span className="font-extrabold text-slate-900 block mb-1">تطبیق کاردکس و موجودی انبار</span>
+                                  <span className="text-slate-500 text-[11px]">محاسبه مجدد مانده ریالی و تعدادی بر اساس کلیه اسناد تاییدشده رسید و حواله</span>
+                                </div>
+                                <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                                  <span className="font-extrabold text-slate-900 block mb-1">تطبیق دفاتر معین اشخاص</span>
+                                  <span className="text-slate-500 text-[11px]">همگام‌سازی مانده بدهکاری/بستانکاری اشخاص با فاکتورها، دریافت‌ها و پرداخت‌ها</span>
+                                </div>
+                              </div>
+                              <div className="pt-2">
+                                <button
+                                  type="button"
+                                  onClick={() => props.setActiveTab && props.setActiveTab("data_reconciliation")}
+                                  className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black transition-colors cursor-pointer"
+                                >
+                                  شروع بررسی و تطبیق هوشمند
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {(settingsTab === "audit_logs" || settingsTab === "audit_logs_hub" || settingsTab === "system_logs" || settingsTab === "database_logs") && (
+                          <div className="flex flex-col gap-6">
+                            <div className="flex items-center justify-between pb-4 border-b border-gray-100">
+                              <div>
+                                <h3 className="text-lg font-black text-gray-800 flex items-center gap-2">
+                                  <Activity className="w-5 h-5 text-indigo-600" />
+                                  مرکز ممیزی، لاگ وقایع و امنیت سیستم
+                                </h3>
+                                <p className="text-xs text-gray-500 mt-1">
+                                  ردیابی تغییرات اسناد توسط کاربران، لاگ وقایع دیتابیس و تاریخچه دستکاری داده‌ها
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div className="p-5 bg-white rounded-2xl border border-gray-200 flex flex-col justify-between">
+                                <div>
+                                  <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center mb-3">
+                                    <Activity className="w-5 h-5" />
+                                  </div>
+                                  <h4 className="text-sm font-black text-slate-800">لاگ وقایع و فعالیت‌های کاربران</h4>
+                                  <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                                    ثبت ورود و خروج، صدور و ویرایش فاکتورها، تغییر مشخصات کالا و اشخاص همراه با جزئیات مرورگر و IP.
+                                  </p>
+                                </div>
+                                <div className="mt-4 pt-3 border-t border-gray-100">
+                                  <button
+                                    type="button"
+                                    onClick={() => props.setActiveTab && props.setActiveTab("system_logs")}
+                                    className="w-full py-2 px-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-black transition-colors cursor-pointer text-center"
+                                  >
+                                    مشاهده لاگ کاربران
+                                  </button>
+                                </div>
+                              </div>
+
+                              <div className="p-5 bg-white rounded-2xl border border-gray-200 flex flex-col justify-between">
+                                <div>
+                                  <div className="w-10 h-10 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center mb-3">
+                                    <lucide.Database className="w-5 h-5" />
+                                  </div>
+                                  <h4 className="text-sm font-black text-slate-800">لاگ وقایع پایگاه داده و سیستم</h4>
+                                  <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                                    ثبت تراکنش‌های پایگاه داده، خطاهای سیستمی سرور و وضعیت پایداری جداول PostgreSQL.
+                                  </p>
+                                </div>
+                                <div className="mt-4 pt-3 border-t border-gray-100">
+                                  <button
+                                    type="button"
+                                    onClick={() => props.setActiveTab && props.setActiveTab("database_logs")}
+                                    className="w-full py-2 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-black transition-colors cursor-pointer text-center"
+                                  >
+                                    مشاهده لاگ دیتابیس
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {(settingsTab === "diagnostics" || settingsTab === "diagnostics_hub" || settingsTab === "system_diagnostics") && (
+                          <div className="flex flex-col gap-6">
+                            <div className="flex items-center justify-between pb-4 border-b border-gray-100">
+                              <div>
+                                <h3 className="text-lg font-black text-gray-800 flex items-center gap-2">
+                                  <lucide.Cpu className="w-5 h-5 text-indigo-600" />
+                                  پایش سلامت سیستم، عیب‌یابی و همگام‌سازی
+                                </h3>
+                                <p className="text-xs text-gray-500 mt-1">
+                                  بررسی ارتباط با پایگاه داده PostgreSQL، اسناد مالی فاقد ثبت دوبل و مدیریت همگام‌سازی ابری
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                              <div className="p-4 bg-white rounded-xl border border-gray-200 flex flex-col justify-between">
+                                <div>
+                                  <div className="w-9 h-9 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center mb-2">
+                                    <lucide.Cpu className="w-5 h-5" />
+                                  </div>
+                                  <h4 className="text-xs font-black text-slate-800">پایش سلامت و عیب‌یابی</h4>
+                                  <p className="text-[11px] text-gray-500 mt-1">تست اتصالات دیتابیس و وضعیت اجزای سرور</p>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => props.setActiveTab && props.setActiveTab("system_diagnostics")}
+                                  className="mt-3 py-1.5 px-2 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-xs font-black transition-colors cursor-pointer"
+                                >
+                                  ورود به پایش سلامت
+                                </button>
+                              </div>
+
+                              <div className="p-4 bg-white rounded-xl border border-gray-200 flex flex-col justify-between">
+                                <div>
+                                  <div className="w-9 h-9 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center mb-2">
+                                    <lucide.AlertCircle className="w-5 h-5" />
+                                  </div>
+                                  <h4 className="text-xs font-black text-slate-800">اسناد مالی فاقد سند دوبل</h4>
+                                  <p className="text-[11px] text-gray-500 mt-1">شناسایی و صدور خودکار اسناد حسابداری معوق</p>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => props.setActiveTab && props.setActiveTab("unvouchered_financials")}
+                                  className="mt-3 py-1.5 px-2 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg text-xs font-black transition-colors cursor-pointer"
+                                >
+                                  بررسی اسناد معوق
+                                </button>
+                              </div>
+
+                              <div className="p-4 bg-white rounded-xl border border-gray-200 flex flex-col justify-between">
+                                <div>
+                                  <div className="w-9 h-9 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center mb-2">
+                                    <lucide.RefreshCw className="w-5 h-5" />
+                                  </div>
+                                  <h4 className="text-xs font-black text-slate-800">مدیریت همگام‌سازی ابری</h4>
+                                  <p className="text-[11px] text-gray-500 mt-1">همگام‌سازی داده‌های آفلاین با سرور مرکزی</p>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => props.setActiveTab && props.setActiveTab("sync_manager")}
+                                  className="mt-3 py-1.5 px-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-xs font-black transition-colors cursor-pointer"
+                                >
+                                  مدیریت همگام‌سازی
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                        </div>
+                      </div>
+                    </div>
+                  </motion.div>
+
+  );
+}

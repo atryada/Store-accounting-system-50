@@ -1,0 +1,421 @@
+import { personSchema } from '../schemas/validation';
+import { getStoreSettings } from './settingsService';
+import { ensureLedgerAccount, getIssuedChecks, getReceivedChecks } from './accountingService';
+import { getTransactions } from './invoiceService';
+import { getInvoices } from './invoiceService';
+
+import { 
+  getLocalData, 
+  saveLocalData, 
+  updateLocalData, 
+  appendLocalData, 
+  batchLocalData, 
+  invalidateCache,
+  getAuthHeaders,
+  generateId, 
+  parseToGregorianDate, 
+  generateDocNumber, 
+  updateDocCounter, 
+  getDatabaseLogs, 
+  addDatabaseLog, 
+  getSystemLogs, 
+  addSystemLog,
+  ensureFiscalYearId,
+  getPagedData,
+  PagedResponse
+} from './coreService';
+import { CompanySettings } from '../types';
+import { convertToGregorian } from '../utils/format';
+import { enqueueSyncTask, getSyncQueue } from './syncQueueService';
+
+
+
+export const getPersonGroups = async () => {
+  const groups = await getLocalData<any[]>('person_groups', []);
+  const queue = getSyncQueue();
+  let resultList = [...groups];
+
+  for (const task of queue) {
+    if (task.operation === 'ADD_PERSON_GROUP') resultList.push({ ...task.payload, isLocalUnsynced: true });
+    else if (task.operation === 'UPDATE_PERSON_GROUP') {
+       const idx = resultList.findIndex(p => p.id === task.payload.id || p.id === task.payload.originalId);
+       if (idx !== -1) resultList[idx] = { ...resultList[idx], ...task.payload.group, isLocalUnsynced: true };
+    }
+    else if (task.operation === 'DELETE_PERSON_GROUP') {
+       const idx = resultList.findIndex(p => p.id === task.payload.id || p.id === task.payload.originalId);
+       if (idx !== -1) resultList.splice(idx, 1);
+    }
+  }
+  return resultList.sort((a, b) => b.createdAt - a.createdAt);
+};
+
+export const addPersonGroupToServer = async (group: any) => {
+  const now = Date.now();
+  const newGroup = { ...group, id: group.id || generateId(), createdAt: now, updatedAt: now };
+  await appendLocalData('person_groups', newGroup);
+  return newGroup;
+};
+
+export const updatePersonGroupToServer = async (id: string, group: any) => {
+  return await updateLocalData('person_groups', id, { ...group, updatedAt: Date.now() });
+};
+
+export const deletePersonGroupToServer = async (id: string) => {
+  await batchLocalData([{ type: 'delete', key: 'person_groups', id }]);
+};
+
+export const getPersonRoles = async () => {
+  let roles = await getLocalData<any[]>('person_roles', []);
+  if (roles.length === 0) {
+    // initialize defaults
+    const defaults = [
+      { id: 'customer', name: 'مشتری', code: '10', color: 'bg-emerald-50 text-emerald-800 border-emerald-100', createdAt: Date.now() },
+      { id: 'supplier', name: 'تامین کننده', code: '20', color: 'bg-orange-50 text-orange-850 border-orange-100', createdAt: Date.now() },
+      { id: 'employee', name: 'کارمند', code: '30', color: 'bg-purple-50 text-purple-800 border-purple-100', createdAt: Date.now() }
+    ];
+    await saveLocalData('person_roles', defaults);
+    roles = defaults;
+  }
+  
+  const queue = getSyncQueue();
+  let resultList = [...roles];
+
+  for (const task of queue) {
+    if (task.operation === 'ADD_PERSON_ROLE') resultList.push({ ...task.payload, isLocalUnsynced: true });
+    else if (task.operation === 'UPDATE_PERSON_ROLE') {
+       const idx = resultList.findIndex(p => p.id === task.payload.id || p.id === task.payload.originalId);
+       if (idx !== -1) resultList[idx] = { ...resultList[idx], ...task.payload.role, isLocalUnsynced: true };
+    }
+    else if (task.operation === 'DELETE_PERSON_ROLE') {
+       const idx = resultList.findIndex(p => p.id === task.payload.id || p.id === task.payload.originalId);
+       if (idx !== -1) resultList.splice(idx, 1);
+    }
+  }
+
+  return resultList.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+};
+
+export const addPersonRoleToServer = async (role: any) => {
+  const now = Date.now();
+  const newRole = { ...role, id: role.id || generateId(), createdAt: now, updatedAt: now };
+  await appendLocalData('person_roles', newRole);
+  return newRole;
+};
+
+export const updatePersonRoleToServer = async (id: string, role: any) => {
+  return await updateLocalData('person_roles', id, { ...role, updatedAt: Date.now() });
+};
+
+export const deletePersonRoleToServer = async (id: string) => {
+  await batchLocalData([{ type: 'delete', key: 'person_roles', id }]);
+};
+
+export const getPersonContacts = async () => {
+  return await getLocalData<any[]>('person_contacts', []);
+};
+
+export const savePersonContacts = async (contacts: any[]) => {
+  await saveLocalData('person_contacts', contacts);
+};
+
+export const getPersonBankAccounts = async () => {
+  return await getLocalData<any[]>('person_bank_accounts', []);
+};
+
+export const savePersonBankAccounts = async (accounts: any[]) => {
+  await saveLocalData('person_bank_accounts', accounts);
+};
+
+export const getPersonsPaged = async (params: { page?: number; pageSize?: number; search?: string; sortBy?: string; sortOrder?: 'asc' | 'desc' } = {}): Promise<PagedResponse<any>> => {
+  return getPagedData<any>('persons', {
+    page: params.page || 1,
+    pageSize: params.pageSize || 20,
+    search: params.search || '',
+    sortBy: params.sortBy || 'createdAt',
+    sortOrder: params.sortOrder || 'desc'
+  });
+};
+
+export const searchPersonsQuick = async (query: string, limit = 20) => {
+  const res = await getPersonsPaged({
+    page: 1,
+    pageSize: limit,
+    search: query.trim()
+  });
+  return res.items || [];
+};
+
+export const getPersons = async (params?: { page?: number; pageSize?: number; search?: string; sortBy?: string; sortOrder?: 'asc' | 'desc'; all?: boolean; paged?: boolean }) => {
+  if (params?.paged && getSyncQueue().some(t => ['ADD_PERSON','UPDATE_PERSON','DELETE_PERSON'].includes(t.operation))) {
+    const list = await getPersons({ search: params.search });
+    const size = params.pageSize || 20;
+    const start = ((params.page || 1) - 1) * size;
+    return list.slice(start, start + size);
+  }
+  if (params?.paged) {
+    const paged = await getPersonsPaged({
+      page: params?.page || 1,
+      pageSize: params?.pageSize || 20,
+      search: params?.search || '',
+      sortBy: params?.sortBy,
+      sortOrder: params?.sortOrder
+    });
+    return paged.items || [];
+  }
+
+  const persons = await getLocalData<any[]>('persons', []);
+  const contacts = await getLocalData<any[]>('person_contacts', []);
+  const bankAccounts = await getLocalData<any[]>('person_bank_accounts', []);
+  
+  const formattedPersons = (persons || []).map(p => {
+     p.contacts = contacts.filter(c => String(c.personId ?? c.person_id) === String(p.id));
+     p.bankAccounts = bankAccounts.filter(b => String(b.personId ?? b.person_id) === String(p.id));
+     return p;
+  });
+  
+  const baseList = formattedPersons.filter(p => !p.isDeleted);
+  
+  // Apply sync queue
+  const queue = getSyncQueue();
+  let resultList = [...baseList];
+
+  for (const task of queue) {
+    if (task.operation === 'ADD_PERSON') {
+       if (!resultList.some(p => String(p.id) === String(task.payload.id)))
+         resultList.push({ ...task.payload, isLocalUnsynced: true });
+    } else if (task.operation === 'UPDATE_PERSON') {
+       const idx = resultList.findIndex(p => p.id === task.payload.id || p.id === task.payload.originalId);
+       if (idx !== -1) {
+           resultList[idx] = { ...resultList[idx], ...task.payload.person, isLocalUnsynced: true };
+       }
+    } else if (task.operation === 'DELETE_PERSON') {
+       const idx = resultList.findIndex(p => p.id === task.payload.id || p.id === task.payload.originalId);
+       if (idx !== -1) {
+           resultList.splice(idx, 1);
+       }
+    }
+  }
+
+  if (params?.search && params.search.trim()) {
+    const q = params.search.trim().toLowerCase();
+    resultList = resultList.filter(p => {
+      const name = (p.name || p.alias || `${p.firstName || ''} ${p.lastName || ''}`).toLowerCase();
+      const code = (p.personCode || p.code || '').toString().toLowerCase();
+      const phone = (p.phone || p.mobile || '').toString().toLowerCase();
+      const nationalId = (p.nationalId || '').toString().toLowerCase();
+      return name.includes(q) || code.includes(q) || phone.includes(q) || nationalId.includes(q);
+    });
+  }
+
+  return resultList.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+};
+
+export const getAllPersons = async () => {
+  return getPersons({ all: true });
+};
+
+export const addPersonToServer = async (person: any) => {
+  const context = getAuthHeaders();
+  const roles = await getPersonRoles();
+  const rolePrefix = roles.find(role => role.id === person.role)?.code;
+  const settings = await getStoreSettings();
+  const configuredCode = !person.personCode && (settings as any)?.prefix_person !== undefined
+    ? await generateDocNumber('person') : undefined;
+  return persistPerson({ ...person, personCode: person.personCode || configuredCode, personCodePrefix: rolePrefix, id: person.id || generateId() }, false, context);
+};
+
+async function persistPerson(person: any, editing: boolean, context: ReturnType<typeof getAuthHeaders>) {
+  const res = await fetch('/api/persons/record', {
+    method: editing ? 'PUT' : 'POST',
+    headers: { ...context, 'Content-Type': 'application/json' },
+    body: JSON.stringify(person)
+  });
+  const result = await res.json();
+  if (!res.ok) throw new Error(result.error || 'ذخیره شخص انجام نشد');
+  invalidateCache('persons');
+  invalidateCache('ledger_accounts');
+  window.dispatchEvent(new CustomEvent('app_data_changed', { detail: { key: 'persons' } }));
+  return result;
+}
+
+export const updatePersonToServer = (id: string, person: any) =>
+  persistPerson({ ...person, id }, true, getAuthHeaders());
+
+export const savePerson = async (person: any) => {
+  if (person.id) {
+    return updatePerson(String(person.id), person);
+  }
+  return addPerson(person);
+};
+
+export const deletePersonToServer = async (id: string) => {
+  // Check relations
+  const invoices = await getInvoices();
+  if (invoices.some(inv => String(inv.customerId) === String(id))) {
+    throw new Error('این شخص دارای فاکتور ثبت شده است و قابل حذف نیست.');
+  }
+  const transactions = await getTransactions();
+  if (transactions.some(t => String(t.personId) === String(id))) {
+    throw new Error('این شخص دارای سند دریافت/پرداخت است و قابل حذف نیست.');
+  }
+  const issuedChecks = await getIssuedChecks();
+  if (issuedChecks.some(c => String(c.payeeId) === String(id))) {
+    throw new Error('این شخص دارای چک پرداختی است و قابل حذف نیست.');
+  }
+  const receivedChecks = await getReceivedChecks();
+  if (receivedChecks.some(c => String(c.payerId) === String(id))) {
+    throw new Error('این شخص دارای چک دریافتی است و قابل حذف نیست.');
+  }
+
+  const persons = await getLocalData<any[]>('persons', []);
+  // Instead of physical delete, maybe just soft delete if needed, but user says "هیچ چیز به صورت فیزیکی حذف نشود".
+  // Actually, we can do soft delete by setting isDeleted = true. Or just keep it as is if there are no relations, we can physically delete it, since it has no relations. The user says "هیچ چیز به صورت فیزیکی حذف نشود". So let's soft delete.
+  const index = persons.findIndex((p: any) => String(p.id) === String(id));
+  if (index !== -1) {
+    persons[index].isDeleted = true;
+    await updateLocalData('persons', id, persons[index]);
+  }
+};
+
+export const getPersonFollowUps = async () => {
+  const followUps = await getLocalData<any[]>('person_follow_ups', []);
+  return followUps.sort((a, b) => b.createdAt - a.createdAt);
+};
+
+export const addPersonFollowUp = async (followUp: any) => {
+  const followUps = await getPersonFollowUps();
+  const newFollowUp = { ...followUp, id: generateId(), createdAt: Date.now(), updatedAt: Date.now() };
+  followUps.push(newFollowUp);
+  await saveLocalData('person_follow_ups', followUps);
+  return newFollowUp;
+};
+
+export const updatePersonFollowUp = async (id: string | number, followUp: any) => {
+  const followUps = await getPersonFollowUps();
+  const index = followUps.findIndex((p: any) => String(p.id) === String(id));
+  if (index !== -1) {
+    followUps[index] = { ...followUps[index], ...followUp, updatedAt: Date.now() };
+    await saveLocalData('person_follow_ups', followUps);
+  }
+};
+
+export const deletePersonFollowUp = async (id: string | number) => {
+  const followUps = await getPersonFollowUps();
+  await saveLocalData('person_follow_ups', followUps.filter((p: any) => String(p.id) !== String(id)));
+};
+
+export const getDebtorsTrackings = async () => {
+  return await getLocalData<any[]>('debtors_trackings', []);
+};
+
+export const saveDebtorsTrackings = async (data: any[]) => {
+  await saveLocalData('debtors_trackings', data);
+};
+
+
+export const getPersonCategories = async () => {
+  const categories = await getLocalData<any[]>('person_categories', []);
+  const queue = getSyncQueue();
+  let resultList = [...categories];
+
+  for (const task of queue) {
+    if (task.operation === 'ADD_PERSON_CATEGORY') resultList.push({ ...task.payload, isLocalUnsynced: true });
+    else if (task.operation === 'UPDATE_PERSON_CATEGORY') {
+       const idx = resultList.findIndex(p => p.id === task.payload.id || p.id === task.payload.originalId);
+       if (idx !== -1) resultList[idx] = { ...resultList[idx], ...task.payload.category, isLocalUnsynced: true };
+    }
+    else if (task.operation === 'DELETE_PERSON_CATEGORY') {
+       const idx = resultList.findIndex(p => p.id === task.payload.id || p.id === task.payload.originalId);
+       if (idx !== -1) resultList.splice(idx, 1);
+    }
+  }
+
+  return resultList.sort((a, b) => b.createdAt - a.createdAt);
+};
+
+export const addPersonCategoryToServer = async (category: any) => {
+  const now = Date.now();
+  const newCategory = { ...category, id: category.id || generateId(), createdAt: now, updatedAt: now };
+  await appendLocalData('person_categories', newCategory);
+  return newCategory;
+};
+
+export const updatePersonCategoryToServer = async (id: string, category: any) => {
+  const categories = await getPersonCategories();
+  const index = categories.findIndex((c: any) => String(c.id) === String(id));
+  if (index !== -1) {
+    const updatedCategory = { ...categories[index], ...category, updatedAt: Date.now() };
+    await updateLocalData('person_categories', id, updatedCategory);
+    return updatedCategory;
+  }
+  return null;
+};
+
+export const deletePersonCategoryToServer = async (id: string) => {
+  const categories = await getPersonCategories();
+  const filtered = categories.filter((c: any) => String(c.id) !== String(id));
+  await saveLocalData('person_categories', filtered);
+};
+
+export async function submitPersonForm(person: any, editingId?: string) {
+  const parsed = personSchema.safeParse(person);
+  if (!parsed.success) throw new Error(parsed.error.issues.map(i => i.message).join('، '));
+  const record = { ...parsed.data, id: editingId || person.id || generateId(), personMutationId: person.personMutationId || generateId() };
+  if (navigator.onLine) return editingId ? updatePersonToServer(editingId, record) : addPersonToServer(record);
+  if (editingId) enqueueSyncTask('UPDATE_PERSON', { id: editingId, person: record });
+  else enqueueSyncTask('ADD_PERSON', record);
+  return { ...record, isLocalUnsynced: true };
+}
+
+export const addPerson = addPersonToServer;
+export const updatePerson = (id: string, person: any) =>
+  updatePersonToServer(id, { ...person, personMutationId: generateId() });
+
+export const deletePerson = async (id: string) => {
+  enqueueSyncTask('DELETE_PERSON', { id });
+};
+
+export const addPersonGroup = async (group: any) => {
+  const localId = generateId();
+  const now = Date.now();
+  const newGroup = { ...group, id: localId, createdAt: now, updatedAt: now };
+  enqueueSyncTask('ADD_PERSON_GROUP', newGroup);
+  return newGroup;
+};
+export const updatePersonGroup = async (id: string, group: any) => {
+  enqueueSyncTask('UPDATE_PERSON_GROUP', { id, group });
+  return { ...group, id };
+};
+export const deletePersonGroup = async (id: string) => {
+  enqueueSyncTask('DELETE_PERSON_GROUP', { id });
+};
+
+export const addPersonRole = async (role: any) => {
+  const localId = generateId();
+  const now = Date.now();
+  const newRole = { ...role, id: localId, createdAt: now, updatedAt: now };
+  enqueueSyncTask('ADD_PERSON_ROLE', newRole);
+  return newRole;
+};
+export const updatePersonRole = async (id: string, role: any) => {
+  enqueueSyncTask('UPDATE_PERSON_ROLE', { id, role });
+  return { ...role, id };
+};
+export const deletePersonRole = async (id: string) => {
+  enqueueSyncTask('DELETE_PERSON_ROLE', { id });
+};
+
+export const addPersonCategory = async (category: any) => {
+  const localId = generateId();
+  const now = Date.now();
+  const newCategory = { ...category, id: localId, createdAt: now, updatedAt: now };
+  enqueueSyncTask('ADD_PERSON_CATEGORY', newCategory);
+  return newCategory;
+};
+export const updatePersonCategory = async (id: string, category: any) => {
+  enqueueSyncTask('UPDATE_PERSON_CATEGORY', { id, category });
+  return { ...category, id };
+};
+export const deletePersonCategory = async (id: string) => {
+  enqueueSyncTask('DELETE_PERSON_CATEGORY', { id });
+};

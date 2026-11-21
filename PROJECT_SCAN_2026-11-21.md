@@ -1,0 +1,45 @@
+# Store Accounting System V42 — Project scan
+
+**21 November 2026 · Working tree on `main` at `81a6da7` · Release decision: hold**
+
+The production bundle compiled, but the built server exited before accepting requests on the installed runtime. Separately, the API assigns administrator privileges when authentication fails. Both issues block deployment. The financial integrity issue to address next is the file-backed batch writer, which can apply part of a transaction and then report a conflict.
+
+## Scope and verification
+
+The inventory covered 480 Git-indexed paths and 370 files under `src`. The working tree contained pre-existing changes to business data, backups and the npm lockfile. Results describe that working tree with its installed dependencies. The manual review traced the React entry point, Express middleware and route registration, login and store selection, PostgreSQL and file persistence, batch posting, backup encryption, production packaging and test wiring. The UI spans invoicing, inventory, warehouses, accounting, payroll, loans, CRM and reports. The review did not manually exercise each screen.
+
+| Check | Observed result | What it establishes |
+| --- | --- | --- |
+| TypeScript · `npm run lint` | Passed | This script runs `tsc --noEmit`. Its configured include is `src`, which omits the root server entry point and test directories. |
+| Vitest · `npm test` | 91 passed across 19 files | Isolated run with local file storage and no configured PostgreSQL connection. Coverage includes invoice headers, stock costs, journals, checks, backups, auth and realtime events. |
+| Client and server compilation · `npm run build` | Passed with a chunk-size warning | Vite emitted a 1,839.50 kB minified main JS chunk (400.30 kB gzip). esbuild emitted the server and its source map. |
+| Built server · production mode | Failed before listening, exit 1 | Node 24.15.0 raised `ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING` loading the external `num2persian` package. |
+
+Checks used disposable copies of the project source with the existing dependency installation. Operational data, backups and the local database configuration were excluded. Live PostgreSQL posting, restore from a real backup, external integrations, browser rendering and dependency advisory status remain unverified. The findings below distinguish observed runtime results from consequences established by source inspection.
+
+## Release blockers
+
+1. **Critical · Authentication failure grants administrator access.** Both missing credentials and failed token verification produce an administrator identity. Role checks also supply administrator defaults when identity or role is absent. Production mounts this middleware before the API routers. Require a validated access token on protected routes, reject unknown roles, and reserve refresh tokens for the refresh flow. Add denial tests that cover missing, expired and invalid credentials. Evidence: `src/middleware/auth.middleware.ts:37–73`, `server.ts:126`.
+2. **Blocker · The production server cannot start on the tested runtime.** The server build leaves packages external. At startup, Node resolves a TypeScript file under the installed dependency and exits. Bundle that dependency as JavaScript or use a compiled entry point. Verify the packaged server starts and answers its health request on each supported runtime. Evidence: `package.json` build/start scripts, `src/utils/format.ts:1`, production startup check above.
+
+## High-priority findings
+
+| Finding | Evidence and impact | Repair and acceptance check |
+| --- | --- | --- |
+| Store selection lacks a membership check | `src/middleware/store-context.middleware.ts:5–20` takes a request-supplied store ID and loads its context. `src/db/connection.ts:127–140` derives a database name even when the business lookup has no match. Store selection can cross the user's authorized accounting boundary. | Resolve store access against the authenticated user's memberships before opening a pool. Verify that a valid user assigned to one store is denied access to another and that an unknown store cannot initialize a database. |
+| Credentials reach server logs | `src/routes/auth.routes.ts:161,205` logs the complete login body and the generated one-time code. Anyone with access to retained output may see authentication material. | Log the event and outcome only. Check retained logs under restricted access and rotate affected credentials where exposure is confirmed. Test redaction on both successful and failed logins. |
+| Empty user storage creates a predictable administrator | `src/routes/auth.routes.ts:30–53` creates an active administrator with a fixed password when the user list is empty. A read or initialization problem that yields an empty list can reopen bootstrap. | Require explicit one-time provisioning. Test an empty installation and a storage outage separately. An ordinary login request should create no accounts. |
+| Signing and encryption can use source-defined keys | JWT signing, backup encryption and database configuration encryption all have embedded fallback secrets. Encryption also permits reuse of the session-signing secret. See `src/routes/auth.routes.ts:156`, `src/utils/backupCrypto.ts:5`, `src/utils/crypto.ts:5`. The actual deployed key configuration was outside this review. | Require separate deployment keys, version encryption keys for restore, and verify historical backup recovery before retiring any key. |
+| A rejected file-backed batch can partially post | `src/routes/data.routes.ts:1168–1281` updates one collection at a time and can return HTTP 409 on a later collection after earlier changes have been applied. For a multi-collection posting, the caller can receive a conflict while related records have already changed. The PostgreSQL branch has an explicit transaction. | Stage and validate the entire file-backed batch, then commit once. Test a conflict on the last collection and verify every collection retains its starting balance, stock and version. |
+| File-backed writes can acknowledge data before it is durable | `src/db/kv-store.ts:20–43,284–288` treats read and parse errors as empty data, returns success after scheduling a write, and logs write failures. A crash can lose an acknowledged posting. A later save can overwrite a damaged file with an incomplete dataset. | Distinguish a new store from a read error, serialize writes per store, and await durable atomic replacement before acknowledging success. Test disk failure, malformed JSON and restart after acknowledgment. |
+| Server code and source map share the public asset directory | The build puts both in `dist`. Production serves that whole directory with Express static middleware (`package.json`, `server.ts:180–183`). Once startup is repaired this layout can expose backend source, including embedded fallback values. | Split public client assets from private server artifacts. Verify the deployed static manifest contains only intended client files. |
+
+## Backup handling and test reliability
+
+- **Operational files are mixed with source.** Git indexes 17 files across `backups/` and `my_backups/`, including files currently deleted in the working tree. Additional backups, a data export and database configuration were untracked. The ignore rules cover specific database names but omit these paths. File contents and historical exposure were not assessed. Put operational data outside the checkout, explicitly identify synthetic fixtures, and review tracked history before deciding whether credentials or archives need remediation. Evidence: Git index and `.gitignore`.
+- **Passing health tests describe a different server.** The test harness reverses authentication and store-context middleware order, mounts four routers, and implements its own health response with uptime and a timestamp. Production returns only status. Use one application factory for production and integration tests and assert the deployed contract. Evidence: `tests/createTestApp.ts:15–31`, `tests/integration/healthAndSystem.test.ts:8–14`, `server.ts:53,126–140`.
+- **Voucher tests duplicate a financial rule.** Both the unit suite and workflow simulation define their own balance validator. A change to production posting can leave those assertions green. Keep calculation examples, and add a test through the posting entry point that inspects the persisted debit and credit entries and rejects an unbalanced voucher. Evidence: `tests/unit/accountingBalance.test.ts:11`, `tests/e2e/workflowSimulation.test.ts:5`.
+
+## Release acceptance
+
+First, start the built artifact in production mode and require a successful health response. Then establish identity and store boundaries through the real application stack, including denied operations. Before relying on the system for financial posting, repeat invoice, stock, journal and rollback workflows against disposable PostgreSQL and file stores. For each, reconcile the persisted amounts and quantities after a conflict and a restart. Finish by restoring a synthetic backup into a fresh store and comparing its ledger totals and stock balances to the source.

@@ -1,0 +1,172 @@
+@import "tailwindcss";
+
+@font-face {
+  font-family: 'IRANYekanXFaNum';
+  src: url('/fonts/vazirmatn/Vazirmatn-FD-Regular.woff2') format('woff2'),
+       url('/Webfonts/Woff2/IRANYekanXFaNum-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'IRANYekanXFaNum';
+  src: url('/fonts/vazirmatn/Vazirmatn-FD-Bold.woff2') format('woff2'),
+       url('/Webfonts/Woff2/IRANYekanXFaNum-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Vazirmatn';
+  src: url('/fonts/vazirmatn/Vazirmatn-FD-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Vazirmatn';
+  src: url('/fonts/vazirmatn/Vazirmatn-FD-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@theme {
+  --font-sans: var(--app-font, 'IRANYekanXFaNum', 'Vazirmatn'), ui-sans-serif, system-ui, sans-serif;
+}
+
+body {
+  font-family: var(--app-font, 'IRANYekanXFaNum', 'Vazirmatn'), sans-serif;
+  direction: rtl;
+  background-color: #f3f4f6;
+  font-feature-settings: "ss01" 1, "cv01" 1, "tnum" 1;
+}
+
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.styled-scrollbar::-webkit-scrollbar {
+  height: 6px;
+}
+.styled-scrollbar::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 8px;
+}
+.styled-scrollbar::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 8px;
+}
+.styled-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+@media print {
+  @page {
+    size: auto;
+    margin: 8mm;
+  }
+
+  *, *::before, *::after {
+    box-sizing: border-box !important;
+  }
+
+  html, body {
+    background: white !important;
+    background-color: white !important;
+    color: #0f172a !important;
+    padding: 0 !important;
+    margin: 0 auto !important;
+    overflow: visible !important;
+    height: auto !important;
+    min-height: 0 !important;
+    width: 100% !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  #root,
+  .main-app-layout-wrapper,
+  main,
+  .print-parent-override {
+    background: white !important;
+    background-color: white !important;
+    overflow: visible !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    display: block !important;
+    position: static !important;
+    padding: 0 !important;
+    margin: 0 auto !important;
+    width: 100% !important;
+  }
+
+  /* CRITICAL: Completely hide background main layout and invoices list when printing invoice or modal */
+  body.printing-modal-overlay .main-app-layout-wrapper,
+  body:has([data-print-modal="true"]) .main-app-layout-wrapper,
+  body:has(#invoice-sheet-to-print) .main-app-layout-wrapper,
+  body:has(.invoice-print-container) .main-app-layout-wrapper,
+  body:has(.receipt-print-container) .main-app-layout-wrapper,
+  body:has(.print-modal-active) .main-app-layout-wrapper {
+    display: none !important;
+    height: 0 !important;
+    max-height: 0 !important;
+    overflow: hidden !important;
+    position: absolute !important;
+    left: -99999px !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+  }
+
+  .no-print,
+  .no-print *,
+  .print\:hidden,
+  .print\:hidden *,
+  [data-no-print="true"] {
+    display: none !important;
+    visibility: hidden !important;
+  }
+
+  .print-section {
+    position: static !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+    background: white !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    display: block !important;
+    direction: rtl !important;
+    text-align: right !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+
+  table {
+    width: 100% !important;
+    max-width: 100% !important;
+    border-collapse: collapse !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
+  }
+
+  tr, .print-avoid-break {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  thead {
+    display: table-header-group !important;
+  }
+
+  tfoot {
+    display: table-footer-group !important;
+  }
+}

@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta charset="UTF-8">
+    <title>پنل مدیریت و راه‌اندازی سرور حسابداری</title>
+    <HTA:APPLICATION
+        ID="AccountingServerApp"
+        APPLICATIONNAME="AccountingServerManager"
+        SCROLL="yes"
+        SINGLEINSTANCE="yes"
+        WINDOWSTATE="normal"
+        BORDER="thin"
+        NAVIGABLE="yes"
+        MAXIMIZEBUTTON="yes"
+        MINIMIZEBUTTON="yes"
+        SYSMENU="yes"
+    />
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Vazirmatn', 'IRANYekanXFaNum', 'Segoe UI', Tahoma, Arial, sans-serif;
+        }
+
+        body {
+            background-color: #0f172a;
+            color: #f8fafc;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow-x: hidden;
+            font-size: 14px;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            border-bottom: 1px solid #334155;
+            padding: 20px 28px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .header-title {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .logo-icon {
+            width: 44px;
+            height: 44px;
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.25);
+            font-weight: 900;
+            font-size: 20px;
+            color: #ffffff;
+        }
+
+        .header-text h1 {
+            font-size: 18px;
+            font-weight: 800;
+            color: #f1f5f9;
+        }
+
+        .header-text p {
+            font-size: 12px;
+            color: #94a3b8;
+            margin-top: 3px;
+        }
+
+        .status-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background-color: rgba(30, 41, 59, 0.8);
+            border: 1px solid #334155;
+            padding: 6px 14px;
+            border-radius: 9999px;
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background-color: #94a3b8;
+        }
+
+        .status-dot.online {
+            background-color: #10b981;
+            box-shadow: 0 0 10px #10b981;
+        }
+
+        .status-dot.checking {
+            background-color: #f59e0b;
+        }
+
+        .status-dot.offline {
+            background-color: #ef4444;
+        }
+
+        .container {
+            flex: 1;
+            max-width: 900px;
+            width: 100%;
+            margin: 0 auto;
+            padding: 24px 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .card {
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 16px;
+            padding: 20px;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
+        }
+
+        .card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 16px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid #2d3748;
+        }
+
+        .card-title {
+            font-size: 15px;
+            font-weight: 700;
+            color: #e2e8f0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 12px;
+            margin-bottom: 8px;
+        }
+
+        .info-box {
+            background: #0f172a;
+            border: 1px solid #26334d;
+            border-radius: 10px;
+            padding: 12px 14px;
+        }
+
+        .info-label {
+            font-size: 11px;
+            color: #94a3b8;
+            margin-bottom: 4px;
+        }
+
+        .info-value {
+            font-size: 14px;
+            font-weight: 700;
+            color: #38bdf8;
+            direction: ltr;
+            text-align: right;
+        }
+
+        .actions-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+            gap: 14px;
+        }
+
+        .btn {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 14px 16px;
+            border-radius: 12px;
+            border: 1px solid transparent;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            text-align: right;
+            width: 100%;
+        }
+
+        .btn-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            flex-shrink: 0;
+        }
+
+        .btn-content {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .btn-label {
+            font-size: 13px;
+            font-weight: 700;
+        }
+
+        .btn-sub {
+            font-size: 11px;
+            opacity: 0.8;
+        }
+
+        .btn-primary {
+            background: #2563eb;
+            color: #ffffff;
+            border-color: #3b82f6;
+        }
+        .btn-primary:hover {
+            background: #1d4ed8;
+        }
+        .btn-primary .btn-icon {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .btn-success {
+            background: #059669;
+            color: #ffffff;
+            border-color: #10b981;
+        }
+        .btn-success:hover {
+            background: #047857;
+        }
+        .btn-success .btn-icon {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .btn-danger {
+            background: #dc2626;
+            color: #ffffff;
+            border-color: #ef4444;
+        }
+        .btn-danger:hover {
+            background: #b91c1c;
+        }
+        .btn-danger .btn-icon {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .btn-warning {
+            background: #d97706;
+            color: #ffffff;
+            border-color: #f59e0b;
+        }
+        .btn-warning:hover {
+            background: #b45309;
+        }
+        .btn-warning .btn-icon {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .btn-secondary {
+            background: #334155;
+            color: #f8fafc;
+            border-color: #475569;
+        }
+        .btn-secondary:hover {
+            background: #475569;
+        }
+        .btn-secondary .btn-icon {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .log-box {
+            background: #090d16;
+            border: 1px solid #1e293b;
+            border-radius: 12px;
+            padding: 14px;
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 12px;
+            color: #38bdf8;
+            min-height: 100px;
+            max-height: 180px;
+            overflow-y: auto;
+            direction: ltr;
+            text-align: left;
+            white-space: pre-wrap;
+            line-height: 1.5;
+        }
+
+        .footer {
+            text-align: center;
+            padding: 14px;
+            color: #64748b;
+            font-size: 12px;
+            border-top: 1px solid #1e293b;
+            margin-top: auto;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <div class="header-title">
+            <div class="logo-icon">&#9881;</div>
+            <div class="header-text">
+                <h1>پنل مدیریت و راه‌اندازی سرور</h1>
+                <p>سیستم یکپارچه حسابداری و انبارداری تحت وب</p>
+            </div>
+        </div>
+        <div class="status-pill" id="statusPill">
+            <span class="status-dot checking" id="statusDot"></span>
+            <span id="statusText">در حال بررسی...</span>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- Live Status Card -->
+        <div class="card">
+            <div class="card-header">
+                <span class="card-title">&#128421; وضعیت ارتباط و پورت ۳۰۰۰</span>
+                <button onclick="checkHealth()" class="btn-secondary" style="padding: 6px 14px; border-radius: 8px; font-size: 12px; width: auto; cursor: pointer;">
+                    &#128260; بررسی مجدد وضعیت
+                </button>
+            </div>
+            <div class="info-grid">
+                <div class="info-box">
+                    <div class="info-label">وضعیت پورت ۳۰۰۰</div>
+                    <div class="info-value" id="portStatusText">در حال پایش...</div>
+                </div>
+                <div class="info-box">
+                    <div class="info-label">آدرس محلی مرورگر</div>
+                    <div class="info-value">http://localhost:3000</div>
+                </div>
+                <div class="info-box">
+                    <div class="info-label">حالت سرور پیشنهادی</div>
+                    <div class="info-value" style="color: #10b981;">Dev (پورت ۳۰۰۰)</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Action Controls -->
+        <div class="card">
+            <div class="card-header">
+                <span class="card-title">&#9889; عملیات سریع راه‌اندازی و مدیریت</span>
+            </div>
+            <div class="actions-grid">
+                <!-- Start Dev -->
+                <button class="btn btn-primary" onclick="startDevServer()">
+                    <div class="btn-icon">&#9654;</div>
+                    <div class="btn-content">
+                        <span class="btn-label">راه‌اندازی سرور توسعه (Dev)</span>
+                        <span class="btn-sub">اجرای سریع npm run dev</span>
+                    </div>
+                </button>
+
+                <!-- Start Prod -->
+                <button class="btn btn-success" onclick="startProdServer()">
+                    <div class="btn-icon">&#9889;</div>
+                    <div class="btn-content">
+                        <span class="btn-label">راه‌اندازی سرور نهایی (Prod)</span>
+                        <span class="btn-sub">اجرای پایدار npm start</span>
+                    </div>
+                </button>
+
+                <!-- Restart -->
+                <button class="btn btn-warning" onclick="restartServer()">
+                    <div class="btn-icon">&#128260;</div>
+                    <div class="btn-content">
+                        <span class="btn-label">راه‌اندازی مجدد (Restart)</span>
+                        <span class="btn-sub">توقف پروسه‌ها و اجرای مجدد</span>
+                    </div>
+                </button>
+
+                <!-- Stop Server -->
+                <button class="btn btn-danger" onclick="stopServer()">
+                    <div class="btn-icon">&#9632;</div>
+                    <div class="btn-content">
+                        <span class="btn-label">توقف کامل سرور (Stop)</span>
+                        <span class="btn-sub">آزادسازی فوری پورت ۳۰۰۰</span>
+                    </div>
+                </button>
+
+                <!-- Open Browser -->
+                <button class="btn btn-secondary" onclick="openBrowser()">
+                    <div class="btn-icon">&#127760;</div>
+                    <div class="btn-content">
+                        <span class="btn-label">باز کردن در مرورگر</span>
+                        <span class="btn-sub">http://localhost:3000</span>
+                    </div>
+                </button>
+
+                <!-- Quick Backup -->
+                <button class="btn btn-secondary" onclick="runQuickBackup()">
+                    <div class="btn-icon">&#128190;</div>
+                    <div class="btn-content">
+                        <span class="btn-label">پشتیبان‌گیری سریع</span>
+                        <span class="btn-sub">تهیه نسخه فوری در پوشه my_backups</span>
+                    </div>
+                </button>
+            </div>
+        </div>
+
+        <!-- System Output Log -->
+        <div class="card">
+            <div class="card-header">
+                <span class="card-title">&#128196; گزارش رویدادها و عملیات</span>
+                <span style="font-size: 11px; color: #94a3b8;">کنسول فرمان ویندوز</span>
+            </div>
+            <div class="log-box" id="logBox">آماده دریافت فرمان...</div>
+        </div>
+    </div>
+
+    <div class="footer">
+        پنل سبک و کاربردی مدیریت سرور حسابداری &bull; پورت پیش‌فرض: ۳۰۰۰
+    </div>
+
+    <script>
+        var shell = null;
+        try {
+            shell = new ActiveXObject("WScript.Shell");
+        } catch (e) {
+            // Browser environment fallback
+        }
+
+        function log(message) {
+            var box = document.getElementById("logBox");
+            var time = new Date().toLocaleTimeString();
+            box.innerText = "[" + time + "] " + message + "\n" + box.innerText;
+        }
+
+        function runCmd(cmd, async) {
+            log("اجرای دستور: " + cmd);
+            if (shell) {
+                try {
+                    shell.Run(cmd, 1, async === true);
+                    return true;
+                } catch (e) {
+                    log("خطا در اجرای دستور: " + e.message);
+                    return false;
+                }
+            } else {
+                log("محیط فاقد Shell ویندوز است. لطفاً از طریق ترمینال اجرا کنید.");
+                return false;
+            }
+        }
+
+        function startDevServer() {
+            log("در حال اجرای سرور توسعه بر روی پورت ۳۰۰۰...");
+            runCmd('cmd.exe /k "title Accounting Dev Server && color 0A && npm run dev"', false);
+            setTimeout(checkHealth, 3500);
+        }
+
+        function startProdServer() {
+            log("در حال اجرای سرور نهایی (Production)...");
+            runCmd('cmd.exe /k "title Accounting Production Server && color 0B && npm start"', false);
+            setTimeout(checkHealth, 3500);
+        }
+
+        function stopServer() {
+            log("در حال بستن پروسه‌های پورت ۳۰۰۰...");
+            runCmd('cmd.exe /c "FOR /F "tokens=5" %T IN (\'netstat -a -n -o ^| findstr :3000\') DO taskkill /F /T /PID %T >nul 2>&1"', true);
+            log("دستور توقف پورت ۳۰۰۰ صادر گردید.");
+            setTimeout(checkHealth, 1500);
+        }
+
+        function restartServer() {
+            log("در حال راه‌اندازی مجدد سرور...");
+            stopServer();
+            setTimeout(function() {
+                startDevServer();
+            }, 2000);
+        }
+
+        function openBrowser() {
+            log("باز کردن آدرس http://localhost:3000 در مرورگر پیش‌فرض...");
+            if (shell) {
+                shell.Run("http://localhost:3000");
+            } else {
+                window.open("http://localhost:3000", "_blank");
+            }
+        }
+
+        function runQuickBackup() {
+            log("تهیه نسخه پشتیبان سریع...");
+            var stamp = new Date().toISOString().replace(/[:.]/g, "-");
+            var cmd = 'cmd.exe /c "mkdir my_backups\\backup-' + stamp + ' 2>nul && if exist database.json copy database.json my_backups\\backup-' + stamp + '\\ >nul 2>&1 && if exist db_config.json copy db_config.json my_backups\\backup-' + stamp + '\\ >nul 2>&1"';
+            runCmd(cmd, true);
+            log("نسخه پشتیبان در مسیر my_backups ذخیره شد.");
+        }
+
+        function checkHealth() {
+            var dot = document.getElementById("statusDot");
+            var statusText = document.getElementById("statusText");
+            var portText = document.getElementById("portStatusText");
+
+            dot.className = "status-dot checking";
+            statusText.innerText = "در حال بررسی وضعیت...";
+            portText.innerText = "ارسال درخواست سنجش...";
+
+            try {
+                var xhr = null;
+                if (window.XMLHttpRequest) {
+                    xhr = new XMLHttpRequest();
+                } else {
+                    xhr = new ActiveXObject("MSXML2.ServerXMLHTTP");
+                }
+
+                xhr.open("GET", "http://localhost:3000/api/health", true);
+                xhr.timeout = 2500;
+                xhr.onreadystatechange = function() {
+                    if (xhr.readyState === 4) {
+                        if (xhr.status === 200) {
+                            dot.className = "status-dot online";
+                            statusText.innerText = "آنلاین و پاسخگو";
+                            portText.innerText = "پورت ۳۰۰۰ فعال است (آماده به کار)";
+                            log("سرور فعال است (HTTP 200 OK).");
+                        } else {
+                            dot.className = "status-dot offline";
+                            statusText.innerText = "سرور متوقف است";
+                            portText.innerText = "پورت ۳۰۰۰ غیرفعال یا مسدود است";
+                            log("سرور به درخواست پاسخ نداد (کد وضعیت: " + xhr.status + ").");
+                        }
+                    }
+                };
+                xhr.ontimeout = function() {
+                    dot.className = "status-dot offline";
+                    statusText.innerText = "زمان پاسخ به پایان رسید";
+                    portText.innerText = "سرور در دسترس نیست";
+                };
+                xhr.onerror = function() {
+                    dot.className = "status-dot offline";
+                    statusText.innerText = "سرور متوقف است";
+                    portText.innerText = "پورت ۳۰۰۰ آزاد یا سرور خاموش است";
+                };
+                xhr.send();
+            } catch (e) {
+                dot.className = "status-dot offline";
+                statusText.innerText = "خطا در برقراری ارتباط";
+                portText.innerText = "سرور خاموش است";
+                log("عدم برقراری ارتباط با پورت ۳۰۰۰: " + e.message);
+            }
+        }
+
+        window.onload = function() {
+            window.resizeTo(940, 720);
+            checkHealth();
+            // Periodic health check every 10 seconds
+            setInterval(checkHealth, 10000);
+        };
+    </script>
+</body>
+</html>

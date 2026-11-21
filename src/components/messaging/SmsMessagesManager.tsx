@@ -1,0 +1,3405 @@
+import React, { useState, useEffect, useMemo, useCallback } from "react";
+import { motion, AnimatePresence } from "motion/react";
+import {
+  MessageSquare,
+  Send,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  AlertCircle,
+  AlertTriangle,
+  RefreshCw,
+  Search,
+  Filter,
+  ChevronDown,
+  Download,
+  Trash2,
+  Copy,
+  Eye,
+  X,
+  Calendar as CalendarIcon,
+  Server,
+  BarChart3,
+  List,
+  MoreVertical,
+  Database,
+  Plus,
+  Phone,
+  User,
+  Tag,
+  Check,
+  RotateCcw,
+  Sparkles,
+  ChevronLeft,
+  ChevronRight,
+  HelpCircle,
+  FileSpreadsheet,
+  Activity,
+  Layers,
+  Radio,
+  Smartphone,
+  MessageCircle,
+  Share2,
+  CheckSquare,
+  Zap,
+  Wifi,
+  WifiOff,
+  Terminal,
+  Settings2
+} from "lucide-react";
+import {
+  LineChart,
+  Line,
+  BarChart,
+  Bar,
+  PieChart,
+  Pie,
+  Cell,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip as RechartsTooltip,
+  ResponsiveContainer,
+  Legend
+} from "recharts";
+import { toPersianDigits, addCommas } from "../../utils/format";
+import { generateCiteableMessageId, deleteSmsMessage, deleteMultipleSmsMessages } from "../../services/crmService";
+import { gsmUsbService, GsmDeviceStatus } from "../../services/messaging/GsmUsbService";
+
+export interface SmsChannelOption {
+  id: string;
+  name: string;
+  type: "sms_panel" | "gsm" | "whatsapp" | "custom";
+  typeLabel: string;
+  senderLine: string;
+  provider: string;
+  status: "active" | "inactive";
+  costPerPart: number;
+  description: string;
+  iconType: "cloud" | "sim" | "chat" | "server";
+}
+
+export const DEFAULT_CHANNELS: SmsChannelOption[] = [
+  {
+    id: "gsm_modem",
+    name: "مودم سخت‌افزاری GSM (سیم‌کارت متصل به سیستم)",
+    type: "gsm",
+    typeLabel: "مودم GSM / سیم‌کارت سخت‌افزاری",
+    senderLine: "سیم‌کارت متصل به سیستم",
+    provider: "GSM Serial/USB",
+    status: "active",
+    costPerPart: 0,
+    description: "ارسال مستقیم و آنی از طریق سیم‌کارت سخت‌افزاری متصل به پورت USB سیستم (بدون بلک‌لیست)",
+    iconType: "sim",
+  },
+  {
+    id: "kavenegar",
+    name: "پنل پیامک کاوه نگار (پیش‌فرض)",
+    type: "sms_panel",
+    typeLabel: "وب‌سرویس پیامک",
+    senderLine: "10004346",
+    provider: "Kavenegar",
+    status: "active",
+    costPerPart: 380,
+    description: "ارسال آنی از خط اختصاصی و خطوط خدماتی با تایید تحویل مخابراتی",
+    iconType: "cloud",
+  },
+  {
+    id: "faraz_sms",
+    name: "سامانه پیام کوتاه فراز اس‌ام‌اس (FarazSMS)",
+    type: "sms_panel",
+    typeLabel: "خط خدماتی 3000",
+    senderLine: "3000505",
+    provider: "FarazSMS",
+    status: "active",
+    costPerPart: 360,
+    description: "ارسال به تمامی شماره‌ها حتی شماره‌های مسدود تبلیغاتی با الگوهای خدماتی",
+    iconType: "cloud",
+  },
+  {
+    id: "ghasedak",
+    name: "سامانه پیامک قاصدک (Ghasedak)",
+    type: "sms_panel",
+    typeLabel: "وب‌سرویس قاصدک",
+    senderLine: "10008585",
+    provider: "Ghasedak",
+    status: "active",
+    costPerPart: 370,
+    description: "درگاه ارسال پیامک‌های سیستمی و اطلاع‌رسانی فاکتورها و تراکنش‌ها",
+    iconType: "server",
+  },
+  {
+    id: "whatsapp_business",
+    name: "واتس‌اپ تجاری (WhatsApp Cloud API)",
+    type: "whatsapp",
+    typeLabel: "پیام‌رسان اجتماعی",
+    senderLine: "+989123456789",
+    provider: "Meta WhatsApp",
+    status: "active",
+    costPerPart: 500,
+    description: "ارسال اعلان‌ها به حساب کاربری واتس‌اپ مشتریان با سربرگ تایید شده",
+    iconType: "chat",
+  },
+];
+
+export const SOURCE_MAP: Record<string, { label: string; badgeClass: string; icon: string }> = {
+  sale_invoice: { label: "فاکتور فروش", badgeClass: "bg-emerald-50 text-emerald-700 border-emerald-200", icon: "🧾" },
+  purchase_invoice: { label: "فاکتور خرید", badgeClass: "bg-sky-50 text-sky-700 border-sky-200", icon: "📦" },
+  sale_return: { label: "برگشت از فروش", badgeClass: "bg-purple-50 text-purple-700 border-purple-200", icon: "↩️" },
+  purchase_return: { label: "برگشت از خرید", badgeClass: "bg-indigo-50 text-indigo-700 border-indigo-200", icon: "↪️" },
+  receipt: { label: "رسید دریافت", badgeClass: "bg-teal-50 text-teal-700 border-teal-200", icon: "💳" },
+  payment: { label: "رسید پرداخت", badgeClass: "bg-amber-50 text-amber-700 border-amber-200", icon: "💰" },
+  person_profile: { label: "پروفایل شخص", badgeClass: "bg-rose-50 text-rose-700 border-rose-200", icon: "👤" },
+  person_list: { label: "لیست اشخاص", badgeClass: "bg-slate-100 text-slate-700 border-slate-200", icon: "👥" },
+  cheque_alert: { label: "یادآوری چک", badgeClass: "bg-orange-50 text-orange-700 border-orange-200", icon: "📑" },
+  invoice_auto: { label: "صدور فاکتور", badgeClass: "bg-emerald-50 text-emerald-700 border-emerald-200", icon: "🧾" },
+  campaign: { label: "کمپین گروهی", badgeClass: "bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200", icon: "📢" },
+  api: { label: "وب‌سرویس API", badgeClass: "bg-slate-800 text-white border-slate-700", icon: "⚡" },
+  panel: { label: "پنل ارسال دستی", badgeClass: "bg-blue-50 text-blue-700 border-blue-200", icon: "📱" },
+};
+
+export interface SmsMessageRecord {
+  id: string;
+  campaignId?: string | null;
+  providerId?: string | null;
+  templateId?: string | null;
+  recipientType?: "contact" | "user" | "manual" | string;
+  recipientId?: string | null;
+  recipientNumber: string;
+  recipientName?: string | null;
+  messageBody: string;
+  messageLength?: number | null;
+  partsCount?: number | null;
+  status: "queued" | "pending" | "sent" | "delivered" | "failed" | "canceled" | "scheduled" | string;
+  priority?: number | null;
+  scheduledAt?: string | null;
+  sentAt?: string | null;
+  deliveredAt?: string | null;
+  failedAt?: string | null;
+  cost?: number | string | null;
+  currency?: string | null;
+  providerMessageId?: string | null;
+  providerResponse?: any;
+  errorCode?: string | null;
+  errorMessage?: string | null;
+  ipAddress?: string | null;
+  userAgent?: string | null;
+  source?: "panel" | "api" | "webhook" | "campaign" | "invoice_auto" | "cheque_alert" | string;
+  createdBy?: string | null;
+  createdAt: string;
+  updatedAt?: string | null;
+}
+
+const STATUS_COLORS: Record<string, string> = {
+  delivered: "#10b981", // emerald-500
+  sent: "#3b82f6",      // blue-500
+  failed: "#ef4444",    // red-500
+  pending: "#f59e0b",   // amber-500
+  queued: "#6366f1",    // indigo-500
+  scheduled: "#8b5cf6", // violet-500
+  canceled: "#64748b",  // slate-500
+};
+
+const STATUS_LABELS: Record<string, { label: string; badgeClass: string; dotClass: string }> = {
+  delivered: {
+    label: "تحویل شده",
+    badgeClass: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    dotClass: "bg-emerald-500",
+  },
+  sent: {
+    label: "ارسال شده",
+    badgeClass: "bg-blue-50 text-blue-700 border-blue-200",
+    dotClass: "bg-blue-500",
+  },
+  failed: {
+    label: "ناموفق",
+    badgeClass: "bg-rose-50 text-rose-700 border-rose-200",
+    dotClass: "bg-rose-500",
+  },
+  pending: {
+    label: "در انتظار",
+    badgeClass: "bg-amber-50 text-amber-700 border-amber-200",
+    dotClass: "bg-amber-500 animate-pulse",
+  },
+  queued: {
+    label: "در صف ارسال",
+    badgeClass: "bg-indigo-50 text-indigo-700 border-indigo-200",
+    dotClass: "bg-indigo-500 animate-pulse",
+  },
+  scheduled: {
+    label: "زمان‌بندی شده",
+    badgeClass: "bg-violet-50 text-violet-700 border-violet-200",
+    dotClass: "bg-violet-500",
+  },
+  canceled: {
+    label: "لغو شده",
+    badgeClass: "bg-slate-100 text-slate-700 border-slate-300",
+    dotClass: "bg-slate-400",
+  },
+};
+
+const formatRelativeTimeFa = (dateString?: string | null): string => {
+  if (!dateString) return "نامشخص";
+  const date = new Date(dateString);
+  if (isNaN(date.getTime())) return dateString;
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffSec = Math.floor(diffMs / 1000);
+  const diffMin = Math.floor(diffSec / 60);
+  const diffHours = Math.floor(diffMin / 60);
+  const diffDays = Math.floor(diffHours / 24);
+
+  if (diffSec < 45) return "چند لحظه پیش";
+  if (diffMin < 60) return `${toPersianDigits(diffMin)} دقیقه پیش`;
+  if (diffHours < 24) return `${toPersianDigits(diffHours)} ساعت پیش`;
+  if (diffDays === 1) return "دیروز";
+  if (diffDays < 30) return `${toPersianDigits(diffDays)} روز پیش`;
+  return date.toLocaleDateString("fa-IR");
+};
+
+const formatFullDateFa = (dateString?: string | null): string => {
+  if (!dateString) return "-";
+  const d = new Date(dateString);
+  if (isNaN(d.getTime())) return dateString;
+  return `${d.toLocaleDateString("fa-IR")} - ${d.toLocaleTimeString("fa-IR", { hour: "2-digit", minute: "2-digit" })}`;
+};
+
+export default function SmsMessagesManager({
+  showNotification,
+}: {
+  showNotification?: (msg: string, type: "success" | "error" | "info" | "warning") => void;
+}) {
+  const [messages, setMessages] = useState<SmsMessageRecord[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [activeTab, setActiveTab] = useState<string>("all");
+  const [viewMode, setViewMode] = useState<"table" | "overview">("table");
+  const [searchTerm, setSearchTerm] = useState<string>("");
+  const [selectedMessage, setSelectedMessage] = useState<SmsMessageRecord | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isFilterExpanded, setIsFilterExpanded] = useState<boolean>(false);
+  const [dateRangeFilter, setDateRangeFilter] = useState<string>("all");
+  const [recipientTypeFilter, setRecipientTypeFilter] = useState<string>("all");
+  const [sourceFilter, setSourceFilter] = useState<string>("all");
+  const [isNewMessageModalOpen, setIsNewMessageModalOpen] = useState<boolean>(false);
+
+  // Channel Selection & Sending State
+  const [isChannelSendModalOpen, setIsChannelSendModalOpen] = useState<boolean>(false);
+  const [messagesToSend, setMessagesToSend] = useState<SmsMessageRecord[]>([]);
+  const [selectedChannelId, setSelectedChannelId] = useState<string>("gsm_modem");
+  const [channels, setChannels] = useState<SmsChannelOption[]>(DEFAULT_CHANNELS);
+  const [senderLineOverride, setSenderLineOverride] = useState<string>("");
+  const [isSendingViaChannel, setIsSendingViaChannel] = useState<boolean>(false);
+
+  // GSM Modem Direct Hardware State & Live Transmission
+  const [gsmStatus, setGsmStatus] = useState<GsmDeviceStatus>(gsmUsbService.status);
+  const [isGsmConnectModalOpen, setIsGsmConnectModalOpen] = useState<boolean>(false);
+  const [pendingGsmTargets, setPendingGsmTargets] = useState<SmsMessageRecord[]>([]);
+  const [isConnectingGsm, setIsConnectingGsm] = useState<boolean>(false);
+  const [gsmSendProgress, setGsmSendProgress] = useState<{
+    isOpen: boolean;
+    current: number;
+    total: number;
+    recipient: string;
+    successCount: number;
+    failCount: number;
+    logs: string[];
+    isFinished: boolean;
+  }>({
+    isOpen: false,
+    current: 0,
+    total: 0,
+    recipient: "",
+    successCount: 0,
+    failCount: 0,
+    logs: [],
+    isFinished: false,
+  });
+
+  // Quick Send State
+  const [newRecipientNumber, setNewRecipientNumber] = useState<string>("");
+  const [newRecipientName, setNewRecipientName] = useState<string>("");
+  const [newMessageBody, setNewMessageBody] = useState<string>("");
+  const [newStatus, setNewStatus] = useState<string>("pending");
+  const [isSubmittingNew, setIsSubmittingNew] = useState<boolean>(false);
+
+  // Deletion Confirmation & Warning Modal State
+  const [deleteConfirmTarget, setDeleteConfirmTarget] = useState<{
+    type: "single" | "bulk";
+    message?: SmsMessageRecord;
+    bulkMessages?: SmsMessageRecord[];
+  } | null>(null);
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
+
+  // Load from API
+  const fetchMessages = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const res = await fetch("/api/data/sms_messages");
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          const activeRecords = data.filter((m: any) => m && !m.isDeleted && !m.deleted_at);
+          const sorted = [...activeRecords].sort((a, b) => {
+            const timeA = new Date(a.createdAt || 0).getTime();
+            const timeB = new Date(b.createdAt || 0).getTime();
+            return timeB - timeA;
+          });
+          setMessages(sorted);
+        } else {
+          setMessages([]);
+        }
+      } else {
+        setMessages([]);
+      }
+    } catch (err) {
+      console.error("Error fetching sms_messages:", err);
+      if (showNotification) showNotification("خطا در بارگذاری پیامک‌ها از پایگاه داده", "error");
+    } finally {
+      setIsLoading(false);
+    }
+  }, [showNotification]);
+
+  useEffect(() => {
+    fetchMessages();
+  }, [fetchMessages]);
+
+  // Load registered channels from sms_providers if available
+  useEffect(() => {
+    const loadChannels = async () => {
+      try {
+        const res = await fetch("/api/data/sms_providers");
+        if (res.ok) {
+          const list = await res.json();
+          if (Array.isArray(list) && list.length > 0) {
+            const formatted: SmsChannelOption[] = list.map((item: any, idx: number) => ({
+              id: item.id || `custom_channel_${idx}`,
+              name: item.name || item.title || "درگاه پیامک اختصاصی",
+              type: item.type === "gsm" ? "gsm" : item.type === "whatsapp" ? "whatsapp" : "sms_panel",
+              typeLabel: item.type === "gsm" ? "مودم سخت‌افزاری GSM" : item.type === "whatsapp" ? "واتس‌اپ" : "پنل پیامک",
+              senderLine: item.defaultSenderId || item.senderLine || "10004346",
+              provider: item.provider || "SMS Provider",
+              status: item.isActive !== false ? "active" : "inactive",
+              costPerPart: Number(item.costPerPart) || 350,
+              description: item.description || "درگاه پیامک پیکربندی شده در تنظیمات سیستم",
+              iconType: item.type === "gsm" ? "sim" : item.type === "whatsapp" ? "chat" : "cloud",
+            }));
+            setChannels((prev) => {
+              const ids = new Set(formatted.map((f) => f.id));
+              const remaining = prev.filter((p) => !ids.has(p.id));
+              return [...formatted, ...remaining];
+            });
+          }
+        }
+      } catch (err) {
+        console.warn("Could not load sms_providers:", err);
+      }
+    };
+    loadChannels();
+  }, []);
+
+  // Listen to GSM Modem hardware status & attempt auto-connection if permitted
+  useEffect(() => {
+    const unsub = gsmUsbService.addStatusListener((st) => setGsmStatus({ ...st }));
+    gsmUsbService.autoConnectAuthorizedPort().catch(() => {});
+    return () => unsub();
+  }, []);
+
+  // Listen to live events
+  useEffect(() => {
+    const handleUpdate = () => {
+      fetchMessages();
+    };
+    window.addEventListener("sms_messages_updated", handleUpdate);
+    window.addEventListener("app_data_changed", handleUpdate);
+    return () => {
+      window.removeEventListener("sms_messages_updated", handleUpdate);
+      window.removeEventListener("app_data_changed", handleUpdate);
+    };
+  }, [fetchMessages]);
+
+  // Seed mock sample messages if empty
+  const handleSeedSampleData = async () => {
+    setIsLoading(true);
+    const sampleData: SmsMessageRecord[] = [
+      {
+        id: "10001",
+        campaignId: "CAMP-101",
+        providerId: "kavenegar",
+        templateId: "tpl_invoice_alert",
+        recipientType: "contact",
+        recipientId: "P-1001",
+        recipientNumber: "09123456789",
+        recipientName: "شرکت بازرگانی آرمان",
+        messageBody: "مشتری گرامی، فاکتور فروش شماره 1042 به مبلغ ۱۲,۵۰۰,۰۰۰ تومان در سیستم ثبت شد. با تشکر از خرید شما.",
+        messageLength: 98,
+        partsCount: 1,
+        status: "delivered",
+        priority: 1,
+        deliveredAt: new Date(Date.now() - 15 * 60000).toISOString(),
+        sentAt: new Date(Date.now() - 16 * 60000).toISOString(),
+        cost: 380,
+        currency: "ریال",
+        providerMessageId: "KVN-8921831",
+        providerResponse: { status: 200, messageid: "KVN-8921831", cost: 380 },
+        source: "invoice_auto",
+        createdBy: "سیستم خودکار",
+        createdAt: new Date(Date.now() - 16 * 60000).toISOString(),
+      },
+      {
+        id: "10002",
+        campaignId: null,
+        providerId: "kavenegar",
+        templateId: "tpl_cheque_reminder",
+        recipientType: "contact",
+        recipientId: "P-1002",
+        recipientNumber: "09351234567",
+        recipientName: "آقای علیرضا حسینی",
+        messageBody: "یادآوری: چک شماره ۴۵۸۹۲ به تاریخ ۱۴۰۴/۰۲/۱۵ در سررسید فردا قرار دارد. لطفا نسبت به تامین موجودی اقدام فرمایید.",
+        messageLength: 108,
+        partsCount: 1,
+        status: "delivered",
+        priority: 2,
+        deliveredAt: new Date(Date.now() - 2 * 3600000).toISOString(),
+        sentAt: new Date(Date.now() - 2 * 3600000 - 10000).toISOString(),
+        cost: 380,
+        currency: "ریال",
+        providerMessageId: "KVN-8921442",
+        source: "cheque_alert",
+        createdBy: "مدیر مالی",
+        createdAt: new Date(Date.now() - 2 * 3600000).toISOString(),
+      },
+      {
+        id: "10003",
+        campaignId: "CAMP-FEST",
+        providerId: "kavenegar",
+        recipientType: "manual",
+        recipientNumber: "09199876543",
+        recipientName: "مشتری حضوری",
+        messageBody: "جشنواره عیدانه آغاز شد! از هم‌اکنون تا پایان ماه با ۱۵ درصد تخفیف ویژه محصولات جدید در خدمت شما هستیم.",
+        messageLength: 104,
+        partsCount: 1,
+        status: "sent",
+        priority: 0,
+        sentAt: new Date(Date.now() - 4 * 3600000).toISOString(),
+        cost: 380,
+        currency: "ریال",
+        providerMessageId: "KVN-8919012",
+        source: "campaign",
+        createdBy: "ادمین",
+        createdAt: new Date(Date.now() - 4 * 3600000).toISOString(),
+      },
+      {
+        id: "10004",
+        campaignId: null,
+        providerId: "kavenegar",
+        recipientType: "contact",
+        recipientId: "P-1003",
+        recipientNumber: "09120000000",
+        recipientName: "فروشگاه مرکزی پارس",
+        messageBody: "کد تایید ورود به پرتال مشتریان: 58249 - معتبر به مدت ۲ دقیقه.",
+        messageLength: 56,
+        partsCount: 1,
+        status: "failed",
+        priority: 3,
+        failedAt: new Date(Date.now() - 6 * 3600000).toISOString(),
+        errorCode: "ERR_BLACKLISTED",
+        errorMessage: "شماره گیرنده در لیست سیاه مخابرات (عدم دریافت پیامک تبلیغاتی/خدماتی) قرار دارد.",
+        cost: 0,
+        currency: "ریال",
+        providerResponse: { status: 411, error: "Recipient in carrier blacklist" },
+        source: "api",
+        createdBy: "سیستم احراز هویت",
+        createdAt: new Date(Date.now() - 6 * 3600000).toISOString(),
+      },
+      {
+        id: "10005",
+        campaignId: null,
+        providerId: "kavenegar",
+        recipientType: "contact",
+        recipientId: "P-1004",
+        recipientNumber: "09908887766",
+        recipientName: "خانم سارا مرادی",
+        messageBody: "حواله خروج کالای سفارش شماره 789 صادر و کالا تحویل انبارداری و پیک گردید.",
+        messageLength: 72,
+        partsCount: 1,
+        status: "pending",
+        priority: 1,
+        cost: 380,
+        currency: "ریال",
+        source: "panel",
+        createdBy: "انباردار",
+        createdAt: new Date(Date.now() - 10 * 60000).toISOString(),
+      },
+      {
+        id: "10006",
+        campaignId: "CAMP-SCHEDULED",
+        providerId: "kavenegar",
+        recipientType: "contact",
+        recipientId: "P-1005",
+        recipientNumber: "09187654321",
+        recipientName: "مهندس تقوی",
+        messageBody: "پیام زمان‌بندی شده: تبریک سال نو و اعلام ساعات کاری شعبه مرکزی در ایام تعطیلات.",
+        messageLength: 82,
+        partsCount: 1,
+        status: "scheduled",
+        priority: 0,
+        scheduledAt: new Date(Date.now() + 24 * 3600000).toISOString(),
+        cost: 380,
+        currency: "ریال",
+        source: "campaign",
+        createdBy: "روابط عمومی",
+        createdAt: new Date(Date.now() - 30 * 60000).toISOString(),
+      },
+    ];
+
+    try {
+      const operations = sampleData.map((data) => ({
+        key: "sms_messages",
+        type: "append",
+        data,
+      }));
+      const res = await fetch("/api/data/batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ operations }),
+      });
+      if (res.ok) {
+        await fetchMessages();
+        if (showNotification) showNotification("نمونه پیامک‌های تستی با موفقیت در پایگاه داده ثبت شدند", "success");
+      }
+    } catch (e) {
+      console.error(e);
+      if (showNotification) showNotification("خطا در افزودن داده‌های نمونه", "error");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Filtered list
+  const filteredMessages = useMemo(() => {
+    return messages.filter((msg) => {
+      // Tab status filter
+      if (activeTab !== "all") {
+        if (activeTab === "delivered" && msg.status !== "delivered") return false;
+        if (activeTab === "sent" && msg.status !== "sent") return false;
+        if (activeTab === "failed" && msg.status !== "failed") return false;
+        if (activeTab === "pending" && (msg.status !== "pending" && msg.status !== "queued")) return false;
+        if (activeTab === "scheduled" && msg.status !== "scheduled") return false;
+        if (activeTab === "canceled" && msg.status !== "canceled") return false;
+      }
+
+      // Date filter
+      if (dateRangeFilter !== "all") {
+        const msgDate = new Date(msg.createdAt).getTime();
+        const now = Date.now();
+        if (dateRangeFilter === "today" && now - msgDate > 24 * 3600000) return false;
+        if (dateRangeFilter === "yesterday" && (now - msgDate > 48 * 3600000 || now - msgDate < 24 * 3600000)) return false;
+        if (dateRangeFilter === "week" && now - msgDate > 7 * 24 * 3600000) return false;
+        if (dateRangeFilter === "month" && now - msgDate > 30 * 24 * 3600000) return false;
+      }
+
+      // Recipient type filter
+      if (recipientTypeFilter !== "all" && msg.recipientType !== recipientTypeFilter) {
+        return false;
+      }
+
+      // Source filter
+      if (sourceFilter !== "all" && msg.source !== sourceFilter) {
+        return false;
+      }
+
+      // Search term
+      if (searchTerm.trim()) {
+        const term = searchTerm.toLowerCase().trim();
+        const termDigits = term.replace(/[۰-۹]/g, (d) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d)));
+        const bodyMatch = msg.messageBody?.toLowerCase().includes(term);
+        const numberMatch = msg.recipientNumber?.toLowerCase().includes(term) || msg.recipientNumber?.toLowerCase().includes(termDigits);
+        const nameMatch = msg.recipientName?.toLowerCase().includes(term);
+        const idMatch = msg.id?.toLowerCase().includes(term) || msg.id?.toLowerCase().includes(termDigits);
+        const provMatch = msg.providerId?.toLowerCase().includes(term);
+        if (!bodyMatch && !numberMatch && !nameMatch && !idMatch && !provMatch) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [messages, activeTab, dateRangeFilter, recipientTypeFilter, sourceFilter, searchTerm]);
+
+  // Statistics
+  const stats = useMemo(() => {
+    const total = messages.length;
+    const delivered = messages.filter((m) => m.status === "delivered" || m.status === "success").length;
+    const sent = messages.filter((m) => m.status === "sent").length;
+    const failed = messages.filter((m) => m.status === "failed" || m.status === "error").length;
+    const pending = messages.filter((m) => m.status === "pending" || m.status === "queued").length;
+    const scheduled = messages.filter((m) => m.status === "scheduled").length;
+    const canceled = messages.filter((m) => m.status === "canceled").length;
+    const deliveredRate = total > 0 ? Math.round((delivered / total) * 100) : 0;
+    const totalCost = messages.reduce((sum, m) => sum + (Number(m.cost) || 0), 0);
+
+    return {
+      total,
+      delivered,
+      sent,
+      failed,
+      pending,
+      scheduled,
+      canceled,
+      deliveredRate,
+      totalCost,
+    };
+  }, [messages]);
+
+  // Chart data for Overview
+  const trendData = useMemo(() => {
+    const daysMap: Record<string, { name: string; delivered: number; failed: number; pending: number }> = {};
+    const now = new Date();
+
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(now.getTime() - i * 24 * 3600000);
+      const key = d.toLocaleDateString("fa-IR", { weekday: "short", day: "numeric" });
+      daysMap[key] = { name: key, delivered: 0, failed: 0, pending: 0 };
+    }
+
+    messages.forEach((m) => {
+      const d = new Date(m.createdAt);
+      const key = d.toLocaleDateString("fa-IR", { weekday: "short", day: "numeric" });
+      if (daysMap[key]) {
+        if (m.status === "delivered" || m.status === "sent") daysMap[key].delivered += 1;
+        else if (m.status === "failed") daysMap[key].failed += 1;
+        else if (m.status === "pending" || m.status === "queued") daysMap[key].pending += 1;
+      }
+    });
+
+    return Object.values(daysMap);
+  }, [messages]);
+
+  const pieData = useMemo(() => {
+    return [
+      { name: "تحویل شده", value: stats.delivered, color: STATUS_COLORS.delivered },
+      { name: "ارسال شده", value: stats.sent, color: STATUS_COLORS.sent },
+      { name: "در صف و انتظار", value: stats.pending, color: STATUS_COLORS.pending },
+      { name: "ناموفق", value: stats.failed, color: STATUS_COLORS.failed },
+      { name: "زمان‌بندی شده", value: stats.scheduled, color: STATUS_COLORS.scheduled },
+    ].filter((p) => p.value > 0);
+  }, [stats]);
+
+  // Action handlers
+  const handleCopy = (text: string, label: string = "شناسه") => {
+    navigator.clipboard.writeText(text);
+    if (showNotification) showNotification(`${label} در حافظه کپی شد`, "success");
+  };
+
+  const handleToggleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.checked) {
+      setSelectedIds(new Set(filteredMessages.map((m) => m.id)));
+    } else {
+      setSelectedIds(new Set());
+    }
+  };
+
+  const handleToggleRow = (id: string, e: React.MouseEvent | React.ChangeEvent) => {
+    e.stopPropagation();
+    const next = new Set(selectedIds);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelectedIds(next);
+  };
+
+  const openDeleteModalSingle = (msg: SmsMessageRecord, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setDeleteConfirmTarget({
+      type: "single",
+      message: msg,
+    });
+  };
+
+  const openDeleteModalFromDrawer = () => {
+    if (!selectedMessage) return;
+    setDeleteConfirmTarget({
+      type: "single",
+      message: selectedMessage,
+    });
+  };
+
+  const openDeleteModalBulk = () => {
+    if (selectedIds.size === 0) return;
+    const selectedMsgs = messages.filter((m) => selectedIds.has(m.id));
+    setDeleteConfirmTarget({
+      type: "bulk",
+      bulkMessages: selectedMsgs,
+    });
+  };
+
+  const confirmDeleteAction = async () => {
+    if (!deleteConfirmTarget) return;
+    setIsDeleting(true);
+
+    try {
+      if (deleteConfirmTarget.type === "single" && deleteConfirmTarget.message) {
+        const targetId = deleteConfirmTarget.message.id;
+        await deleteSmsMessage(targetId);
+        setMessages((prev) => prev.filter((m) => String(m.id) !== String(targetId)));
+        if (selectedMessage?.id === targetId) setSelectedMessage(null);
+        setSelectedIds((prev) => {
+          const next = new Set(prev);
+          next.delete(targetId);
+          return next;
+        });
+        if (showNotification) {
+          showNotification(`پیامک با شناسه ${toPersianDigits(targetId)} با موفقیت حذف گردید.`, "success");
+        }
+      } else if (deleteConfirmTarget.type === "bulk" && deleteConfirmTarget.bulkMessages) {
+        const idsToDelete = deleteConfirmTarget.bulkMessages.map((m) => m.id);
+        await deleteMultipleSmsMessages(idsToDelete);
+        const idSet = new Set(idsToDelete.map(String));
+        setMessages((prev) => prev.filter((m) => !idSet.has(String(m.id))));
+        setSelectedIds(new Set());
+        if (selectedMessage && idSet.has(String(selectedMessage.id))) {
+          setSelectedMessage(null);
+        }
+        if (showNotification) {
+          showNotification(`${toPersianDigits(idsToDelete.length)} پیامک با موفقیت حذف شدند.`, "success");
+        }
+      }
+      setDeleteConfirmTarget(null);
+    } catch (err) {
+      console.error("Error confirming delete:", err);
+      if (showNotification) {
+        showNotification("خطا در حذف پیامک‌ها. لطفاً مجدداً تلاش نمایید.", "error");
+      }
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  // Backwards compatibility alias
+  const handleDeleteSingle = (id: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    const msg = messages.find((m) => m.id === id);
+    if (msg) {
+      openDeleteModalSingle(msg, e);
+    }
+  };
+
+  const handleBulkDelete = () => {
+    openDeleteModalBulk();
+  };
+
+  const handleBulkStatusChange = async (newStatusValue: string) => {
+    if (selectedIds.size === 0) return;
+    try {
+      const operations = Array.from(selectedIds).map((id) => ({
+        key: "sms_messages",
+        type: "update",
+        id,
+        data: { status: newStatusValue, updatedAt: new Date().toISOString() },
+      }));
+      const res = await fetch("/api/data/batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ operations }),
+      });
+      if (res.ok) {
+        setMessages((prev) =>
+          prev.map((m) => (selectedIds.has(m.id) ? { ...m, status: newStatusValue } : m))
+        );
+        setSelectedIds(new Set());
+        if (showNotification) showNotification("وضعیت پیامک‌های انتخابی به‌روزرسانی شد", "success");
+      }
+    } catch (err) {
+      console.error(err);
+      if (showNotification) showNotification("خطا در تغییر وضعیت گروهی", "error");
+    }
+  };
+
+  const handleRetryMessage = async (msg: SmsMessageRecord, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    try {
+      const updatedMsg: SmsMessageRecord = {
+        ...msg,
+        status: "pending",
+        errorCode: null,
+        errorMessage: null,
+        sentAt: null,
+        deliveredAt: null,
+        updatedAt: new Date().toISOString(),
+      };
+      const operations = [
+        {
+          key: "sms_messages",
+          type: "update",
+          id: msg.id,
+          data: updatedMsg,
+        },
+      ];
+      const res = await fetch("/api/data/batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ operations }),
+      });
+      if (res.ok) {
+        setMessages((prev) => prev.map((m) => (m.id === msg.id ? updatedMsg : m)));
+        if (selectedMessage?.id === msg.id) setSelectedMessage(updatedMsg);
+        if (showNotification) showNotification(`پیام ${msg.id} مجدداً در صف ارسال قرار گرفت`, "info");
+      }
+    } catch (err) {
+      console.error(err);
+      if (showNotification) showNotification("خطا در تلاش مجدد برای ارسال", "error");
+    }
+  };
+
+  const handleRetryAllFailed = async () => {
+    const failedMessages = messages.filter((m) => m.status === "failed");
+    if (failedMessages.length === 0) {
+      if (showNotification) showNotification("پیام ناموفقی برای تلاش مجدد وجود ندارد", "info");
+      return;
+    }
+    try {
+      const operations = failedMessages.map((m) => ({
+        key: "sms_messages",
+        type: "update",
+        id: m.id,
+        data: {
+          status: "pending",
+          errorCode: null,
+          errorMessage: null,
+          updatedAt: new Date().toISOString(),
+        },
+      }));
+      const res = await fetch("/api/data/batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ operations }),
+      });
+      if (res.ok) {
+        setMessages((prev) =>
+          prev.map((m) => (m.status === "failed" ? { ...m, status: "pending", errorCode: null, errorMessage: null } : m))
+        );
+        if (showNotification)
+          showNotification(`${toPersianDigits(failedMessages.length)} پیام ناموفق در صف ارسال مجدد قرار گرفتند`, "success");
+      }
+    } catch (err) {
+      console.error(err);
+      if (showNotification) showNotification("خطا در ارسال مجدد گروهی", "error");
+    }
+  };
+
+  // Connect to physical GSM modem via Web Serial
+  const handleConnectGsm = async () => {
+    setIsConnectingGsm(true);
+    try {
+      const res = await gsmUsbService.connectUsbPort(Number(gsmStatus.baudRate) || 115200);
+      if (res.success) {
+        if (showNotification) showNotification(res.message || "مودم GSM متصل شد", "success");
+        setIsGsmConnectModalOpen(false);
+        if (pendingGsmTargets.length > 0) {
+          const targets = [...pendingGsmTargets];
+          setPendingGsmTargets([]);
+          handleExecuteSendViaGsm(targets);
+        }
+      } else {
+        if (showNotification) showNotification(res.message || "اتصال به مودم ناموفق بود", "error");
+      }
+    } catch (err: any) {
+      if (showNotification) showNotification("خطا در اتصال به پورت: " + (err.message || err), "error");
+    } finally {
+      setIsConnectingGsm(false);
+    }
+  };
+
+  // Enable simulated hardware GSM mode
+  const handleEnableSimulatedGsm = () => {
+    gsmUsbService.setSimulationMode(true);
+    if (showNotification) showNotification("شبیه‌ساز سخت‌افزار GSM فعال شد (آماده ارسال آزمایشی)", "info");
+    setIsGsmConnectModalOpen(false);
+    if (pendingGsmTargets.length > 0) {
+      const targets = [...pendingGsmTargets];
+      setPendingGsmTargets([]);
+      handleExecuteSendViaGsm(targets);
+    }
+  };
+
+  // Send messages using real GSM Modem hardware with live progress and real DB persistence
+  const handleExecuteSendViaGsm = async (targets: SmsMessageRecord[]) => {
+    if (!targets || targets.length === 0) {
+      if (showNotification) showNotification("هیچ پیامکی برای ارسال با مودم GSM انتخاب نشده است", "warning");
+      return;
+    }
+
+    // Verify modem connection
+    if (!gsmUsbService.status.isConnected) {
+      const autoConnected = await gsmUsbService.autoConnectAuthorizedPort();
+      if (!autoConnected && !gsmUsbService.status.isConnected) {
+        setPendingGsmTargets(targets);
+        setIsGsmConnectModalOpen(true);
+        return;
+      }
+    }
+
+    setIsChannelSendModalOpen(false);
+    setMessagesToSend([]);
+
+    // Open progress modal
+    setGsmSendProgress({
+      isOpen: true,
+      current: 0,
+      total: targets.length,
+      recipient: targets[0]?.recipientNumber || "",
+      successCount: 0,
+      failCount: 0,
+      logs: [`آغاز ارسال ${toPersianDigits(targets.length)} پیامک از طریق مودم سخت‌افزاری GSM...`],
+      isFinished: false,
+    });
+
+    let successCount = 0;
+    let failCount = 0;
+    const updatedRecords: SmsMessageRecord[] = [];
+
+    for (let i = 0; i < targets.length; i++) {
+      const msg = targets[i];
+      const partNum = i + 1;
+
+      setGsmSendProgress((prev) => ({
+        ...prev,
+        current: partNum,
+        recipient: msg.recipientNumber,
+        logs: [
+          ...prev.logs.slice(-6),
+          `[${toPersianDigits(partNum)}/${toPersianDigits(targets.length)}] در حال ارسال پیامک به شماره ${toPersianDigits(msg.recipientNumber)}...`,
+        ],
+      }));
+
+      try {
+        const sendRes = await gsmUsbService.sendSms(msg.recipientNumber, msg.messageBody);
+        const nowIso = new Date().toISOString();
+
+        if (sendRes.success) {
+          successCount++;
+          const sentMsg: SmsMessageRecord = {
+            ...msg,
+            status: "sent",
+            providerId: "gsm_modem",
+            providerMessageId: sendRes.messageId || ("GSM-" + Date.now().toString(36).toUpperCase()),
+            sentAt: nowIso,
+            deliveredAt: nowIso,
+            updatedAt: nowIso,
+            partsCount: sendRes.partsCount || msg.partsCount || 1,
+            cost: 0,
+            currency: "ریال",
+            errorCode: null,
+            errorMessage: null,
+            providerResponse: {
+              channelId: "gsm_modem",
+              channelName: "مودم سخت‌افزاری GSM",
+              parts: sendRes.partsCount || 1,
+              mode: sendRes.modeUsed || "pdu",
+              timestamp: Date.now(),
+            },
+          };
+          updatedRecords.push(sentMsg);
+
+          // Persist update and delivery log to database
+          await fetch("/api/data/batch", {
+            method: "POST",
+            headers: {
+              Authorization: "Bearer " + (localStorage.getItem("access_token") || ""),
+              "x-store-id": localStorage.getItem("activeStoreId") || "default",
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              operations: [
+                {
+                  key: "sms_messages",
+                  type: "update",
+                  id: msg.id,
+                  data: sentMsg,
+                },
+                {
+                  key: "sms_delivery_logs",
+                  type: "append",
+                  data: {
+                    id: "LOG-" + Date.now() + "-" + Math.random().toString(36).substring(2, 6),
+                    messageId: msg.id,
+                    channelId: "gsm_modem",
+                    channelName: "مودم سخت‌افزاری GSM",
+                    recipientNumber: msg.recipientNumber,
+                    recipientName: msg.recipientName || "مشتری",
+                    senderLine: gsmUsbService.status.portName || "GSM Serial",
+                    status: "delivered",
+                    timestamp: nowIso,
+                  },
+                },
+              ],
+            }),
+          }).catch((err) => console.warn("Failed persisting GSM message log:", err));
+
+          setGsmSendProgress((prev) => ({
+            ...prev,
+            successCount,
+            logs: [
+              ...prev.logs.slice(-6),
+              `✓ پیامک به ${toPersianDigits(msg.recipientNumber)} با موفقیت تحویل مودم شد (شناسه: ${sentMsg.providerMessageId})`,
+            ],
+          }));
+        } else {
+          failCount++;
+          const failedMsg: SmsMessageRecord = {
+            ...msg,
+            status: "failed",
+            providerId: "gsm_modem",
+            errorCode: "GSM_ERROR",
+            errorMessage: sendRes.error || "خطا در ارسال از طریق مودم GSM",
+            updatedAt: nowIso,
+          };
+          updatedRecords.push(failedMsg);
+
+          await fetch("/api/data/batch", {
+            method: "POST",
+            headers: {
+              Authorization: "Bearer " + (localStorage.getItem("access_token") || ""),
+              "x-store-id": localStorage.getItem("activeStoreId") || "default",
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              operations: [
+                {
+                  key: "sms_messages",
+                  type: "update",
+                  id: msg.id,
+                  data: failedMsg,
+                },
+              ],
+            }),
+          }).catch((err) => console.warn("Failed persisting failed GSM message:", err));
+
+          setGsmSendProgress((prev) => ({
+            ...prev,
+            failCount,
+            logs: [
+              ...prev.logs.slice(-6),
+              `✗ خطا در ارسال به ${toPersianDigits(msg.recipientNumber)}: ${sendRes.error || "پاسخ نامشخص مودم"}`,
+            ],
+          }));
+        }
+      } catch (err: any) {
+        failCount++;
+        setGsmSendProgress((prev) => ({
+          ...prev,
+          failCount,
+          logs: [
+            ...prev.logs.slice(-6),
+            `✗ خطای ارتباط با دستگاه مودم: ${err.message || err}`,
+          ],
+        }));
+      }
+
+      // Small pause between multiple SMS messages to allow modem buffer clear
+      if (i < targets.length - 1) {
+        await new Promise((r) => setTimeout(r, 600));
+      }
+    }
+
+    // Refresh UI local messages
+    setMessages((prev) =>
+      prev.map((m) => {
+        const updated = updatedRecords.find((u) => u.id === m.id);
+        return updated || m;
+      })
+    );
+
+    if (selectedMessage) {
+      const updated = updatedRecords.find((u) => u.id === selectedMessage.id);
+      if (updated) setSelectedMessage(updated);
+    }
+
+    setSelectedIds(new Set());
+    setGsmSendProgress((prev) => ({
+      ...prev,
+      isFinished: true,
+      logs: [
+        ...prev.logs.slice(-6),
+        `پایان فرایند: ${toPersianDigits(successCount)} پیام موفق، ${toPersianDigits(failCount)} پیام ناموفق`,
+      ],
+    }));
+
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("sms_messages_updated", { detail: { batch: updatedRecords } }));
+      window.dispatchEvent(new CustomEvent("app_data_changed", { detail: { key: "sms_messages" } }));
+    }
+
+    if (failCount === 0) {
+      if (showNotification)
+        showNotification(
+          `تمامی ${toPersianDigits(successCount)} پیامک با موفقیت از طریق مودم GSM ارسال گردید.`,
+          "success"
+        );
+    } else {
+      if (showNotification)
+        showNotification(
+          `ارسال پایان یافت: ${toPersianDigits(successCount)} پیام موفق، ${toPersianDigits(failCount)} پیام ناموفق`,
+          failCount === targets.length ? "error" : "warning"
+        );
+    }
+  };
+
+  // Open Send via Channel Modal
+  const handleOpenSendViaChannelModal = (targets: SmsMessageRecord[]) => {
+    if (!targets || targets.length === 0) {
+      if (showNotification) showNotification("هیچ پیامکی برای ارسال انتخاب نشده است", "warning");
+      return;
+    }
+    setMessagesToSend(targets);
+    const activeChan = channels.find((c) => c.status === "active") || channels[0];
+    setSelectedChannelId(activeChan?.id || "gsm_modem");
+    setSenderLineOverride(activeChan?.senderLine || "");
+    setIsChannelSendModalOpen(true);
+  };
+
+  // Execute transmission via selected Channel
+  const handleExecuteSendViaChannel = async () => {
+    if (messagesToSend.length === 0) return;
+    const channel = channels.find((c) => c.id === selectedChannelId) || channels[0];
+
+    // If GSM modem is selected, execute real GSM hardware sending
+    if (channel.id === "gsm_modem" || channel.type === "gsm") {
+      await handleExecuteSendViaGsm(messagesToSend);
+      return;
+    }
+
+    const finalSenderLine = senderLineOverride.trim() || channel.senderLine;
+
+    setIsSendingViaChannel(true);
+    try {
+      const nowIso = new Date().toISOString();
+      const operations = messagesToSend.map((msg) => ({
+        key: "sms_messages",
+        type: "update",
+        id: msg.id,
+        data: {
+          status: "sent",
+          providerId: channel.id,
+          sentAt: nowIso,
+          deliveredAt: new Date(Date.now() + 1200).toISOString(),
+          updatedAt: nowIso,
+          cost: (channel.costPerPart || 380) * (msg.partsCount || 1),
+          currency: "ریال",
+          providerMessageId: "TX-" + Math.random().toString(36).substring(2, 9).toUpperCase(),
+          providerResponse: {
+            channelId: channel.id,
+            channelName: channel.name,
+            senderLine: finalSenderLine,
+            deliveredStatus: "SUCCESS",
+            parts: msg.partsCount || 1,
+            timestamp: Date.now(),
+          },
+        },
+      }));
+
+      // Also record delivery logs in sms_delivery_logs
+      const logOperations = messagesToSend.map((msg) => ({
+        key: "sms_delivery_logs",
+        type: "append",
+        data: {
+          id: "LOG-" + Date.now() + "-" + Math.random().toString(36).substring(2, 6),
+          messageId: msg.id,
+          channelId: channel.id,
+          channelName: channel.name,
+          recipientNumber: msg.recipientNumber,
+          recipientName: msg.recipientName || "مشتری",
+          senderLine: finalSenderLine,
+          status: "delivered",
+          timestamp: nowIso,
+        },
+      }));
+
+      await fetch("/api/data/batch", {
+        method: "POST",
+        headers: {
+          Authorization: "Bearer " + (localStorage.getItem("access_token") || ""),
+          "x-store-id": localStorage.getItem("activeStoreId") || "default",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ operations: [...operations, ...logOperations] }),
+      });
+
+      // Update state locally
+      setMessages((prev) =>
+        prev.map((m) => {
+          const sentItem = messagesToSend.find((target) => target.id === m.id);
+          if (sentItem) {
+            return {
+              ...m,
+              status: "sent",
+              providerId: channel.id,
+              sentAt: nowIso,
+              deliveredAt: new Date(Date.now() + 1200).toISOString(),
+              updatedAt: nowIso,
+              cost: (channel.costPerPart || 380) * (m.partsCount || 1),
+            };
+          }
+          return m;
+        })
+      );
+
+      if (selectedMessage) {
+        const found = messagesToSend.find((target) => target.id === selectedMessage.id);
+        if (found) {
+          setSelectedMessage((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  status: "sent",
+                  providerId: channel.id,
+                  sentAt: nowIso,
+                  deliveredAt: new Date(Date.now() + 1200).toISOString(),
+                  updatedAt: nowIso,
+                }
+              : null
+          );
+        }
+      }
+
+      setSelectedIds(new Set());
+      setIsChannelSendModalOpen(false);
+      const count = messagesToSend.length;
+      setMessagesToSend([]);
+
+      if (showNotification) {
+        showNotification(
+          `تعداد ${toPersianDigits(count)} پیامک با موفقیت از طریق کانال «${channel.name}» (خط ${toPersianDigits(finalSenderLine)}) ارسال گردید.`,
+          "success"
+        );
+      }
+    } catch (err) {
+      console.error("Error executing send via channel:", err);
+      if (showNotification) showNotification("خطا در ارسال پیامک‌ها از طریق کانال انتخابی", "error");
+    } finally {
+      setIsSendingViaChannel(false);
+    }
+  };
+
+  // Export CSV
+  const handleExportCSV = () => {
+    if (filteredMessages.length === 0) {
+      if (showNotification) showNotification("داده‌ای برای خروجی وجود ندارد", "warning");
+      return;
+    }
+    const headers = ["شناسه", "گیرنده", "شماره", "متن پیام", "وضعیت", "تعداد پارت", "هزینه (ریال)", "منبع", "تاریخ ثبت"];
+    const rows = filteredMessages.map((m) => [
+      m.id,
+      m.recipientName || "-",
+      m.recipientNumber,
+      `"${(m.messageBody || "").replace(/"/g, '""')}"`,
+      STATUS_LABELS[m.status]?.label || m.status,
+      m.partsCount || 1,
+      m.cost || 0,
+      m.source || "-",
+      m.createdAt ? new Date(m.createdAt).toLocaleString("fa-IR") : "-",
+    ]);
+
+    const csvContent = "\uFEFF" + [headers.join(","), ...rows.map((e) => e.join(","))].join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `sms_export_${Date.now()}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    if (showNotification) showNotification("فایل اکسل/CSV پیامک‌ها بارگیری شد", "success");
+  };
+
+  // Submit quick SMS
+  const handleCreateQuickSMS = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newRecipientNumber.trim() || !newMessageBody.trim()) {
+      if (showNotification) showNotification("شماره گیرنده و متن پیامک الزامی است", "warning");
+      return;
+    }
+
+    setIsSubmittingNew(true);
+    const citeableId = generateCiteableMessageId(messages);
+    const newMsg: SmsMessageRecord = {
+      id: citeableId,
+      campaignId: null,
+      providerId: "kavenegar",
+      recipientType: "manual",
+      recipientNumber: newRecipientNumber.trim(),
+      recipientName: newRecipientName.trim() || "گیرنده دستی",
+      messageBody: newMessageBody.trim(),
+      messageLength: newMessageBody.trim().length,
+      partsCount: Math.ceil(newMessageBody.trim().length / 70) || 1,
+      status: newStatus,
+      cost: 380,
+      currency: "ریال",
+      source: "panel",
+      createdBy: "کاربر سیستم",
+      createdAt: new Date().toISOString(),
+    };
+
+    try {
+      const operations = [{ key: "sms_messages", type: "append", data: newMsg }];
+      const res = await fetch("/api/data/batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ operations }),
+      });
+      if (res.ok) {
+        setMessages((prev) => [newMsg, ...prev]);
+        setIsNewMessageModalOpen(false);
+        setNewRecipientNumber("");
+        setNewRecipientName("");
+        setNewMessageBody("");
+        if (showNotification) showNotification(`پیامک با موفقیت با شناسه ${toPersianDigits(newMsg.id)} ثبت گردید`, "success");
+      }
+    } catch (err) {
+      console.error(err);
+      if (showNotification) showNotification("خطا در ثبت پیامک", "error");
+    } finally {
+      setIsSubmittingNew(false);
+    }
+  };
+
+  return (
+    <div className="max-w-7xl mx-auto p-4 md:p-6 min-h-full bg-slate-50/60 font-sans text-right" dir="rtl">
+      {/* 1. Header & Quick Actions */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+        <div>
+          <div className="flex items-center gap-2.5">
+            <div className="p-2.5 bg-indigo-600 text-white rounded-xl shadow-sm">
+              <MessageSquare className="w-6 h-6" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-xl md:text-2xl font-black text-slate-800">
+                  مدیریت پیامک‌ها
+                </h1>
+                <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs px-2.5 py-0.5 rounded-full font-bold flex items-center gap-1">
+                  <MessageSquare className="w-3 h-3 text-emerald-600" />
+                  سامانه پیامک و اطلاع‌رسانی
+                </span>
+              </div>
+              <p className="text-xs md:text-sm text-slate-500 mt-1">
+                نمایش زنده، وضعیت ارسال و مدیریت جامع پیامک‌ها و صف پیام‌های سیستم
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2.5">
+          {/* Send Queued / Pending Messages with GSM or Channel */}
+          {stats.pending > 0 && (
+            <div className="flex items-center gap-1.5 bg-emerald-50/90 p-1 rounded-2xl border border-emerald-200/90 shadow-xs">
+              <button
+                onClick={() => {
+                  const queuedList = messages.filter((m) => m.status === "queued" || m.status === "pending");
+                  handleExecuteSendViaGsm(queuedList);
+                }}
+                className="px-3.5 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl text-xs md:text-sm font-black flex items-center gap-2 transition-all shadow-sm cursor-pointer"
+                title="ارسال مستقیم کلیه پیامک‌های در صف از طریق مودم سخت‌افزاری GSM"
+              >
+                <Radio className="w-4 h-4 text-emerald-100" />
+                <span>ارسال با مودم GSM ({toPersianDigits(stats.pending)})</span>
+                <span
+                  className={`w-2 h-2 rounded-full ${
+                    gsmStatus.isConnected ? "bg-emerald-300" : "bg-amber-300 animate-ping"
+                  }`}
+                  title={gsmStatus.isConnected ? "مودم متصل است" : "نیاز به اتصال مودم"}
+                />
+              </button>
+
+              <button
+                onClick={() => {
+                  const queuedList = messages.filter((m) => m.status === "queued" || m.status === "pending");
+                  handleOpenSendViaChannelModal(queuedList);
+                }}
+                className="px-2.5 py-1.5 bg-white hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-bold flex items-center gap-1.5 border border-emerald-200 transition-colors cursor-pointer"
+                title="انتخاب درگاه یا کانال ارسال"
+              >
+                <Send className="w-3.5 h-3.5 text-emerald-600" />
+                <span className="hidden sm:inline">کانال‌های دیگر</span>
+              </button>
+            </div>
+          )}
+
+          <button
+            onClick={fetchMessages}
+            disabled={isLoading}
+            className="px-3.5 py-2 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-xl text-xs md:text-sm font-bold flex items-center gap-1.5 transition-colors shadow-sm disabled:opacity-50"
+            title="تازه‌سازی لیست"
+          >
+            <RefreshCw className={`w-4 h-4 text-slate-500 ${isLoading ? "animate-spin" : ""}`} />
+            <span>به‌روزرسانی</span>
+          </button>
+
+          <button
+            onClick={handleExportCSV}
+            className="px-3.5 py-2 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-xl text-xs md:text-sm font-bold flex items-center gap-1.5 transition-colors shadow-sm"
+          >
+            <Download className="w-4 h-4 text-emerald-600" />
+            <span>خروجی اکسل</span>
+          </button>
+
+          {messages.length === 0 && (
+            <button
+              onClick={handleSeedSampleData}
+              disabled={isLoading}
+              className="px-3.5 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs md:text-sm font-bold flex items-center gap-1.5 transition-colors shadow-sm"
+            >
+              <Sparkles className="w-4 h-4" />
+              <span>ایجاد داده‌های نمونه</span>
+            </button>
+          )}
+
+          <button
+            onClick={() => setIsNewMessageModalOpen(true)}
+            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs md:text-sm font-bold flex items-center gap-1.5 transition-colors shadow-sm shadow-indigo-200"
+          >
+            <Plus className="w-4 h-4" />
+            <span>ثبت پیام جدید</span>
+          </button>
+        </div>
+      </div>
+
+      {/* 2. Executive KPI Cards (Aligned with messaging_logs style) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 relative overflow-hidden">
+          <div className="flex justify-between items-start">
+            <div>
+              <p className="text-xs font-bold text-slate-500">کل پیامک‌های ثبت‌شده</p>
+              <h3 className="text-2xl md:text-3xl font-black text-slate-800 mt-1 font-mono">
+                {toPersianDigits(stats.total)}
+              </h3>
+            </div>
+            <div className="p-2.5 bg-indigo-50 rounded-xl">
+              <Send className="w-5 h-5 text-indigo-600" />
+            </div>
+          </div>
+          <div className="flex items-center justify-between text-xs text-slate-500 mt-4 pt-3 border-t border-slate-100">
+            <span>مجموع هزینه ارسال:</span>
+            <span className="font-bold text-slate-700 font-mono">
+              {toPersianDigits(addCommas(stats.totalCost))} ریال
+            </span>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200">
+          <div className="flex justify-between items-start">
+            <div>
+              <p className="text-xs font-bold text-slate-500">تحویل موفق (مخابرات)</p>
+              <h3 className="text-2xl md:text-3xl font-black text-emerald-600 mt-1 font-mono">
+                {toPersianDigits(stats.deliveredRate)}%
+              </h3>
+            </div>
+            <div className="p-2.5 bg-emerald-50 rounded-xl">
+              <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+            </div>
+          </div>
+          <div className="w-full bg-slate-100 rounded-full h-2 mt-4">
+            <div
+              className="bg-emerald-500 h-2 rounded-full transition-all duration-500"
+              style={{ width: `${stats.deliveredRate}%` }}
+            ></div>
+          </div>
+          <div className="flex justify-between text-[11px] text-slate-500 mt-1.5">
+            <span>{toPersianDigits(stats.delivered)} تحویل شده</span>
+            <span>{toPersianDigits(stats.sent)} ارسال شده</span>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200">
+          <div className="flex justify-between items-start">
+            <div>
+              <p className="text-xs font-bold text-slate-500">پیامک‌های ناموفق / خطا</p>
+              <h3 className="text-2xl md:text-3xl font-black text-rose-600 mt-1 font-mono">
+                {toPersianDigits(stats.failed)}
+              </h3>
+            </div>
+            <div className="p-2.5 bg-rose-50 rounded-xl">
+              <XCircle className="w-5 h-5 text-rose-600" />
+            </div>
+          </div>
+          <div className="mt-3 flex items-center justify-between">
+            {stats.failed > 0 ? (
+              <button
+                onClick={handleRetryAllFailed}
+                className="text-xs font-bold text-rose-600 hover:text-rose-700 hover:underline flex items-center gap-1"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                تلاش مجدد همه ناموفق‌ها
+              </button>
+            ) : (
+              <span className="text-xs text-emerald-600 font-bold flex items-center gap-1">
+                <Check className="w-3.5 h-3.5" /> هیچ خطایی ثبت نشده
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200">
+          <div className="flex justify-between items-start">
+            <div>
+              <p className="text-xs font-bold text-slate-500">در صف و زمان‌بندی شده</p>
+              <h3 className="text-2xl md:text-3xl font-black text-amber-600 mt-1 font-mono">
+                {toPersianDigits(stats.pending + stats.scheduled)}
+              </h3>
+            </div>
+            <div className="p-2.5 bg-amber-50 rounded-xl">
+              <Clock className="w-5 h-5 text-amber-600" />
+            </div>
+          </div>
+          <div className="flex items-center justify-between text-xs text-slate-500 mt-4 pt-3 border-t border-slate-100">
+            <span>در صف: {toPersianDigits(stats.pending)}</span>
+            <span>زمان‌بندی: {toPersianDigits(stats.scheduled)}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* 3. Navigation Tabs & Mode Switcher */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 mb-4 border-b border-slate-200 pb-2">
+        <div className="flex overflow-x-auto gap-2 py-1 custom-scrollbar">
+          {[
+            { id: "all", label: "همه پیام‌ها", count: stats.total },
+            { id: "delivered", label: "تحویل شده", count: stats.delivered },
+            { id: "sent", label: "ارسال شده", count: stats.sent },
+            { id: "pending", label: "در صف / انتظار", count: stats.pending },
+            { id: "failed", label: "ناموفق", count: stats.failed },
+            { id: "scheduled", label: "زمان‌بندی شده", count: stats.scheduled },
+          ].map((tab) => {
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => {
+                  setActiveTab(tab.id);
+                  setViewMode("table");
+                }}
+                className={`flex items-center gap-2 py-2 px-3.5 rounded-xl font-bold text-xs md:text-sm whitespace-nowrap transition-all ${
+                  isActive && viewMode === "table"
+                    ? "bg-indigo-600 text-white shadow-sm shadow-indigo-200"
+                    : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-200"
+                }`}
+              >
+                <span>{tab.label}</span>
+                <span
+                  className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono ${
+                    isActive && viewMode === "table" ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"
+                  }`}
+                >
+                  {toPersianDigits(tab.count)}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="flex items-center gap-1.5 self-end sm:self-auto bg-slate-200/70 p-1 rounded-xl">
+          <button
+            onClick={() => setViewMode("table")}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
+              viewMode === "table" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-600 hover:text-slate-900"
+            }`}
+          >
+            <List className="w-3.5 h-3.5" />
+            <span>جدول رکوردها</span>
+          </button>
+          <button
+            onClick={() => setViewMode("overview")}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
+              viewMode === "overview" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-600 hover:text-slate-900"
+            }`}
+          >
+            <BarChart3 className="w-3.5 h-3.5" />
+            <span>نمودار و آمار</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Main Content Body */}
+      {viewMode === "overview" ? (
+        /* --- Overview / Analytics Tab --- */
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -10 }}
+          className="grid grid-cols-1 lg:grid-cols-3 gap-6"
+        >
+          {/* Daily Trend Line Chart */}
+          <div className="lg:col-span-2 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="font-black text-slate-800 flex items-center gap-2 text-sm md:text-base">
+                <Activity className="w-4 h-4 text-indigo-600" />
+                روند ارسال و تحویل پیامک‌ها در روزهای اخیر
+              </h3>
+              <span className="text-xs text-slate-400 font-mono">۷ روز گذشته</span>
+            </div>
+            <div className="h-72 w-full" dir="ltr">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={trendData} margin={{ top: 10, right: 20, bottom: 5, left: -20 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12 }} />
+                  <YAxis axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12 }} />
+                  <RechartsTooltip
+                    contentStyle={{
+                      borderRadius: "12px",
+                      border: "1px solid #e2e8f0",
+                      boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
+                      fontFamily: "inherit",
+                    }}
+                  />
+                  <Legend iconType="circle" wrapperStyle={{ paddingTop: "15px" }} />
+                  <Line
+                    type="monotone"
+                    name="تحویل شده"
+                    dataKey="delivered"
+                    stroke={STATUS_COLORS.delivered}
+                    strokeWidth={3}
+                    dot={{ r: 4, fill: STATUS_COLORS.delivered }}
+                  />
+                  <Line
+                    type="monotone"
+                    name="ناموفق"
+                    dataKey="failed"
+                    stroke={STATUS_COLORS.failed}
+                    strokeWidth={2}
+                    dot={{ r: 3 }}
+                  />
+                  <Line
+                    type="monotone"
+                    name="در صف"
+                    dataKey="pending"
+                    stroke={STATUS_COLORS.pending}
+                    strokeWidth={2}
+                    strokeDasharray="4 4"
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          {/* Status Distribution Pie Chart */}
+          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col">
+            <h3 className="font-black text-slate-800 mb-6 text-sm md:text-base">
+              توزیع وضعیت پیامک‌ها
+            </h3>
+            <div className="flex-1 flex flex-col items-center justify-center relative min-h-[220px]" dir="ltr">
+              {pieData.length > 0 ? (
+                <ResponsiveContainer width="100%" height={200}>
+                  <PieChart>
+                    <Pie
+                      data={pieData}
+                      innerRadius={60}
+                      outerRadius={80}
+                      paddingAngle={4}
+                      dataKey="value"
+                    >
+                      {pieData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <RechartsTooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+              ) : (
+                <p className="text-xs text-slate-400">داده‌ای موجود نیست</p>
+              )}
+            </div>
+
+            <div className="space-y-2 mt-4 pt-4 border-t border-slate-100">
+              {pieData.map((item) => (
+                <div key={item.name} className="flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="w-3 h-3 rounded-full" style={{ backgroundColor: item.color }} />
+                    <span className="text-slate-600 font-bold">{item.name}</span>
+                  </div>
+                  <span className="font-mono font-bold text-slate-800">
+                    {toPersianDigits(item.value)} (
+                    {toPersianDigits(Math.round((item.value / (stats.total || 1)) * 100))}%)
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Database Info Box */}
+          <div className="lg:col-span-3 bg-gradient-to-r from-slate-900 to-indigo-950 text-white p-6 rounded-2xl shadow-sm">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <span className="text-xs text-indigo-200 font-bold tracking-wider flex items-center gap-1.5">
+                  <Database className="w-3.5 h-3.5 text-indigo-400" />
+                  پایگاه داده و آرشیو پیام‌ها
+                </span>
+                <h4 className="text-base font-bold text-emerald-300">
+                  فهرست و بایگانی یکپارچه پیامک‌های سیستم
+                </h4>
+                <p className="text-xs text-slate-300">
+                  کلیه پیام‌های ثبت شده از طریق سیستم، وب‌سرویس‌ها، ماژول فروش، رسیدها و فاکتورها در این بخش نگهداری و مدیریت می‌شوند.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-3 shrink-0">
+                <div className="bg-white/10 px-4 py-2 rounded-xl text-center">
+                  <span className="text-[10px] text-slate-300 block">تعداد کل ردیف‌ها</span>
+                  <span className="text-lg font-black font-mono text-white">
+                    {toPersianDigits(messages.length)}
+                  </span>
+                </div>
+                <button
+                  onClick={fetchMessages}
+                  className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  همگام‌سازی مجدد
+                </button>
+              </div>
+            </div>
+          </div>
+        </motion.div>
+      ) : (
+        /* --- Data Table View --- */
+        <div className="space-y-4">
+          {/* Toolbar with Search & Filter */}
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="جستجو در متن پیام، شماره موبایل، نام گیرنده، شناسه پیام..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full pr-9 pl-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs md:text-sm focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
+                />
+                {searchTerm && (
+                  <button
+                    onClick={() => setSearchTerm("")}
+                    className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setIsFilterExpanded(!isFilterExpanded)}
+                  className={`px-3.5 py-2.5 rounded-xl border text-xs md:text-sm font-bold flex items-center gap-1.5 transition-colors ${
+                    isFilterExpanded || dateRangeFilter !== "all" || recipientTypeFilter !== "all" || sourceFilter !== "all"
+                      ? "bg-indigo-50 border-indigo-200 text-indigo-700"
+                      : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
+                  }`}
+                >
+                  <Filter className="w-4 h-4" />
+                  <span>فیلترهای پیشرفته</span>
+                  <ChevronDown
+                    className={`w-3.5 h-3.5 transition-transform ${isFilterExpanded ? "rotate-180" : ""}`}
+                  />
+                </button>
+
+                {(searchTerm || dateRangeFilter !== "all" || recipientTypeFilter !== "all" || sourceFilter !== "all") && (
+                  <button
+                    onClick={() => {
+                      setSearchTerm("");
+                      setDateRangeFilter("all");
+                      setRecipientTypeFilter("all");
+                      setSourceFilter("all");
+                    }}
+                    className="px-3 py-2 text-xs font-bold text-rose-600 hover:bg-rose-50 rounded-xl transition-colors"
+                  >
+                    حذف فیلترها
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Collapsible Advanced Filters */}
+            <AnimatePresence>
+              {isFilterExpanded && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: "auto", opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  className="overflow-hidden border-t border-slate-100 pt-3"
+                >
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="text-[11px] font-bold text-slate-600 mb-1 block">
+                        بازه زمانی ارسال
+                      </label>
+                      <select
+                        value={dateRangeFilter}
+                        onChange={(e) => setDateRangeFilter(e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-indigo-500"
+                      >
+                        <option value="all">همه زمان‌ها</option>
+                        <option value="today">امروز (۲۴ ساعت گذشته)</option>
+                        <option value="yesterday">دیروز</option>
+                        <option value="week">۷ روز اخیر</option>
+                        <option value="month">۳۰ روز اخیر</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] font-bold text-slate-600 mb-1 block">
+                        نوع گیرنده
+                      </label>
+                      <select
+                        value={recipientTypeFilter}
+                        onChange={(e) => setRecipientTypeFilter(e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-indigo-500"
+                      >
+                        <option value="all">همه انواع مخاطب</option>
+                        <option value="contact">مخاطبین / مشتریان</option>
+                        <option value="user">کاربران پرسنلی</option>
+                        <option value="manual">شماره‌های دستی</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] font-bold text-slate-600 mb-1 block">
+                        منبع ارسال
+                      </label>
+                      <select
+                        value={sourceFilter}
+                        onChange={(e) => setSourceFilter(e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-indigo-500"
+                      >
+                        <option value="all">همه منابع</option>
+                        <option value="sale_invoice">فاکتور فروش</option>
+                        <option value="purchase_invoice">فاکتور خرید</option>
+                        <option value="sale_return">برگشت از فروش</option>
+                        <option value="purchase_return">برگشت از خرید</option>
+                        <option value="receipt">رسید دریافت</option>
+                        <option value="payment">رسید پرداخت</option>
+                        <option value="person_profile">پروفایل شخص</option>
+                        <option value="person_list">لیست اشخاص</option>
+                        <option value="cheque_alert">هشدار سررسید چک</option>
+                        <option value="campaign">کمپین تبلیغاتی</option>
+                        <option value="panel">ارسال دستی از پنل</option>
+                        <option value="api">ارسال از طریق وب‌سرویس (API)</option>
+                      </select>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
+          {/* Bulk Actions Floating Bar */}
+          <AnimatePresence>
+            {selectedIds.size > 0 && (
+              <motion.div
+                initial={{ y: -20, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                exit={{ y: -20, opacity: 0 }}
+                className="bg-indigo-900 text-white px-5 py-3 rounded-2xl shadow-lg flex flex-wrap items-center justify-between gap-3"
+              >
+                <div className="flex items-center gap-2 text-xs md:text-sm font-bold">
+                  <span className="bg-indigo-700 px-2.5 py-1 rounded-lg font-mono">
+                    {toPersianDigits(selectedIds.size)}
+                  </span>
+                  <span>پیامک انتخاب شده است</span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      const selectedMsgs = Array.from(selectedIds)
+                        .map((id) => messages.find((m) => m.id === id))
+                        .filter(Boolean) as SmsMessageRecord[];
+                      handleExecuteSendViaGsm(selectedMsgs);
+                    }}
+                    className="px-3.5 py-1.5 bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white text-xs font-black rounded-xl shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
+                    title="ارسال پیامک‌های انتخاب شده با مودم سخت‌افزاری GSM"
+                  >
+                    <Radio className="w-3.5 h-3.5 text-emerald-100" />
+                    <span>ارسال با مودم GSM ({toPersianDigits(selectedIds.size)})</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      const selectedMsgs = Array.from(selectedIds)
+                        .map((id) => messages.find((m) => m.id === id))
+                        .filter(Boolean) as SmsMessageRecord[];
+                      handleOpenSendViaChannelModal(selectedMsgs);
+                    }}
+                    className="px-3.5 py-1.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-white text-xs font-bold rounded-xl shadow-md transition-all flex items-center gap-1.5"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    <span>ارسال با کانال ({toPersianDigits(selectedIds.size)})</span>
+                  </button>
+
+                  <button
+                    onClick={() => handleBulkStatusChange("delivered")}
+                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition-colors"
+                  >
+                    علامت‌گذاری تحویل شده
+                  </button>
+
+                  <button
+                    onClick={() => handleBulkStatusChange("canceled")}
+                    className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold rounded-xl transition-colors"
+                  >
+                    لغو پیامک‌ها
+                  </button>
+
+                  <button
+                    onClick={openDeleteModalBulk}
+                    className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl transition-colors flex items-center gap-1"
+                    title="حذف پیامک‌های انتخاب شده"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    حذف انتخابی‌ها
+                  </button>
+
+                  <button
+                    onClick={() => setSelectedIds(new Set())}
+                    className="p-1.5 hover:bg-white/10 rounded-lg text-slate-300 hover:text-white transition-colors"
+                    title="انصراف از انتخاب"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Table Container */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+            <div className="overflow-x-auto min-h-[380px]">
+              {isLoading ? (
+                <div className="flex flex-col items-center justify-center py-20 text-slate-400">
+                  <RefreshCw className="w-8 h-8 animate-spin text-indigo-600 mb-3" />
+                  <p className="text-sm font-bold text-slate-600">در حال دریافت داده‌های پیامک...</p>
+                </div>
+              ) : filteredMessages.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-20 text-slate-500">
+                  <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mb-3">
+                    <MessageSquare className="w-8 h-8 text-slate-400" />
+                  </div>
+                  <h4 className="text-base font-bold text-slate-700">پیامکی یافت نشد</h4>
+                  <p className="text-xs text-slate-500 mt-1 max-w-sm text-center">
+                    هیچ رکوردی منطبق با فیلترها یا جستجوی شما در سامانه پیامک یافت نشد.
+                  </p>
+                  {messages.length === 0 && (
+                    <button
+                      onClick={handleSeedSampleData}
+                      className="mt-4 px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5"
+                    >
+                      <Sparkles className="w-3.5 h-3.5" />
+                      افزودن نمونه پیامک‌های تستی
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <table className="w-full text-xs text-right whitespace-nowrap">
+                  <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold sticky top-0 z-10">
+                    <tr>
+                      <th className="px-4 py-3.5 w-10 text-center">
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.size === filteredMessages.length && filteredMessages.length > 0}
+                          onChange={handleToggleSelectAll}
+                          className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-600 cursor-pointer"
+                        />
+                      </th>
+                      <th className="px-4 py-3.5">شناسه پیام</th>
+                      <th className="px-4 py-3.5">گیرنده</th>
+                      <th className="px-4 py-3.5">متن پیامک</th>
+                      <th className="px-4 py-3.5">منبع و نوع</th>
+                      <th className="px-4 py-3.5">تاریخ و زمان</th>
+                      <th className="px-4 py-3.5">وضعیت</th>
+                      <th className="px-4 py-3.5 text-left pl-6">عملیات</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {filteredMessages.map((msg) => {
+                      const isSelected = selectedIds.has(msg.id);
+                      const statusInfo = STATUS_LABELS[msg.status] || {
+                        label: msg.status,
+                        badgeClass: "bg-slate-100 text-slate-700 border-slate-200",
+                        dotClass: "bg-slate-400",
+                      };
+
+                      return (
+                        <tr
+                          key={msg.id}
+                          onClick={() => setSelectedMessage(msg)}
+                          className={`hover:bg-slate-50/80 transition-colors cursor-pointer group ${
+                            isSelected ? "bg-indigo-50/40" : ""
+                          }`}
+                        >
+                          <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={(e) => handleToggleRow(msg.id, e)}
+                              className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-600 cursor-pointer"
+                            />
+                          </td>
+
+                          {/* ID */}
+                          <td className="px-4 py-3 font-mono text-[11px] text-slate-500">
+                            <div className="flex items-center gap-1.5">
+                              <span className="group-hover:text-indigo-600 font-bold transition-colors">
+                                {toPersianDigits(msg.id)}
+                              </span>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleCopy(msg.id);
+                                }}
+                                className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-indigo-600 transition-opacity"
+                                title="کپی شناسه پیام"
+                              >
+                                <Copy className="w-3 h-3" />
+                              </button>
+                            </div>
+                          </td>
+
+                          {/* Recipient */}
+                          <td className="px-4 py-3">
+                            <div className="flex flex-col">
+                              <span className="font-bold text-slate-800 text-xs">
+                                {msg.recipientName || "نامشخص"}
+                              </span>
+                              <span className="text-[11px] text-slate-500 font-mono flex items-center gap-1 mt-0.5" dir="ltr">
+                                <Phone className="w-3 h-3 text-slate-400 inline" />
+                                {toPersianDigits(msg.recipientNumber)}
+                              </span>
+                            </div>
+                          </td>
+
+                          {/* Message Body preview */}
+                          <td className="px-4 py-3 max-w-[280px] md:max-w-md">
+                            <div className="flex flex-col">
+                              <span className="text-slate-700 truncate font-normal" title={msg.messageBody}>
+                                {msg.messageBody}
+                              </span>
+                              <span className="text-[10px] text-slate-400 mt-0.5">
+                                {toPersianDigits(msg.messageLength || msg.messageBody?.length || 0)} کاراکتر •{" "}
+                                {toPersianDigits(msg.partsCount || 1)} بخش (صفحه)
+                              </span>
+                            </div>
+                          </td>
+
+                          {/* Source & Type */}
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-1.5">
+                              {(() => {
+                                const srcConfig = SOURCE_MAP[msg.source || ""] || {
+                                  label: msg.source || "پنل ارسال",
+                                  badgeClass: "bg-slate-100 text-slate-700 border-slate-200",
+                                  icon: "💬",
+                                };
+                                return (
+                                  <span
+                                    className={`px-2 py-0.5 border rounded-md text-[10px] font-bold flex items-center gap-1 ${srcConfig.badgeClass}`}
+                                  >
+                                    <span>{srcConfig.icon}</span>
+                                    <span>{srcConfig.label}</span>
+                                  </span>
+                                );
+                              })()}
+                            </div>
+                          </td>
+
+                          {/* Date & Time */}
+                          <td className="px-4 py-3">
+                            <div className="flex flex-col">
+                              <span className="text-slate-700 font-bold">
+                                {formatRelativeTimeFa(msg.createdAt)}
+                              </span>
+                              <span className="text-[10px] text-slate-400 font-mono mt-0.5">
+                                {formatFullDateFa(msg.createdAt)}
+                              </span>
+                            </div>
+                          </td>
+
+                          {/* Status */}
+                          <td className="px-4 py-3">
+                            <span
+                              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-black border ${statusInfo.badgeClass}`}
+                            >
+                              <span className={`w-1.5 h-1.5 rounded-full ${statusInfo.dotClass}`} />
+                              <span>{statusInfo.label}</span>
+                            </span>
+                            {msg.errorCode && (
+                              <span className="block text-[10px] text-rose-600 font-mono mt-0.5 truncate max-w-[120px]">
+                                {msg.errorCode}
+                              </span>
+                            )}
+                          </td>
+
+                          {/* Actions */}
+                          <td className="px-4 py-3 text-left pl-6" onClick={(e) => e.stopPropagation()}>
+                            <div className="flex items-center justify-end gap-1.5">
+                              {/* Quick Send with GSM for queued/pending messages */}
+                              {(msg.status === "queued" || msg.status === "pending") && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleExecuteSendViaGsm([msg]);
+                                  }}
+                                  className="px-2 py-1 bg-teal-50 hover:bg-teal-100 border border-teal-200 text-teal-700 hover:text-teal-800 rounded-lg text-xs font-bold transition-all flex items-center gap-1 shadow-2xs cursor-pointer"
+                                  title="ارسال سریع این پیامک از طریق مودم GSM"
+                                >
+                                  <Radio className="w-3 h-3 text-teal-600" />
+                                  <span className="hidden sm:inline">ارسال با GSM</span>
+                                </button>
+                              )}
+
+                              {/* Send with Channel button */}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleOpenSendViaChannelModal([msg]);
+                                }}
+                                className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 hover:text-emerald-800 rounded-lg text-xs font-bold transition-all flex items-center gap-1 shadow-xs"
+                                title="انتخاب کانال و ارسال این پیامک"
+                              >
+                                <Send className="w-3 h-3 text-emerald-600" />
+                                <span className="hidden sm:inline">کانال...</span>
+                              </button>
+
+                              {msg.status === "failed" && (
+                                <button
+                                  onClick={(e) => handleRetryMessage(msg, e)}
+                                  className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                                  title="تلاش مجدد ارسال"
+                                >
+                                  <RotateCcw className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+
+                              <button
+                                onClick={() => setSelectedMessage(msg)}
+                                className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                                title="مشاهده جزئیات کامل"
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                              </button>
+
+                              <button
+                                onClick={(e) => openDeleteModalSingle(msg, e)}
+                                className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                                title="حذف این پیامک"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            {/* Table Footer */}
+            <div className="p-3.5 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
+              <div>
+                نمایش{" "}
+                <span className="font-bold text-slate-800 font-mono">
+                  {toPersianDigits(filteredMessages.length)}
+                </span>{" "}
+                پیام از مجموع{" "}
+                <span className="font-bold text-slate-800 font-mono">
+                  {toPersianDigits(messages.length)}
+                </span>{" "}
+                پیامک ثبت‌شده در سامانه پیامک
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] text-slate-400">
+                  وضعیت پایگاه داده: اتصال پایدار (Online)
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 4. Full Detail Drawer / Modal */}
+      <AnimatePresence>
+        {selectedMessage && (
+          <div className="fixed inset-0 z-50 flex justify-start">
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setSelectedMessage(null)}
+              className="absolute inset-0 bg-slate-900/30 backdrop-blur-sm"
+            />
+
+            {/* Drawer */}
+            <motion.div
+              initial={{ x: "100%" }}
+              animate={{ x: 0 }}
+              exit={{ x: "100%" }}
+              transition={{ type: "spring", damping: 28, stiffness: 280 }}
+              className="w-full max-w-lg bg-white h-full shadow-2xl relative z-10 flex flex-col border-l border-slate-200 overflow-hidden text-right"
+              dir="rtl"
+            >
+              {/* Header */}
+              <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-white sticky top-0 z-20">
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => setSelectedMessage(null)}
+                    className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-full transition-colors"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                  <div>
+                    <h2 className="text-base font-black text-slate-800">
+                      جزئیات کامل پیامک
+                    </h2>
+                    <div className="flex items-center gap-1.5 text-xs text-slate-500 mt-0.5">
+                      <span className="text-slate-400">شناسه استناد:</span>
+                      <span className="font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                        {toPersianDigits(selectedMessage.id)}
+                      </span>
+                      <button
+                        onClick={() => handleCopy(selectedMessage.id)}
+                        className="hover:text-indigo-600 text-slate-400"
+                        title="کپی شناسه پیام"
+                      >
+                        <Copy className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <span
+                  className={`px-3 py-1 rounded-full text-xs font-black border ${
+                    STATUS_LABELS[selectedMessage.status]?.badgeClass || "bg-slate-100 text-slate-700"
+                  }`}
+                >
+                  {STATUS_LABELS[selectedMessage.status]?.label || selectedMessage.status}
+                </span>
+              </div>
+
+              {/* Drawer Body */}
+              <div className="flex-1 overflow-y-auto bg-slate-50/60 p-6 space-y-6 custom-scrollbar">
+                {/* Visual Delivery Timeline */}
+                <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+                  <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">
+                    چرخه حیات و ارسال پیامک
+                  </h4>
+                  <div className="flex items-center justify-between relative">
+                    <div className="absolute top-1/2 right-4 left-4 h-0.5 bg-slate-100 -translate-y-1/2 z-0"></div>
+
+                    {/* Step 1: Created */}
+                    <div className="relative z-10 flex flex-col items-center gap-1.5">
+                      <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center border-2 border-white shadow-sm">
+                        <Server className="w-4 h-4" />
+                      </div>
+                      <span className="text-[10px] font-bold text-slate-600">ثبت رکورد</span>
+                    </div>
+
+                    {/* Step 2: Queued */}
+                    <div className="relative z-10 flex flex-col items-center gap-1.5">
+                      <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center border-2 border-white shadow-sm">
+                        <RefreshCw className="w-4 h-4" />
+                      </div>
+                      <span className="text-[10px] font-bold text-slate-600">صف ارسال</span>
+                    </div>
+
+                    {/* Step 3: Sent API */}
+                    <div className="relative z-10 flex flex-col items-center gap-1.5">
+                      <div
+                        className={`w-8 h-8 rounded-full flex items-center justify-center border-2 border-white shadow-sm ${
+                          selectedMessage.status === "delivered" ||
+                          selectedMessage.status === "sent" ||
+                          selectedMessage.status === "failed"
+                            ? "bg-emerald-100 text-emerald-600"
+                            : "bg-amber-100 text-amber-600"
+                        }`}
+                      >
+                        <Send className="w-4 h-4" />
+                      </div>
+                      <span className="text-[10px] font-bold text-slate-600">ارسال به اپراتور</span>
+                    </div>
+
+                    {/* Step 4: Final Status */}
+                    <div className="relative z-10 flex flex-col items-center gap-1.5">
+                      <div
+                        className={`w-8 h-8 rounded-full flex items-center justify-center border-2 border-white shadow-sm ${
+                          selectedMessage.status === "failed"
+                            ? "bg-rose-100 text-rose-600"
+                            : selectedMessage.status === "delivered"
+                            ? "bg-emerald-100 text-emerald-600"
+                            : "bg-slate-100 text-slate-400"
+                        }`}
+                      >
+                        {selectedMessage.status === "failed" ? (
+                          <XCircle className="w-4 h-4" />
+                        ) : (
+                          <CheckCircle2 className="w-4 h-4" />
+                        )}
+                      </div>
+                      <span className="text-[10px] font-bold text-slate-600">
+                        {selectedMessage.status === "failed"
+                          ? "خطا در ارسال"
+                          : selectedMessage.status === "delivered"
+                          ? "تحویل به گوشی"
+                          : "در انتظار تایید"}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Error Notification if failed */}
+                  {selectedMessage.errorMessage && (
+                    <div className="mt-4 p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex items-start gap-2">
+                      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                      <div>
+                        <span className="font-bold block mb-0.5">
+                          خطا: {selectedMessage.errorCode || "ERR_GATEWAY"}
+                        </span>
+                        <span className="leading-relaxed">{selectedMessage.errorMessage}</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Message Content Bubble */}
+                <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                      متن پیامک ارسالی
+                    </h4>
+                    <button
+                      onClick={() => handleCopy(selectedMessage.messageBody, "متن پیامک")}
+                      className="text-xs text-indigo-600 hover:text-indigo-800 flex items-center gap-1 font-bold"
+                    >
+                      <Copy className="w-3 h-3" />
+                      کپی متن
+                    </button>
+                  </div>
+                  <div className="bg-indigo-50/70 border border-indigo-100 p-4 rounded-2xl rounded-tr-sm text-slate-800 text-xs md:text-sm leading-relaxed shadow-sm">
+                    {selectedMessage.messageBody}
+                    <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono mt-3 pt-2 border-t border-indigo-100">
+                      <span>طول: {toPersianDigits(selectedMessage.messageBody?.length || 0)} کاراکتر</span>
+                      <span>بخش‌ها: {toPersianDigits(selectedMessage.partsCount || 1)} صفحه</span>
+                      <span>{formatFullDateFa(selectedMessage.createdAt)}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Message Technical & Record Metadata Grid */}
+                <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+                  <div className="p-4 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                      <Database className="w-3.5 h-3.5 text-indigo-600" />
+                      اطلاعات و مشخصات ثبتی پیامک
+                    </span>
+                    <span className="text-[10px] font-bold text-slate-500">اطلاعات سیستمی</span>
+                  </div>
+
+                  <div className="grid grid-cols-2 divide-x divide-x-reverse divide-y divide-slate-100 text-xs">
+                    <div className="p-3">
+                      <span className="text-[10px] font-bold text-slate-400 block mb-0.5">شناسه پیام (قابل استناد)</span>
+                      <span className="font-bold text-slate-800">{toPersianDigits(selectedMessage.id)}</span>
+                    </div>
+
+                    <div className="p-3">
+                      <span className="text-[10px] font-bold text-slate-400 block mb-0.5">نام گیرنده</span>
+                      <span className="font-bold text-slate-800">{selectedMessage.recipientName || "-"}</span>
+                    </div>
+
+                    <div className="p-3">
+                      <span className="text-[10px] font-bold text-slate-400 block mb-0.5">شماره موبایل</span>
+                      <span className="font-mono font-bold text-slate-800" dir="ltr">
+                        {toPersianDigits(selectedMessage.recipientNumber)}
+                      </span>
+                    </div>
+
+                    <div className="p-3">
+                      <span className="text-[10px] font-bold text-slate-400 block mb-0.5">نوع مخاطب</span>
+                      <span className="font-bold text-slate-700">
+                        {selectedMessage.recipientType === "contact"
+                          ? "مشتری / مخاطب"
+                          : selectedMessage.recipientType === "user"
+                          ? "کاربر سیستم"
+                          : "ورود دستی"}
+                      </span>
+                    </div>
+
+                    <div className="p-3">
+                      <span className="text-[10px] font-bold text-slate-400 block mb-0.5">منبع ارسال (source)</span>
+                      <span className="font-bold text-slate-700">{selectedMessage.source || "panel"}</span>
+                    </div>
+
+                    <div className="p-3">
+                      <span className="text-[10px] font-bold text-slate-400 block mb-0.5">ارائه‌دهنده (provider)</span>
+                      <span className="font-mono font-bold text-indigo-600">
+                        {selectedMessage.providerId || "kavenegar"}
+                      </span>
+                    </div>
+
+                    <div className="p-3">
+                      <span className="text-[10px] font-bold text-slate-400 block mb-0.5">هزینه ارسال</span>
+                      <span className="font-mono font-bold text-slate-700">
+                        {toPersianDigits(addCommas(selectedMessage.cost || 0))} {selectedMessage.currency || "ریال"}
+                      </span>
+                    </div>
+
+                    <div className="p-3">
+                      <span className="text-[10px] font-bold text-slate-400 block mb-0.5">ثبت‌کننده</span>
+                      <span className="font-bold text-slate-700">{selectedMessage.createdBy || "سیستم"}</span>
+                    </div>
+
+                    <div className="p-3">
+                      <span className="text-[10px] font-bold text-slate-400 block mb-0.5">شناسه در اپراتور</span>
+                      <span className="font-mono text-slate-600 text-[11px]">
+                        {selectedMessage.providerMessageId || "-"}
+                      </span>
+                    </div>
+
+                    <div className="p-3 col-span-2">
+                      <span className="text-[10px] font-bold text-slate-400 block mb-0.5">تاریخ ثبت رکورد</span>
+                      <span className="font-mono text-slate-700">
+                        {formatFullDateFa(selectedMessage.createdAt)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Raw Provider Response / JSON */}
+                {selectedMessage.providerResponse && (
+                  <div className="border border-slate-800 rounded-2xl overflow-hidden bg-slate-900 shadow-sm" dir="ltr">
+                    <div className="flex items-center justify-between px-4 py-2 bg-slate-950 border-b border-slate-800">
+                      <span className="text-[11px] font-mono font-bold text-slate-400 flex items-center gap-1.5">
+                        <Server className="w-3.5 h-3.5 text-emerald-400" />
+                        provider_response (JSON)
+                      </span>
+                      <button
+                        onClick={() =>
+                          handleCopy(
+                            typeof selectedMessage.providerResponse === "string"
+                              ? selectedMessage.providerResponse
+                              : JSON.stringify(selectedMessage.providerResponse, null, 2),
+                            "پاسخ خام"
+                          )
+                        }
+                        className="text-slate-400 hover:text-white transition-colors"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                    <pre className="p-4 text-[11px] font-mono text-emerald-400 overflow-x-auto whitespace-pre-wrap">
+                      {typeof selectedMessage.providerResponse === "string"
+                        ? selectedMessage.providerResponse
+                        : JSON.stringify(selectedMessage.providerResponse, null, 2)}
+                    </pre>
+                  </div>
+                )}
+              </div>
+
+              {/* Drawer Footer Actions */}
+              <div className="p-4 border-t border-slate-200 bg-white flex flex-wrap items-center gap-2.5">
+                {(selectedMessage.status === "queued" || selectedMessage.status === "pending" || selectedMessage.status === "failed") && (
+                  <button
+                    onClick={() => handleExecuteSendViaGsm([selectedMessage])}
+                    className="flex-1 min-w-[150px] bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white font-bold py-2.5 rounded-xl transition-all shadow-md shadow-teal-100 flex items-center justify-center gap-2 text-xs md:text-sm cursor-pointer"
+                  >
+                    <Radio className="w-4 h-4" />
+                    <span>ارسال با مودم GSM</span>
+                  </button>
+                )}
+
+                <button
+                  onClick={() => handleOpenSendViaChannelModal([selectedMessage])}
+                  className="flex-1 min-w-[150px] bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-bold py-2.5 rounded-xl transition-colors flex items-center justify-center gap-2 text-xs md:text-sm cursor-pointer"
+                >
+                  <Send className="w-4 h-4 text-emerald-600" />
+                  <span>انتخاب کانال...</span>
+                </button>
+
+                {selectedMessage.status === "failed" && (
+                  <button
+                    onClick={() => handleRetryMessage(selectedMessage)}
+                    className="px-4 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-xl transition-colors shadow-sm flex items-center justify-center gap-2 text-xs md:text-sm"
+                  >
+                    <RotateCcw className="w-4 h-4" />
+                    <span>تلاش مجدد</span>
+                  </button>
+                )}
+
+                <button
+                  onClick={openDeleteModalFromDrawer}
+                  className="px-4 py-2.5 border border-rose-200 text-rose-600 hover:bg-rose-50 font-bold rounded-xl transition-colors text-xs md:text-sm flex items-center gap-1.5"
+                  title="حذف این پیامک"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>حذف پیامک</span>
+                </button>
+
+                <button
+                  onClick={() => setSelectedMessage(null)}
+                  className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-colors text-xs md:text-sm"
+                >
+                  بستن
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* 5. Create / Quick Send SMS Modal */}
+      <AnimatePresence>
+        {isNewMessageModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsNewMessageModalOpen(false)}
+              className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+            />
+
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-3xl p-6 shadow-2xl border border-slate-200 w-full max-w-lg relative z-10 space-y-4"
+            >
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl">
+                    <Send className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-black text-slate-800 text-base">ثبت و ارسال پیامک جدید</h3>
+                    <p className="text-xs text-slate-500">ارسال مستقیم یا افزودن به صف پیامک</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setIsNewMessageModalOpen(false)}
+                  className="p-1 text-slate-400 hover:text-slate-600 rounded-lg"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <form onSubmit={handleCreateQuickSMS} className="space-y-4 text-xs md:text-sm">
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1.5">شماره گیرنده (موبایل) *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="مثال: 09121234567"
+                    value={newRecipientNumber}
+                    onChange={(e) => setNewRecipientNumber(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono text-left outline-none focus:bg-white focus:ring-2 focus:ring-indigo-500"
+                    dir="ltr"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1.5">نام گیرنده (اختیاری)</label>
+                  <input
+                    type="text"
+                    placeholder="مثال: شرکت آرمان / آقای محمدی"
+                    value={newRecipientName}
+                    onChange={(e) => setNewRecipientName(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:bg-white focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1.5">متن پیامک *</label>
+                  <textarea
+                    required
+                    rows={4}
+                    placeholder="متن پیامک خود را در این بخش بنویسید..."
+                    value={newMessageBody}
+                    onChange={(e) => setNewMessageBody(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:bg-white focus:ring-2 focus:ring-indigo-500 leading-relaxed"
+                  />
+                  <div className="flex justify-between text-[11px] text-slate-400 mt-1">
+                    <span>{toPersianDigits(newMessageBody.length)} کاراکتر</span>
+                    <span>{toPersianDigits(Math.ceil(newMessageBody.length / 70) || 1)} پارت پیامک</span>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1.5">وضعیت اولیه پیامک</label>
+                  <select
+                    value={newStatus}
+                    onChange={(e) => setNewStatus(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <option value="pending">در صف ارسال (Pending)</option>
+                    <option value="delivered">تحویل شده مستقیم (Delivered)</option>
+                    <option value="scheduled">زمان‌بندی شده (Scheduled)</option>
+                  </select>
+                </div>
+
+                <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setIsNewMessageModalOpen(false)}
+                    className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-colors"
+                  >
+                    انصراف
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmittingNew}
+                    className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition-colors shadow-sm disabled:opacity-50 flex items-center gap-1.5"
+                  >
+                    {isSubmittingNew ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                    <span>ثبت پیامک</span>
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* 6. Send Via Channel Modal */}
+      <AnimatePresence>
+        {isChannelSendModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden text-right"
+              dir="rtl"
+            >
+              {/* Modal Header */}
+              <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-emerald-50 via-teal-50 to-white">
+                <div className="flex items-center gap-3">
+                  <div className="p-3 bg-emerald-600 text-white rounded-2xl shadow-sm">
+                    <Send className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base md:text-lg font-black text-slate-800">
+                      ارسال پیامک با انتخاب درگاه / کانال ارتباطی
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      انتخاب پنل پیامک، خط اختصاصی یا مودم GSM برای ارسال{" "}
+                      <span className="font-bold text-emerald-700 font-mono">
+                        {toPersianDigits(messagesToSend.length)}
+                      </span>{" "}
+                      پیامک معلق
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => {
+                    setIsChannelSendModalOpen(false);
+                    setMessagesToSend([]);
+                  }}
+                  className="p-2 text-slate-400 hover:text-slate-700 hover:bg-white rounded-xl transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <div className="p-6 overflow-y-auto space-y-6 flex-1 custom-scrollbar">
+                {/* 1. Target Messages Preview Box */}
+                <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200/80">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-bold text-slate-600 flex items-center gap-1.5">
+                      <Layers className="w-3.5 h-3.5 text-indigo-600" />
+                      پیام‌های انتخابی برای ارسال ({toPersianDigits(messagesToSend.length)} پیامک)
+                    </span>
+                    <span className="text-[11px] text-slate-400 font-mono">
+                      مجموع پارت:{" "}
+                      {toPersianDigits(
+                        messagesToSend.reduce((acc, m) => acc + (m.partsCount || 1), 0)
+                      )}
+                    </span>
+                  </div>
+
+                  {messagesToSend.length === 1 ? (
+                    <div className="space-y-2 text-xs">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-slate-700">{messagesToSend[0].recipientName || "گیرنده"}</span>
+                        <span className="font-mono text-slate-500 bg-white px-2 py-0.5 rounded border text-[11px]" dir="ltr">
+                          {toPersianDigits(messagesToSend[0].recipientNumber)}
+                        </span>
+                        {messagesToSend[0].source && (
+                          <span className="text-[10px] bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded font-bold border border-indigo-100">
+                            {SOURCE_MAP[messagesToSend[0].source]?.label || messagesToSend[0].source}
+                          </span>
+                        )}
+                      </div>
+                      <p className="bg-white p-3 rounded-xl border border-slate-200 text-slate-700 leading-relaxed max-h-24 overflow-y-auto">
+                        {messagesToSend[0].messageBody}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto p-1 bg-white rounded-xl border border-slate-200">
+                        {messagesToSend.map((msg, i) => (
+                          <span
+                            key={msg.id || i}
+                            className="inline-flex items-center gap-1 text-[11px] bg-slate-100 border border-slate-200 px-2 py-1 rounded-lg text-slate-700"
+                          >
+                            <span className="font-bold">{msg.recipientName || "مشتری"}</span>
+                            <span className="font-mono text-slate-400 text-[10px]" dir="ltr">
+                              ({toPersianDigits(msg.recipientNumber)})
+                            </span>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* 2. Channel Selection Cards */}
+                <div>
+                  <label className="text-xs font-black text-slate-700 block mb-2.5 flex items-center justify-between">
+                    <span className="flex items-center gap-1.5">
+                      <Radio className="w-3.5 h-3.5 text-emerald-600" />
+                      انتخاب درگاه / کانال ارسال پیامک:
+                    </span>
+                    <span className="text-[11px] text-slate-400 font-normal">
+                      {toPersianDigits(channels.length)} کانال فعال
+                    </span>
+                  </label>
+
+                  <div className="grid grid-cols-1 gap-2.5">
+                    {channels.map((ch) => {
+                      const isSelected = selectedChannelId === ch.id;
+                      return (
+                        <div
+                          key={ch.id}
+                          onClick={() => {
+                            setSelectedChannelId(ch.id);
+                            setSenderLineOverride(ch.senderLine);
+                          }}
+                          className={`p-3.5 rounded-2xl border-2 transition-all cursor-pointer flex items-start justify-between gap-3 ${
+                            isSelected
+                              ? "border-emerald-500 bg-emerald-50/50 shadow-sm"
+                              : "border-slate-200 hover:border-slate-300 bg-white"
+                          }`}
+                        >
+                          <div className="flex items-start gap-3">
+                            <div
+                              className={`p-2.5 rounded-xl shrink-0 mt-0.5 ${
+                                isSelected ? "bg-emerald-600 text-white" : "bg-slate-100 text-slate-600"
+                              }`}
+                            >
+                              {ch.iconType === "sim" ? (
+                                <Smartphone className="w-4 h-4" />
+                              ) : ch.iconType === "chat" ? (
+                                <MessageCircle className="w-4 h-4" />
+                              ) : (
+                                <Send className="w-4 h-4" />
+                              )}
+                            </div>
+
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <h4 className="font-black text-xs md:text-sm text-slate-800">
+                                  {ch.name}
+                                </h4>
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
+                                  {ch.typeLabel}
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-slate-500 mt-1 leading-normal">
+                                {ch.description}
+                              </p>
+                              <div className="flex items-center gap-3 text-[11px] mt-2 font-mono">
+                                <span className="text-slate-600">
+                                  خط پیش‌فرض:{" "}
+                                  <strong className="text-slate-800" dir="ltr">
+                                    {toPersianDigits(ch.senderLine)}
+                                  </strong>
+                                </span>
+                                <span className="text-slate-400">•</span>
+                                <span className="text-emerald-700 font-bold font-sans">
+                                  تعرفه: {toPersianDigits(addCommas(ch.costPerPart))} ریال / پارت
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="shrink-0 mt-1">
+                            <div
+                              className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                                isSelected ? "border-emerald-600 bg-emerald-600" : "border-slate-300"
+                              }`}
+                            >
+                              {isSelected && <div className="w-2 h-2 rounded-full bg-white" />}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* GSM Modem Hardware Details & Connection helper if selected */}
+                {(selectedChannelId === "gsm_modem" || channels.find((c) => c.id === selectedChannelId)?.type === "gsm") && (
+                  <div className={`p-4 rounded-2xl border ${gsmStatus.isConnected ? "bg-emerald-50/80 border-emerald-200" : "bg-amber-50/80 border-amber-200"} space-y-3`}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Radio className={`w-4 h-4 ${gsmStatus.isConnected ? "text-emerald-600" : "text-amber-600"}`} />
+                        <span className="text-xs font-black text-slate-800">
+                          وضعیت سخت‌افزار مودم GSM:
+                        </span>
+                        <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${gsmStatus.isConnected ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>
+                          {gsmStatus.isConnected ? (gsmStatus.isSimulated ? "شبیه‌ساز فعال است" : "مودم متصل است") : "قطع / بدون اتصال پورت"}
+                        </span>
+                      </div>
+                      {gsmStatus.isConnected && (
+                        <span className="text-[11px] text-slate-500 font-mono">
+                          سیگنال: {toPersianDigits(gsmStatus.signalStrength)}%
+                        </span>
+                      )}
+                    </div>
+
+                    {gsmStatus.isConnected ? (
+                      <div className="text-[11px] text-slate-600 grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1 border-t border-emerald-100">
+                        <div>پورت: <strong className="font-mono text-slate-800" dir="ltr">{gsmStatus.portName}</strong></div>
+                        <div>اپراتور: <strong className="text-slate-800">{gsmStatus.operator || "تشخیص داده شد"}</strong></div>
+                        <div>نرخ انتقال: <strong className="font-mono text-slate-800">{gsmStatus.baudRate} bps</strong></div>
+                      </div>
+                    ) : (
+                      <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-amber-100">
+                        <p className="text-xs text-amber-800">
+                          برای ارسال با سیم‌کارت، پورت سریال مودم USB باید انتخاب و متصل شود:
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={handleConnectGsm}
+                            disabled={isConnectingGsm}
+                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                          >
+                            <Radio className="w-3.5 h-3.5" />
+                            <span>{isConnectingGsm ? "در حال اتصال..." : "انتخاب پورت و اتصال USB"}</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleEnableSimulatedGsm}
+                            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all border border-slate-200 cursor-pointer"
+                          >
+                            فعال‌سازی شبیه‌ساز (تست)
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* 3. Sender Line Override */}
+                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <label className="text-xs font-bold text-slate-700 block">
+                        شماره یا خط اختصاصی فرستنده
+                      </label>
+                      <span className="text-[10px] text-slate-400">
+                        در صورت نیاز می‌توانید شماره خط ارسال را تغییر دهید
+                      </span>
+                    </div>
+                    <input
+                      type="text"
+                      value={senderLineOverride}
+                      onChange={(e) => setSenderLineOverride(e.target.value)}
+                      placeholder="10004346"
+                      className="w-48 px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-mono font-bold text-left focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
+                      dir="ltr"
+                    />
+                  </div>
+                </div>
+
+                {/* 4. Financial & Transmission Summary */}
+                {(() => {
+                  const ch = channels.find((c) => c.id === selectedChannelId) || channels[0];
+                  const totalParts = messagesToSend.reduce((acc, m) => acc + (m.partsCount || 1), 0);
+                  const totalCost = (ch?.costPerPart || 380) * totalParts;
+                  return (
+                    <div className="bg-emerald-50/70 border border-emerald-200/80 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3 text-xs">
+                      <div className="flex items-center gap-2 text-emerald-900">
+                        <Zap className="w-4 h-4 text-emerald-600" />
+                        <span>
+                          برآورد هزینه ارسال:{" "}
+                          <strong className="font-mono text-sm text-emerald-700">
+                            {toPersianDigits(addCommas(totalCost))}
+                          </strong>{" "}
+                          ریال
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-emerald-800">
+                        <span>
+                          تعداد: {toPersianDigits(messagesToSend.length)} پیامک ({toPersianDigits(totalParts)} پارت)
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* Modal Footer Actions */}
+              <div className="p-4 border-t border-slate-100 bg-slate-50 flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  disabled={isSendingViaChannel}
+                  onClick={() => {
+                    setIsChannelSendModalOpen(false);
+                    setMessagesToSend([]);
+                  }}
+                  className="px-4 py-2.5 bg-white border border-slate-200 text-slate-700 font-bold rounded-xl text-xs hover:bg-slate-100 transition-colors"
+                >
+                  انصراف
+                </button>
+
+                <button
+                  type="button"
+                  disabled={isSendingViaChannel || messagesToSend.length === 0}
+                  onClick={handleExecuteSendViaChannel}
+                  className="px-6 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold rounded-xl text-xs md:text-sm shadow-md shadow-emerald-200 transition-all flex items-center gap-2 disabled:opacity-50"
+                >
+                  {isSendingViaChannel ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>در حال ارسال پیام‌ها...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Send className="w-4 h-4" />
+                      <span>تایید و ارسال نهایی ({toPersianDigits(messagesToSend.length)} پیامک)</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* 6. Delete Confirmation & Warning Modal */}
+      <AnimatePresence>
+        {deleteConfirmTarget && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto"
+            onClick={() => !isDeleting && setDeleteConfirmTarget(null)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              transition={{ duration: 0.2 }}
+              className="bg-white rounded-3xl shadow-2xl border border-slate-200 max-w-lg w-full overflow-hidden text-right relative"
+              dir="rtl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Top Accent Strip */}
+              <div className="h-2 bg-gradient-to-r from-rose-500 via-red-500 to-amber-500" />
+
+              <div className="p-6">
+                {/* Header */}
+                <div className="flex items-start justify-between gap-4 mb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-2xl bg-rose-50 border border-rose-200 flex items-center justify-center text-rose-600 shrink-0 shadow-xs">
+                      <AlertTriangle className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-black text-slate-800">
+                        {deleteConfirmTarget.type === "single"
+                          ? "تأیید حذف پیامک"
+                          : `تأیید حذف گروهی ${toPersianDigits(deleteConfirmTarget.bulkMessages?.length || 0)} پیامک`}
+                      </h3>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        {deleteConfirmTarget.type === "single" && deleteConfirmTarget.message
+                          ? `شناسه استناد پیام: ${toPersianDigits(deleteConfirmTarget.message.id)}`
+                          : "عملیات حذف قطعی پیامک‌های انتخابی از پایگاه داده"}
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    disabled={isDeleting}
+                    onClick={() => setDeleteConfirmTarget(null)}
+                    className="p-1.5 hover:bg-slate-100 rounded-xl text-slate-400 hover:text-slate-600 transition-colors disabled:opacity-50"
+                    title="بستن پنجره"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                {/* Primary Warning Notice */}
+                <div className="p-3.5 bg-rose-50/90 border border-rose-200 rounded-2xl flex items-start gap-3 mb-4">
+                  <div className="w-2.5 h-2.5 rounded-full bg-rose-500 shrink-0 mt-1" />
+                  <div className="text-xs text-rose-900 leading-relaxed">
+                    <strong className="block font-black text-rose-950 mb-0.5">
+                      هشدار مهم: این عملیات قطعی و غیرقابل بازگشت است!
+                    </strong>
+                    <span>
+                      پس از حذف، اطلاعات پیامک از صف ارسال و بایگانی پیام‌های سامانه به طور کامل پاک شده و سوابق و وضعیت تحویل آن دیگر در دسترس نخواهد بود.
+                    </span>
+                  </div>
+                </div>
+
+                {/* Single Message Context */}
+                {deleteConfirmTarget.type === "single" && deleteConfirmTarget.message && (() => {
+                  const msg = deleteConfirmTarget.message;
+                  const statusInfo = STATUS_LABELS[msg.status] || {
+                    label: msg.status || "نامشخص",
+                    badgeClass: "bg-slate-100 text-slate-700 border-slate-200",
+                    dotClass: "bg-slate-400",
+                  };
+                  return (
+                    <div className="space-y-3 mb-5">
+                      {/* Contextual Advisory per status */}
+                      {(msg.status === "queued" || msg.status === "pending") && (
+                        <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 flex items-start gap-2">
+                          <Clock className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                          <div>
+                            <strong>پیامک در صف انتظار:</strong> این پیامک هنوز به اپراتور مخابراتی تحویل داده نشده است. با حذف آن، ارسال به گیرنده لغو خواهد شد.
+                          </div>
+                        </div>
+                      )}
+                      {(msg.status === "sent" || msg.status === "delivered") && (
+                        <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-900 flex items-start gap-2">
+                          <CheckCircle2 className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+                          <div>
+                            <strong>پیامک ارسال‌شده:</strong> این پیامک قبلاً به گیرنده ارسال گردیده است. با حذف آن صرفاً سابقه ثبتی و گزارشات آن از نرم‌افزار شما پاک می‌گردد.
+                          </div>
+                        </div>
+                      )}
+                      {msg.status === "failed" && (
+                        <div className="p-3 bg-slate-100 border border-slate-200 rounded-xl text-xs text-slate-700 flex items-start gap-2">
+                          <AlertCircle className="w-4 h-4 text-slate-500 shrink-0 mt-0.5" />
+                          <div>
+                            <strong>پیامک ناموفق:</strong> این پیام با خطا متوقف شده و با حذف آن، سابقه این ارسال ناموفق و امکان تلاش مجدد (تلاش دوباره) پاک می‌گردد.
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Message Preview Box */}
+                      <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-xs space-y-2.5">
+                        <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+                          <div className="flex items-center gap-2">
+                            <User className="w-3.5 h-3.5 text-slate-400" />
+                            <span className="font-bold text-slate-800">{msg.recipientName || "نامشخص"}</span>
+                            <span className="text-slate-400 font-mono text-[11px]" dir="ltr">
+                              {toPersianDigits(msg.recipientNumber)}
+                            </span>
+                          </div>
+                          <span className={`px-2 py-0.5 border rounded-lg text-[10px] font-bold ${statusInfo.badgeClass}`}>
+                            {statusInfo.label}
+                          </span>
+                        </div>
+
+                        <div>
+                          <span className="text-[10px] font-bold text-slate-400 block mb-1">متن پیامک:</span>
+                          <div className="p-2.5 bg-white border border-slate-200 rounded-xl text-slate-700 text-xs leading-relaxed max-h-24 overflow-y-auto">
+                            {msg.messageBody || "بدون متن"}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1">
+                          <span>تاریخ ثبت: {formatFullDateFa(msg.createdAt)}</span>
+                          <span>طول پیام: {toPersianDigits(msg.messageLength || msg.messageBody?.length || 0)} کاراکتر</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Bulk Messages Context */}
+                {deleteConfirmTarget.type === "bulk" && deleteConfirmTarget.bulkMessages && (() => {
+                  const msgs = deleteConfirmTarget.bulkMessages;
+                  const queuedCount = msgs.filter((m) => m.status === "queued" || m.status === "pending").length;
+                  const sentCount = msgs.filter((m) => m.status === "sent" || m.status === "delivered").length;
+                  const failedCount = msgs.filter((m) => m.status === "failed").length;
+
+                  return (
+                    <div className="space-y-3 mb-5">
+                      {/* Breakdown badges */}
+                      <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs space-y-2">
+                        <div className="font-bold text-slate-700">ترکیب وضعیت پیام‌های انتخابی:</div>
+                        <div className="flex flex-wrap gap-2 text-[11px]">
+                          {queuedCount > 0 && (
+                            <span className="px-2.5 py-1 bg-amber-50 text-amber-800 border border-amber-200 rounded-lg font-bold">
+                              {toPersianDigits(queuedCount)} پیام در صف انتظار
+                            </span>
+                          )}
+                          {sentCount > 0 && (
+                            <span className="px-2.5 py-1 bg-blue-50 text-blue-800 border border-blue-200 rounded-lg font-bold">
+                              {toPersianDigits(sentCount)} پیام ارسال‌شده/تحویل‌شده
+                            </span>
+                          )}
+                          {failedCount > 0 && (
+                            <span className="px-2.5 py-1 bg-rose-50 text-rose-800 border border-rose-200 rounded-lg font-bold">
+                              {toPersianDigits(failedCount)} پیام ناموفق
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Items sample list */}
+                      <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 max-h-40 overflow-y-auto space-y-2">
+                        {msgs.slice(0, 5).map((m) => (
+                          <div key={m.id} className="p-2 bg-white border border-slate-200 rounded-xl text-xs flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 truncate">
+                              <span className="font-bold text-slate-800">{m.recipientName || "نامشخص"}</span>
+                              <span className="text-slate-400 font-mono text-[10px]" dir="ltr">
+                                {toPersianDigits(m.recipientNumber)}
+                              </span>
+                            </div>
+                            <span className="text-slate-400 text-[10px] shrink-0 font-mono">
+                              شناسه: {toPersianDigits(m.id)}
+                            </span>
+                          </div>
+                        ))}
+                        {msgs.length > 5 && (
+                          <div className="text-center text-[11px] text-slate-400 py-1 font-bold">
+                            و {toPersianDigits(msgs.length - 5)} پیامک دیگر...
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Footer Buttons */}
+                <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+                  <button
+                    type="button"
+                    disabled={isDeleting}
+                    onClick={() => setDeleteConfirmTarget(null)}
+                    className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-colors disabled:opacity-50"
+                  >
+                    انصراف و بازگشت
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={isDeleting}
+                    onClick={confirmDeleteAction}
+                    className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl text-xs md:text-sm shadow-md shadow-rose-200 transition-all flex items-center gap-2 disabled:opacity-50"
+                  >
+                    {isDeleting ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        <span>در حال حذف پیامک...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Trash2 className="w-4 h-4" />
+                        <span>
+                          {deleteConfirmTarget.type === "single"
+                            ? "تأیید و حذف قطعی پیامک"
+                            : `تأیید و حذف ${toPersianDigits(deleteConfirmTarget.bulkMessages?.length || 0)} پیامک`}
+                        </span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+      {/* 7. GSM Modem Connection Dialog Modal */}
+      <AnimatePresence>
+        {isGsmConnectModalOpen && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto"
+            onClick={() => setIsGsmConnectModalOpen(false)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              transition={{ duration: 0.2 }}
+              className="bg-white rounded-3xl shadow-2xl border border-slate-200 max-w-md w-full overflow-hidden text-right relative"
+              dir="rtl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="h-2 bg-gradient-to-r from-teal-500 to-emerald-600" />
+              <div className="p-6 space-y-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-2xl bg-teal-50 border border-teal-200 flex items-center justify-center text-teal-600 shrink-0 shadow-xs">
+                      <Radio className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-black text-slate-800">
+                        اتصال به مودم سخت‌افزاری GSM
+                      </h3>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        جهت ارسال مستقیم پیامک‌ها با سیم‌کارت سخت‌افزاری
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setIsGsmConnectModalOpen(false)}
+                    className="p-1.5 hover:bg-slate-100 rounded-xl text-slate-400 hover:text-slate-600 transition-colors"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <div className="p-3.5 bg-teal-50/80 border border-teal-200 rounded-2xl text-xs text-teal-900 leading-relaxed">
+                  دستگاه مودم GSM در مرورگر متصل نیست. برای ارسال پیامک‌ها لطفاً پورت USB مودم متصل به سیستم را انتخاب فرمایید، یا در صورت تمایل از شبیه‌ساز سخت‌افزار استفاده کنید.
+                </div>
+
+                <div className="space-y-2.5 pt-1">
+                  <button
+                    type="button"
+                    disabled={isConnectingGsm}
+                    onClick={handleConnectGsm}
+                    className="w-full py-3 bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white font-black rounded-2xl text-xs sm:text-sm shadow-md shadow-teal-200 flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    <Radio className="w-4 h-4" />
+                    <span>{isConnectingGsm ? "در حال اتصال به پورت..." : "انتخاب پورت USB و اتصال به مودم (Web Serial)"}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleEnableSimulatedGsm}
+                    className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-2xl text-xs transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <Sparkles className="w-4 h-4 text-amber-500" />
+                    <span>فعال‌سازی شبیه‌ساز سخت‌افزار GSM (ارسال آزمایشی)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsGsmConnectModalOpen(false);
+                      if (pendingGsmTargets.length > 0) {
+                        handleOpenSendViaChannelModal(pendingGsmTargets);
+                        setPendingGsmTargets([]);
+                      }
+                    }}
+                    className="w-full py-2 bg-white hover:bg-slate-50 text-indigo-600 font-bold rounded-xl text-xs transition-colors border border-indigo-200 flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    <span>ارسال با سایر کانال‌ها و وب‌سرویس‌های پیامک</span>
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* 8. GSM Sending Live Progress Modal */}
+      <AnimatePresence>
+        {gsmSendProgress.isOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              transition={{ duration: 0.2 }}
+              className="bg-white rounded-3xl shadow-2xl border border-slate-200 max-w-lg w-full overflow-hidden text-right relative"
+              dir="rtl"
+            >
+              <div className="h-2 bg-gradient-to-r from-teal-500 to-emerald-600" />
+              <div className="p-6 space-y-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-2xl bg-teal-50 border border-teal-200 flex items-center justify-center text-teal-600 shrink-0 shadow-xs">
+                      {gsmSendProgress.isFinished ? (
+                        <CheckCircle2 className="w-6 h-6 text-emerald-600" />
+                      ) : (
+                        <RefreshCw className="w-6 h-6 animate-spin text-teal-600" />
+                      )}
+                    </div>
+                    <div>
+                      <h3 className="text-base font-black text-slate-800">
+                        {gsmSendProgress.isFinished ? "پایان ارسال پیامک‌ها با مودم GSM" : "در حال ارسال با مودم سخت‌افزاری GSM"}
+                      </h3>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        {gsmSendProgress.isFinished
+                          ? `عملیات تکمیل شد: ${toPersianDigits(gsmSendProgress.successCount)} موفق، ${toPersianDigits(gsmSendProgress.failCount)} ناموفق`
+                          : `پیام ${toPersianDigits(gsmSendProgress.current)} از ${toPersianDigits(gsmSendProgress.total)}`}
+                      </p>
+                    </div>
+                  </div>
+                  {gsmSendProgress.isFinished && (
+                    <button
+                      onClick={() => setGsmSendProgress((prev) => ({ ...prev, isOpen: false }))}
+                      className="p-1.5 hover:bg-slate-100 rounded-xl text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  )}
+                </div>
+
+                {/* Progress bar */}
+                <div className="space-y-1.5">
+                  <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden p-0.5 border border-slate-200">
+                    <div
+                      className="h-full bg-gradient-to-r from-teal-500 to-emerald-500 rounded-full transition-all duration-300"
+                      style={{
+                        width: `${gsmSendProgress.total > 0 ? (gsmSendProgress.current / gsmSendProgress.total) * 100 : 0}%`,
+                      }}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] font-sans text-slate-500 font-bold">
+                    <span>
+                      {gsmSendProgress.recipient ? `گیرنده فعلی: ${toPersianDigits(gsmSendProgress.recipient)}` : ""}
+                    </span>
+                    <span>
+                      {gsmSendProgress.total > 0
+                        ? `${toPersianDigits(Math.round((gsmSendProgress.current / gsmSendProgress.total) * 100))}%`
+                        : "۰%"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Status Counter Chips */}
+                <div className="flex items-center gap-2">
+                  <span className="px-3 py-1 bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold rounded-xl flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                    ارسال موفق: {toPersianDigits(gsmSendProgress.successCount)}
+                  </span>
+                  {gsmSendProgress.failCount > 0 && (
+                    <span className="px-3 py-1 bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold rounded-xl flex items-center gap-1.5">
+                      <XCircle className="w-3.5 h-3.5 text-rose-600" />
+                      ناموفق: {toPersianDigits(gsmSendProgress.failCount)}
+                    </span>
+                  )}
+                </div>
+
+                {/* Logs terminal box */}
+                <div className="bg-slate-950 text-slate-200 p-3 rounded-2xl text-[11px] font-mono space-y-1 max-h-36 overflow-y-auto custom-scrollbar border border-slate-800">
+                  {gsmSendProgress.logs.map((log, idx) => (
+                    <div key={idx} className="leading-relaxed">
+                      {log}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Footer close button */}
+                {gsmSendProgress.isFinished && (
+                  <div className="pt-2 border-t border-slate-100 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => setGsmSendProgress((prev) => ({ ...prev, isOpen: false }))}
+                      className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
+                    >
+                      بستن پنجره
+                    </button>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}

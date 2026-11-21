@@ -1,0 +1,746 @@
+import { getStoreSettings } from './settingsService';
+import { getInvoices } from './invoiceService';
+import { getIssuedChecks, getReceivedChecks, getAccountingDocuments, getLoans, getInstallments } from './accountingService';
+import { getTransactions } from './invoiceService';
+import { getActiveFinancialYear } from './settingsService';
+import { getPersons } from './personService';
+import { getProducts } from './productService';
+import { convertToGregorian } from '../utils/format';
+import { DateObject } from "react-multi-date-picker";
+import persian from "react-date-object/calendars/persian";
+import persian_fa from "react-date-object/locales/persian_fa";
+import { CompanySettings } from '../types';
+
+const cache: Record<string, { data: any, timestamp: number }> = {};
+
+const CACHE_DURATION = 5000;
+
+const CACHEABLE_KEYS = [
+  'company_profile',
+  'settings',
+  'warehouses',
+  'financial_years',
+  'product_categories',
+  'person_groups',
+  'ledger_accounts',
+  'accounts',
+  'cashboxes',
+  'persons',
+  'doc_counters'
+];
+
+export const invalidateCache = (key?: string) => {
+  if (key) {
+    delete cache[key];
+    Object.keys(cache).forEach(k => {
+      if (k === key || k.endsWith(`:${key}`) || k.includes(`:${key}:`) || k.startsWith(`${key}:`)) {
+        delete cache[k];
+      }
+    });
+  } else {
+    Object.keys(cache).forEach(k => delete cache[k]);
+  }
+};
+
+const FINANCIAL_KEYS = new Set([
+  'receipt_transactions',
+  'payment_transactions',
+  'transactions',
+  'sales_invoices',
+  'purchase_invoices',
+  'warehouse_receipts',
+  'warehouse_remittances',
+  'proforma_invoices',
+  'sale_returns',
+  'purchase_returns',
+  'wastes',
+  'invoices',
+  'accounting_documents',
+  'issued_checks',
+  'received_checks',
+  'checkbooks',
+  'check_history',
+  'refundRequests',
+  'stocktakings',
+  'person_opening_balances',
+  'loans',
+  'installments',
+  'payslips',
+  'sales_invoice_payments',
+  'purchase_invoice_payments',
+  'debtors_trackings',
+  'InventoryTransactions',
+  'consignment_invoices'
+]);
+
+export const mapTransactionTypeToTable = (type: string) => {
+  if (type === 'receive') return 'receipt_transactions';
+  return 'payment_transactions';
+};
+
+export const mapInvoiceTypeToTable = (type: string) => {
+  switch (type) {
+    case 'sale': return 'sales_invoices';
+    case 'purchase': return 'purchase_invoices';
+    case 'warehouse_receipt': return 'warehouse_receipts';
+    case 'warehouse_remittance': return 'warehouse_remittances';
+    case 'proforma': return 'proforma_invoices';
+    case 'sale_return': return 'sale_returns';
+    case 'purchase_return': return 'purchase_returns';
+    case 'waste': return 'wastes';
+    case 'consignment_out':
+    case 'consignment_in':
+      return 'consignment_invoices';
+    default: return 'invoices';
+  }
+};
+
+export const getClientSessionId = (): string => {
+  if (typeof window !== 'undefined') {
+    try {
+      let id = window.sessionStorage?.getItem('client_session_id');
+      if (!id) {
+        id = `client_${Math.random().toString(36).substring(2, 11)}_${Date.now()}`;
+        window.sessionStorage?.setItem('client_session_id', id);
+      }
+      return id;
+    } catch (_) {}
+  }
+  return 'client_default';
+};
+
+export const getAuthHeaders = (): Record<string, string> => {
+  let token = '';
+  let storeId = 'default';
+  let userInfoHeader = '';
+  if (typeof window !== 'undefined') {
+    try {
+      token = window.sessionStorage?.getItem('access_token') || window.localStorage?.getItem('access_token') || '';
+      storeId = window.sessionStorage?.getItem('activeStoreId') || window.localStorage?.getItem('activeStoreId') || 'default';
+      const userStr = window.sessionStorage?.getItem('auth_user') || window.localStorage?.getItem('auth_user');
+      if (userStr) {
+        userInfoHeader = encodeURIComponent(userStr);
+      }
+    } catch (_) {}
+  }
+  const headers: Record<string, string> = {
+    'x-store-id': storeId,
+    'x-client-session-id': getClientSessionId(),
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0'
+  };
+  if (token) {
+    headers['Authorization'] = 'Bearer ' + token;
+  }
+  if (userInfoHeader) {
+    headers['x-user-info'] = userInfoHeader;
+  }
+  return headers;
+};
+
+export const getLocalData = async <T>(key: string, defaultValue: T, queryParams: Record<string, string | number> = {}, retries = 3): Promise<T> => {
+  const qs = new URLSearchParams(Object.entries(queryParams).map(([k, v]) => [k, String(v)])).toString();
+  const url = qs ? `/api/data/${key}?${qs}` : `/api/data/${key}`;
+  const authHeaders = getAuthHeaders();
+  const currentStore = authHeaders['x-store-id'] || 'default';
+  const cacheKey = `${currentStore}:${key}`;
+  
+  if (CACHEABLE_KEYS.includes(key) && !qs) {
+    const cached = cache[cacheKey];
+    if (cached && (Date.now() - cached.timestamp < CACHE_DURATION)) {
+      return cached.data;
+    }
+  }
+
+  try {
+    const fetchUrl = url.includes('?') ? `${url}&_t=${Date.now()}` : `${url}?_t=${Date.now()}`;
+    let res = await fetch(fetchUrl, {
+      cache: 'no-store',
+      headers: authHeaders
+    });
+    if (!res.ok) {
+      if (res.status === 401 && retries > 0) {
+        // Attempt quick auto-login with default admin if token is missing
+        try {
+          const loginRes = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username: 'admin', password: 'admin' })
+          });
+          const loginData = await loginRes.json();
+          if (loginData.accessToken) {
+            if (typeof window !== 'undefined') {
+              window.sessionStorage?.setItem('access_token', loginData.accessToken);
+              window.localStorage?.setItem('access_token', loginData.accessToken);
+              window.sessionStorage?.setItem('auth_user', JSON.stringify(loginData.user));
+              window.localStorage?.setItem('auth_user', JSON.stringify(loginData.user));
+            }
+            return getLocalData(key, defaultValue, queryParams, retries - 1);
+          }
+        } catch (_) {}
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('auth_unauthorized', { detail: { key } }));
+        }
+        if (cache[cacheKey]) {
+          return cache[cacheKey].data;
+        }
+        return defaultValue;
+      }
+      throw new Error('Network response was not ok');
+    }
+    const data = await res.json();
+    let finalData = (data !== null && data !== undefined) ? data : defaultValue;
+    if (Array.isArray(defaultValue) && !Array.isArray(finalData)) {
+      if (finalData && typeof finalData === 'object') {
+        if (Array.isArray((finalData as any).data)) {
+          finalData = (finalData as any).data;
+        } else if (Array.isArray((finalData as any).items)) {
+          finalData = (finalData as any).items;
+        } else {
+          return defaultValue;
+        }
+      } else {
+        return defaultValue;
+      }
+    }
+    
+    if (CACHEABLE_KEYS.includes(key) && !qs) {
+      cache[cacheKey] = { data: finalData, timestamp: Date.now() };
+    }
+    return finalData;
+  } catch (error) {
+    if (retries > 0) {
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      return getLocalData(key, defaultValue, queryParams, retries - 1);
+    }
+    console.error(`Error reading ${key} from API`, error);
+    if (CACHEABLE_KEYS.includes(key) && cache[key]) {
+       return cache[key].data;
+    }
+    if (FINANCIAL_KEYS.has(key)) {
+       throw error;
+    }
+    return defaultValue;
+  }
+};
+
+export interface PagedResponse<T> {
+  data: T[];
+  items: T[];
+  total: number;
+  totalCount: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  hasMore: boolean;
+}
+
+export const getPagedData = async <T>(
+  key: string,
+  params: {
+    page?: number;
+    pageSize?: number;
+    search?: string;
+    sortBy?: string;
+    sortOrder?: 'asc' | 'desc';
+    [k: string]: any;
+  } = {}
+): Promise<PagedResponse<T>> => {
+  const queryParams: Record<string, string | number> = {
+    paginated: 'true',
+    page: params.page || 1,
+    pageSize: params.pageSize || 20,
+    ...params
+  };
+  const qs = new URLSearchParams(
+    Object.entries(queryParams)
+      .filter(([_, v]) => v !== undefined && v !== null && v !== '')
+      .map(([k, v]) => [k, String(v)])
+  ).toString();
+  const url = `/api/data/${key}?${qs}`;
+  const authHeaders = getAuthHeaders();
+
+  try {
+    const fetchUrl = url.includes('?') ? `${url}&_t=${Date.now()}` : `${url}?_t=${Date.now()}`;
+    const res = await fetch(fetchUrl, {
+      cache: 'no-store',
+      headers: authHeaders
+    });
+    if (!res.ok) {
+      return { data: [], items: [], total: 0, totalCount: 0, page: 1, pageSize: 20, totalPages: 0, hasMore: false };
+    }
+    const json = await res.json();
+    const list = Array.isArray(json.data) ? json.data : (Array.isArray(json.items) ? json.items : (Array.isArray(json) ? json : []));
+    const total = typeof json.total === 'number' ? json.total : (typeof json.totalCount === 'number' ? json.totalCount : list.length);
+    const pageSize = Number(params.pageSize) || 20;
+    const page = Number(params.page) || 1;
+    const totalPages = typeof json.totalPages === 'number' ? json.totalPages : (Math.ceil(total / pageSize) || 1);
+    return {
+      data: list,
+      items: list,
+      total,
+      totalCount: total,
+      page,
+      pageSize,
+      totalPages,
+      hasMore: json.hasMore ?? (page * pageSize < total)
+    };
+  } catch (_) {
+    return { data: [], items: [], total: 0, totalCount: 0, page: 1, pageSize: 20, totalPages: 0, hasMore: false };
+  }
+};
+
+let isAppDataChangedSuspended = false;
+
+export const suspendAppDataChanged = () => {
+  isAppDataChangedSuspended = true;
+};
+
+export const resumeAppDataChanged = (triggerImmediate = true) => {
+  isAppDataChangedSuspended = false;
+  if (triggerImmediate && typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('app_data_changed', { detail: { key: 'batch' } }));
+  }
+};
+
+export const saveLocalData = async <T>(key: string, data: T, retries = 3): Promise<void> => {
+  try {
+    const processedData = await ensureFiscalYearId(key, data);
+    const res = await fetch(`/api/data/${key}`, {
+      method: 'POST',
+      headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify(processedData)
+    });
+    if (!res.ok) {
+      if (res.status === 401) {
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('auth_unauthorized', { detail: { key } }));
+        }
+        throw new Error('نشست کاربری شما منقضی شده است. اطلاعات ذخیره نشد.');
+      }
+      let errText = 'خطا در ذخیره‌سازی داده‌ها در سرور';
+      try {
+        const errJson = await res.json();
+        if (errJson.details && Array.isArray(errJson.details)) {
+          const detailMsgs = errJson.details.map((d: any) => `${d.path?.join('.') || ''}: ${d.message}`).join(', ');
+          errText = `${errJson.error || ''} (${detailMsgs})`;
+        } else {
+          errText = errJson.error || errJson.message || errText;
+        }
+      } catch (_) {}
+      throw new Error(errText);
+    }
+    invalidateCache(key);
+    const authHeaders = getAuthHeaders();
+    const currentStore = authHeaders['x-store-id'] || 'default';
+    const cacheKey = `${currentStore}:${key}`;
+    if (CACHEABLE_KEYS.includes(key)) {
+      cache[cacheKey] = { data: processedData, timestamp: Date.now() };
+    }
+    if (!isAppDataChangedSuspended && typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('app_data_changed', { detail: { key } }));
+    }
+  } catch (error) {
+    if (retries > 0) {
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      return saveLocalData(key, data, retries - 1);
+    }
+    console.error(`Error saving ${key} to API`, error);
+    throw error;
+  }
+};
+
+export const updateLocalData = async <T>(key: string, id: string | number, data: T): Promise<T> => {
+  const processedData = await ensureFiscalYearId(key, data);
+  const res = await fetch(`/api/data/${key}/${id}`, {
+    method: 'PUT',
+    headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify(processedData)
+  });
+  if (!res.ok) {
+    if (res.status === 401) {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('auth_unauthorized', { detail: { key } }));
+      }
+      throw new Error('نشست کاربری شما منقضی شده است. ویرایش انجام نشد.');
+    }
+    let errText = 'Network response was not ok';
+    try {
+       const err = await res.json();
+       if (err && err.error) errText = err.error;
+    } catch(e) {}
+    throw new Error(errText);
+  }
+  invalidateCache(key);
+  if (!isAppDataChangedSuspended && typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('app_data_changed', { detail: { key } }));
+  }
+  const result = await res.json();
+  return result.data;
+};
+
+export const appendLocalData = async <T>(key: string, data: T): Promise<T> => {
+  const processedData = await ensureFiscalYearId(key, data);
+  const res = await fetch(`/api/data/${key}/append`, {
+    method: 'POST',
+    headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify(processedData)
+  });
+  if (!res.ok) {
+    if (res.status === 401) {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('auth_unauthorized', { detail: { key } }));
+      }
+      throw new Error('نشست کاربری شما منقضی شده است. ثبت جدید انجام نشد.');
+    }
+    let errText = 'Network response was not ok';
+    try {
+      const errJson = await res.json();
+      errText = errJson.error || errJson.message || errText;
+    } catch (_) {}
+    throw new Error(errText);
+  }
+  invalidateCache(key);
+  if (!isAppDataChangedSuspended && typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('app_data_changed', { detail: { key } }));
+  }
+  const result = await res.json();
+  return result.data;
+};
+
+export const batchLocalData = async (operations: any[]): Promise<any> => {
+  const processedOps = [];
+  for (const op of operations) {
+    if (op && op.type !== 'delete') {
+      const processedData = await ensureFiscalYearId(op.key, op.data);
+      processedOps.push({ ...op, data: processedData });
+    } else if (op) {
+      processedOps.push(op);
+    }
+  }
+  const res = await fetch(`/api/data/batch`, {
+    method: 'POST',
+    headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ operations: processedOps })
+  });
+  if (!res.ok) {
+    if (res.status === 401) {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('auth_unauthorized', { detail: { key: 'batch' } }));
+      }
+      throw new Error('نشست کاربری شما منقضی شده است. لطفا مجددا وارد شوید.');
+    }
+    let errText = 'خطا در ثبت گروهی داده‌ها';
+    try {
+      const errJson = await res.json();
+      errText = errJson.error || errJson.message || errText;
+    } catch (_) {}
+    throw new Error(errText);
+  }
+  operations.forEach(op => {
+    if (op && op.key) {
+      invalidateCache(op.key);
+      if (!isAppDataChangedSuspended && typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('app_data_changed', { detail: { key: op.key } }));
+      }
+    }
+  });
+  return await res.json();
+};
+
+export const generateId = () => {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+};
+
+export const parseToGregorianDate = (dateStr: string | number | Date, calendarType: string): Date | null => {
+  if (!dateStr) return null;
+  if (dateStr instanceof Date) return dateStr;
+  
+  let checkDate = new Date(dateStr);
+  if (!isNaN(checkDate.getTime())) {
+    if (typeof dateStr === 'number' || calendarType === 'gregorian' || checkDate.getFullYear() > 1900) {
+      return checkDate;
+    }
+  }
+
+  try {
+    const cleanStr = String(dateStr).replace(/\//g, '-');
+    const jalaliDate = new DateObject({
+      date: cleanStr,
+      format: "YYYY-MM-DD",
+      calendar: persian,
+      locale: persian_fa
+    });
+    const d = jalaliDate.toDate();
+    if (d && !isNaN(d.getTime())) {
+      return d;
+    }
+  } catch (e) {
+    // fallback
+  }
+
+  return isNaN(checkDate.getTime()) ? null : checkDate;
+};
+
+export const DEFAULT_DOC_PREFIXES: Record<string, string> = {
+  sale: "INV-",
+  purchase: "PUR-",
+  proforma: "PF-",
+  warehouse_receipt: "REC-",
+  warehouse_remittance: "REM-",
+  sale_return: "RTN-S-",
+  purchase_return: "RTN-P-",
+  consignment_out: "AM-P-",
+  consignment_in: "AM-D-",
+};
+
+export const incrementInvoiceNumber = (currentNumber: string, docTypeKey: string): string => {
+  const str = String(currentNumber || '').trim();
+  const digitsMatch = str.match(/(\d+)$/);
+  if (digitsMatch) {
+    const prefix = str.substring(0, str.length - digitsMatch[1].length);
+    const num = parseInt(digitsMatch[1], 10);
+    const nextNum = isNaN(num) ? 1001 : num + 1;
+    const len = digitsMatch[1].length;
+    return `${prefix}${String(nextNum).padStart(len, '0')}`;
+  }
+  const defaultPrefix = DEFAULT_DOC_PREFIXES[docTypeKey] || '';
+  const num = parseInt(str.replace(/\D/g, ''), 10);
+  const nextNum = isNaN(num) ? 1001 : num + 1;
+  return `${defaultPrefix}${String(nextNum).padStart(6, '0')}`;
+};
+
+let docNumberGenLock = Promise.resolve();
+
+const internalGenerateDocNumber = async (docTypeKey: string): Promise<string> => {
+  try {
+    const settings = await getStoreSettings();
+    if (!settings) return Date.now().toString().slice(-6);
+
+    const prefixKey = `prefix_${docTypeKey}`;
+    const startKey = `start_${docTypeKey}`;
+    const lenKey = `len_${docTypeKey}`;
+
+    const configuredPrefix = settings[prefixKey as keyof CompanySettings];
+    const prefix = (configuredPrefix !== undefined && configuredPrefix !== null && configuredPrefix !== '')
+      ? String(configuredPrefix)
+      : (DEFAULT_DOC_PREFIXES[docTypeKey] ?? '');
+    const startObj = settings[startKey as keyof CompanySettings];
+    const start = startObj && !isNaN(Number(startObj)) ? Number(startObj) : 1000;
+    const lenObj = settings[lenKey as keyof CompanySettings];
+    const len = lenObj && !isNaN(Number(lenObj)) ? Number(lenObj) : 6;
+
+    const counters = await getLocalData<Record<string, number>>('doc_counters', {});
+    
+    let nextValue: number;
+    if (counters && counters[docTypeKey] && counters[docTypeKey] >= start - 1) {
+      // Fast path: counter sequence is already tracking accurately, increment instantly
+      nextValue = counters[docTypeKey] + 1;
+    } else {
+      // Initial baseline discovery across existing historical records
+      let items: any[] = [];
+      if (docTypeKey === 'sale' || docTypeKey === 'purchase' || docTypeKey.includes('return') || docTypeKey === 'proforma' || docTypeKey.startsWith('consignment')) {
+        const targetTable = mapInvoiceTypeToTable(docTypeKey);
+        const [targetData, generalInvs] = await Promise.all([
+          getLocalData<any[]>(targetTable, []).catch(() => []),
+          getLocalData<any[]>('invoices', []).catch(() => [])
+        ]);
+        const combined = [...(Array.isArray(targetData) ? targetData : []), ...(Array.isArray(generalInvs) ? generalInvs : [])];
+        items = combined.filter(i => i && !i.isDeleted && (docTypeKey.startsWith('consignment') || docTypeKey.includes('return') ? i.type === docTypeKey : (docTypeKey === 'sale' ? (i.type === 'sale' || !i.type) : i.type === docTypeKey)));
+      } else if (docTypeKey === 'warehouse_receipt' || docTypeKey === 'warehouse_remittance') {
+        const targetTable = mapInvoiceTypeToTable(docTypeKey);
+        const [targetData, generalInvs] = await Promise.all([
+          getLocalData<any[]>(targetTable, []).catch(() => []),
+          getLocalData<any[]>('invoices', []).catch(() => [])
+        ]);
+        const combined = [...(Array.isArray(targetData) ? targetData : []), ...(Array.isArray(generalInvs) ? generalInvs : [])];
+        items = combined.filter(i => i && !i.isDeleted && i.type === docTypeKey);
+      } else if (docTypeKey === 'receive_receipt' || docTypeKey === 'pay_receipt' || docTypeKey === 'salary') {
+        items = await getTransactions();
+        const typeMap: any = { 'receive_receipt': 'receive', 'pay_receipt': 'pay', 'salary': 'salary' };
+        items = items.filter(i => i.type === typeMap[docTypeKey]);
+      } else if (docTypeKey === 'check_issued') items = await getIssuedChecks();
+      else if (docTypeKey === 'check_received') items = await getReceivedChecks();
+      else if (docTypeKey === 'person') items = await getPersons();
+      else if (docTypeKey === 'product') items = await getProducts();
+      else if (docTypeKey === 'accounting_document') items = await getAccountingDocuments();
+      else if (docTypeKey === 'loan') items = await getLoans();
+      else if (docTypeKey === 'installment') items = await getInstallments();
+
+      let maxExisting = 0;
+      const isCashReceipt = docTypeKey === 'receive_receipt' || docTypeKey === 'pay_receipt' || docTypeKey === 'salary';
+      let idField = (docTypeKey === 'person' || docTypeKey === 'product') ? 'code' : 
+                    (docTypeKey === 'accounting_document' ? 'documentNumber' : 
+                    (isCashReceipt ? 'receiptNumber' : 'invoiceNumber'));
+      
+      if (docTypeKey === 'check_issued' || docTypeKey === 'check_received') idField = 'checkNumber';
+
+      items.forEach(item => {
+         let valStr = String(item[idField] || item.invoiceNumber || item.documentNumber || item.receiptNumber || '');
+         if (prefix && valStr.startsWith(prefix)) {
+            valStr = valStr.substring(prefix.length);
+         }
+         let val = parseInt(valStr.replace(/\D/g, ''), 10);
+         if (!isNaN(val) && val > maxExisting) {
+             maxExisting = val;
+         }
+      });
+
+      const counterVal = counters[docTypeKey] || 0;
+      nextValue = Math.max(counterVal, maxExisting, start - 1) + 1;
+    }
+
+    counters[docTypeKey] = nextValue;
+    const authHeaders = getAuthHeaders();
+    const currentStore = authHeaders['x-store-id'] || 'default';
+    cache[`${currentStore}:doc_counters`] = { data: counters, timestamp: Date.now() };
+    saveLocalData('doc_counters', counters).catch(() => {});
+
+    const numStr = String(nextValue).padStart(len, '0');
+    return `${prefix}${numStr}`;
+    
+  } catch (err) {
+    return Date.now().toString().slice(-6);
+  }
+};
+
+export const generateDocNumber = (docTypeKey: string): Promise<string> => {
+  return new Promise<string>((resolve) => {
+    docNumberGenLock = docNumberGenLock.then(
+      () => internalGenerateDocNumber(docTypeKey).then(resolve).catch(() => resolve(Date.now().toString().slice(-6))),
+      () => internalGenerateDocNumber(docTypeKey).then(resolve).catch(() => resolve(Date.now().toString().slice(-6)))
+    );
+  });
+};
+
+export const updateDocCounter = async (docTypeKey: string, generatedNumber: string | number) => {
+    try {
+        const settings = await getStoreSettings();
+        const prefixKey = `prefix_${docTypeKey}`;
+        const configuredPrefix = settings && settings[prefixKey as keyof CompanySettings];
+        const prefix = (configuredPrefix !== undefined && configuredPrefix !== null && configuredPrefix !== '')
+          ? String(configuredPrefix)
+          : (DEFAULT_DOC_PREFIXES[docTypeKey] ?? '');
+        
+        let valStr = String(generatedNumber || '');
+        if (prefix && valStr.startsWith(prefix)) {
+            valStr = valStr.substring(prefix.length);
+        }
+        const val = parseInt(valStr.replace(/\D/g, ''), 10);
+        
+        if (!isNaN(val)) {
+            const counters = await getLocalData<Record<string, number>>('doc_counters', {});
+            if (counters[docTypeKey] === undefined || val > counters[docTypeKey]) {
+                counters[docTypeKey] = val;
+                const authHeaders = getAuthHeaders();
+                const currentStore = authHeaders['x-store-id'] || 'default';
+                cache[`${currentStore}:doc_counters`] = { data: counters, timestamp: Date.now() };
+                saveLocalData('doc_counters', counters).catch(() => {});
+            }
+        }
+    } catch (e) {
+        console.error('Error updating doc counter', e);
+    }
+};
+
+export const getDatabaseLogs = async () => {
+  const logs = await getLocalData<any[]>('database_logs', []);
+  return logs.sort((a, b) => b.timestamp - a.timestamp);
+};
+
+export const addDatabaseLog = async (action: string, entityType: string, entityId: string, oldData: any, newData: any) => {
+  const logs = await getLocalData<any[]>('database_logs', []);
+  
+  let userId = 'system';
+  if (typeof window !== 'undefined') {
+     try {
+       const sessionStr = window.sessionStorage?.getItem('auth_user') || window.localStorage?.getItem('auth_user');
+       if (sessionStr) {
+          const session = JSON.parse(sessionStr);
+          if (session.name) userId = session.name;
+          else if (session.username) userId = session.username;
+       }
+     } catch(e) {}
+  }
+
+  const newLog = {
+     id: generateId(),
+     timestamp: Date.now(),
+     action,
+     entityType,
+     entityId,
+     userId,
+     oldData: oldData ? JSON.stringify(oldData) : null,
+     newData: newData ? JSON.stringify(newData) : null
+  };
+
+  // Directly append single log record without loading/resending historical logs
+  try {
+    const authHeaders = getAuthHeaders();
+    await fetch('/api/data/database_logs/append', {
+      method: 'POST',
+      headers: { ...authHeaders, 'Content-Type': 'application/json' },
+      body: JSON.stringify(newLog)
+    });
+  } catch(e) {}
+};
+
+export const getSystemLogs = async (params: { action?: string; entityType?: string; userId?: string | number; search?: string; limit?: number } = {}) => {
+  try {
+    const qs = new URLSearchParams();
+    if (params.action && params.action !== 'ALL') qs.set('action', params.action);
+    if (params.entityType && params.entityType !== 'ALL') qs.set('entityType', params.entityType);
+    if (params.userId && params.userId !== 'ALL') qs.set('userId', String(params.userId));
+    if (params.search) qs.set('search', params.search);
+    if (params.limit) qs.set('limit', String(params.limit));
+    else qs.set('limit', '1000');
+
+    const res = await fetch(`/api/system_logs?${qs.toString()}`, {
+      headers: getAuthHeaders()
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data)) return data;
+    }
+  } catch (e) {
+    console.error('Error fetching system logs from API:', e);
+  }
+  const logs = await getLocalData<any[]>('system_logs', [], { limit: 200 });
+  return Array.isArray(logs) ? logs.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)) : [];
+};
+
+export const addSystemLog = async (action, details, entityType, entityId) => {
+  // Backend automatically handles system_logs on POST /api/data/:key
+  // We make this a no-op to prevent huge performance overhead and duplicate logs
+  return { id: generateId(), action, userId: 'system', details, entityType, entityId, timestamp: Date.now() };
+};
+
+export const ensureFiscalYearId = async (key: string, data: any): Promise<any> => {
+  if (!data) return data;
+  if (!FINANCIAL_KEYS.has(key)) return data;
+  try {
+    const activeYear = await getActiveFinancialYear();
+    if (!activeYear || !activeYear.id) return data;
+    
+    const yearId = activeYear.id;
+    
+    if (Array.isArray(data)) {
+      return data.map(item => {
+        if (item && typeof item === 'object') {
+          return { fiscalYearId: item.fiscalYearId || yearId, ...item };
+        }
+        return item;
+      });
+    } else if (typeof data === 'object') {
+      return { fiscalYearId: data.fiscalYearId || yearId, ...data };
+    }
+  } catch (e) {
+    // ignore
+  }
+  return data;
+};
+

@@ -1,0 +1,1317 @@
+
+import React, { useState, useEffect, useMemo } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  CreditCard, ArrowRight, User, Building2, Calendar, FileText,
+  History as HistoryIcon, Clock, CheckCircle, XCircle, RefreshCw,
+  AlertTriangle, Save, Printer, ExternalLink, Search, Check, List, Edit3,
+  ShieldCheck, Smartphone
+} from "lucide-react";
+import { 
+  getIssuedChecks, getReceivedChecks, updateReceivedCheck, getPersons, 
+  getCheckHistoryLogs, updateIssuedCheck, addCheckHistoryLog, 
+  getTransactions, getCheckbooks, getAccounts, addTransaction, rollbackCashedTransaction
+} from "../../../services/dataService";
+import { getUsers } from "../../../services/userService";
+import { formatDateDisplay, toPersianDigits } from "../../../utils/format";
+import { syncCheckAccountingDocument, getAccountingDocuments } from "../../../services/accountingService";
+import Num2persian from "num2persian";
+import CommentBadgeButton from "../../common/CommentBadgeButton";
+import UniversalCommentsDrawer from "../../common/UniversalCommentsDrawer";
+
+export default function CheckCardPage({
+  checkId,
+  checkType: initialCheckType,
+  onClose,
+  showNotification,
+  currentUser,
+  storeSettings,
+  onViewAccountingDoc
+}: {
+  checkId: string | number | null;
+  checkType: "issued" | "received" | undefined;
+  onClose: () => void;
+  showNotification: any;
+  currentUser: string;
+  storeSettings: any;
+  onViewAccountingDoc?: (doc: any) => void;
+}) {
+  const [check, setCheck] = useState<any>(null);
+  const [allChecks, setAllChecks] = useState<any[]>([]);
+  const [persons, setPersons] = useState<any[]>([]);
+  const [history, setHistory] = useState<any[]>([]);
+  const [transactions, setTransactions] = useState<any[]>([]);
+  const [checkbooks, setCheckbooks] = useState<any[]>([]);
+  const [accounts, setAccounts] = useState<any[]>([]);
+  const [users, setUsers] = useState<any[]>([]);
+  const [accountingDocs, setAccountingDocs] = useState<any[]>([]);
+  
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<'info' | 'history' | 'actions'>('info');
+  const [currentCheckId, setCurrentCheckId] = useState(checkId);
+  const [checkType, setCheckType] = useState<"issued" | "received">(initialCheckType || 'issued');
+  const [saving, setSaving] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isCommentsOpen, setIsCommentsOpen] = useState(false);
+
+  const [statusModalData, setStatusModalData] = useState<{
+    isOpen: boolean;
+    targetState: string;
+    bankAccountId: string;
+    assignedPersonId: string;
+    description: string;
+    date: string;
+  } | null>(null);
+
+  const [confirmModalData, setConfirmModalData] = useState<{isOpen: boolean, title: string, message: string, onConfirm: () => void} | null>(null);
+
+  const [editFormData, setEditFormData] = useState<any>({});
+
+  useEffect(() => {
+    setCurrentCheckId(checkId);
+  }, [checkId]);
+
+  const connectedCheckbook = useMemo(() => {
+    if (!check?.checkbookId) return null;
+    return checkbooks.find((c: any) => String(c.id) === String(check.checkbookId));
+  }, [check, checkbooks]);
+
+  const isDigitalCheck = Boolean(
+    check?.isDigital || 
+    check?.checkType === 'digital' || 
+    check?.type === 'digital' || 
+    connectedCheckbook?.type === 'digital' || 
+    connectedCheckbook?.isDigital
+  );
+
+  // Transitions
+  const transitions: Record<string, string[]> = useMemo(() => {
+    if (checkType === 'issued' && isDigitalCheck) {
+      return {
+        'draft': ['issued'],
+        'blank': ['issued'],
+        'issued': ['accepted', 'returned_to_issuer', 'in_clearing', 'cancelled'],
+        'accepted': ['in_clearing', 'cashed', 'bounced', 'returned_to_issuer'],
+        'returned_to_issuer': ['issued', 'cancelled'],
+        'in_clearing': ['cashed', 'bounced', 'returned_to_issuer'],
+        'bounced': ['settled_other_way', 'legal_action', 'cancelled'],
+        'legal_action': ['settled_other_way', 'cancelled'],
+        'cashed': [],
+        'settled_other_way': [],
+        'cancelled': [],
+        'stop_payment': ['accepted', 'cancelled'],
+        'overdue': ['in_clearing', 'cashed', 'bounced', 'cancelled'],
+      };
+    }
+    return {
+      'draft': ['issued'],
+      'blank': ['issued'],
+      'issued': ['delivered'],
+      'delivered': ['in_clearing', 'stop_payment', 'lost', 'overdue'],
+      'in_clearing': ['cashed', 'bounced'],
+      'bounced': ['re_assigned', 'legal_action', 'settled_other_way', 'cancelled'],
+      're_assigned': ['cashed', 'bounced'],
+      'legal_action': ['settled_other_way', 'cancelled'],
+      'cashed': [],
+      'settled_other_way': [],
+      'cancelled': [],
+      'stop_payment': ['delivered', 'cancelled'],
+      'lost': ['delivered', 'cancelled'],
+      'overdue': ['in_clearing', 'cashed', 'bounced', 'cancelled'],
+
+      'received': ['deposited', 'assigned', 'cashed'],
+      'deposited': ['cashed', 'bounced'],
+      'assigned': ['cashed', 'bounced_assigned'],
+      'bounced_assigned': ['returned', 'legal_action'],
+      'returned': ['cancelled'],
+    };
+  }, [checkType, isDigitalCheck]);
+
+  const stateLabels: any = useMemo(() => ({
+    'draft': 'پیش‌نویس',
+    'blank': 'سفید (آماده صدور)',
+    'issued': isDigitalCheck ? 'صادر شده در سامانه چکاد' : 'صادر شده / امضا شده',
+    'delivered': 'تحویل داده شده به گیرنده',
+    'accepted': 'تایید و دریافت در سامانه صیاد/چکاد',
+    'returned_to_issuer': 'عودت چک دیجیتال توسط گیرنده',
+    'in_clearing': 'در جریان وصول / کلر',
+    'cashed': 'پاس شده / وصول شده',
+    'bounced': 'برگشت خورده',
+    're_assigned': 'واگذار شده (خرج شده)',
+    'stop_payment': 'دستور عدم پرداخت',
+    'legal_action': 'اقدام حقوقی',
+    'settled_other_way': 'تسویه از راه دیگر',
+    'cancelled': 'ابطال شده',
+    'lost': 'مفقودی',
+    'overdue': 'سررسید گذشته',
+
+    'received': 'دریافت شده (نزد صندوق)',
+    'deposited': 'واگذار به بانک (در جریان وصول)',
+    'assigned': 'واگذار شده (خرج شده)',
+    'bounced_assigned': 'برگشت خورده (واگذار شده)',
+    'returned': 'عودت داده شده',
+  }), [isDigitalCheck]);
+
+  const stateColors: any = {
+    'draft': 'bg-slate-100 text-slate-700 border-slate-200',
+    'blank': 'bg-teal-50 text-teal-700 border-teal-200',
+    'issued': 'bg-sky-100 text-sky-700 border-sky-200',
+    'delivered': 'bg-indigo-100 text-indigo-700 border-indigo-200',
+    'accepted': 'bg-emerald-100 text-emerald-800 border-emerald-300',
+    'returned_to_issuer': 'bg-amber-100 text-amber-800 border-amber-300',
+    'in_clearing': 'bg-amber-100 text-amber-700 border-amber-200',
+    'cashed': 'bg-emerald-100 text-emerald-700 border-emerald-200',
+    'bounced': 'bg-rose-100 text-rose-700 border-rose-200',
+    're_assigned': 'bg-fuchsia-100 text-fuchsia-700 border-fuchsia-200',
+    'legal_action': 'bg-rose-50 text-rose-800 border-rose-300',
+    'cancelled': 'bg-slate-200 text-slate-800 border-slate-300',
+    
+    'received': 'bg-indigo-100 text-indigo-700 border-indigo-200',
+    'deposited': 'bg-amber-100 text-amber-700 border-amber-200',
+    'assigned': 'bg-fuchsia-100 text-fuchsia-700 border-fuchsia-200',
+    'bounced_assigned': 'bg-rose-100 text-rose-700 border-rose-200',
+    'returned': 'bg-slate-200 text-slate-800 border-slate-300',
+  };
+
+  const financialEffectStates = [
+    'cashed', 'in_clearing', 'deposited', 'bounced', 'assigned', 'bounced_assigned', 'returned'
+  ];
+
+  useEffect(() => {
+    loadData();
+  }, [currentCheckId, checkType]);
+
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const data = checkType === "issued" ? await getIssuedChecks() : await getReceivedChecks();
+      setAllChecks(data);
+      const found = data.find((c: any) => String(c.id) === String(currentCheckId));
+      setCheck(found);
+      
+      const [ps, hst, trs, cbs, accs, usrs, acDocs] = await Promise.all([
+        getPersons(),
+        getCheckHistoryLogs(currentCheckId, checkType, found),
+        getTransactions(),
+        getCheckbooks(),
+        getAccounts(),
+        getUsers(),
+        getAccountingDocuments().catch(() => [])
+      ]);
+      setPersons(ps || []);
+      setHistory((hst || []).sort((a:any, b:any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
+      setTransactions(trs || []);
+      setCheckbooks(cbs || []);
+      setAccounts(accs || []);
+      setUsers(usrs || []);
+      setAccountingDocs(Array.isArray(acDocs) ? acDocs.filter((d: any) => !d.isDeleted) : []);
+    } catch (error) {
+      console.error(error);
+      showNotification('خطا در دریافت اطلاعات چک', 'error');
+    }
+    setLoading(false);
+  };
+
+  const filteredChecks = !searchQuery ? allChecks : allChecks.filter(c => 
+    c.checkNumber?.includes(searchQuery) || 
+    c.sayadId?.includes(searchQuery) || 
+    String(c.amount).includes(searchQuery)
+  );
+
+  const linkedDocs = !check ? [] : (accountingDocs || []).filter((d: any) => {
+    if (d.isDeleted) return false;
+    const sId = String(d.sourceId || '');
+    const cId = String(check.id);
+    return (
+      sId === cId ||
+      sId.startsWith(`${cId}_`) ||
+      (d.sourceType === `check_${checkType}_init` && sId === cId) ||
+      (d.sourceType === `check_${checkType}_status` && sId.startsWith(`${cId}_`))
+    );
+  });
+
+
+  const openEditModal = () => {
+    setEditFormData({
+      checkNumber: check.checkNumber || '',
+      sayadId: check.sayadId || '',
+      amount: check.amount || '',
+      issueDate: check.issueDate || '',
+      dueDate: check.dueDate || '',
+      payeeName: check.payeeName || '',
+      payeeId: check.payeeId || '',
+      reason: check.reason || '',
+      description: check.description || ''
+    });
+    setIsEditModalOpen(true);
+  };
+
+  const handleSaveEdit = async () => {
+    setSaving(true);
+    try {
+      const updated = { ...check, ...editFormData };
+      if (checkType === 'issued') {
+        await updateIssuedCheck(check.id, updated);
+      } else {
+        await updateReceivedCheck(check.id, updated);
+      }
+      
+      await addCheckHistoryLog({
+        checkId: check.id,
+        checkType: checkType,
+        
+        description: 'ویرایش اطلاعات چک',
+        userId: currentUser,
+      });
+      
+      showNotification('اطلاعات چک با موفقیت بروزرسانی شد', 'success');
+      setIsEditModalOpen(false);
+      loadData();
+    } catch (e: any) {
+      console.error(e);
+      showNotification(e.message || 'خطا در بروزرسانی چک', 'error');
+    }
+    setSaving(false);
+  };
+
+  const openStatusModal = (targetState: string) => {
+    if (!check) return;
+    const defaultBank = check.bankAccountId || check.depositAccountId || (accounts && accounts[0]?.id) || '';
+    const defaultPerson = check.assignedToId || (persons && persons[0]?.id) || '';
+    let defaultDesc = '';
+    if (targetState === 'accepted') {
+      defaultDesc = `تایید و دریافت چک امن دیجیتال شماره ${check.checkNumber} توسط گیرنده در سامانه صیاد/چکاد`;
+    } else if (targetState === 'returned_to_issuer') {
+      defaultDesc = `عودت چک امن دیجیتال شماره ${check.checkNumber} توسط گیرنده در سامانه صیاد/چکاد به دلیل مغایرت یا مشکل`;
+    } else if (targetState === 'deposited') {
+      defaultDesc = `واگذاری چک دریافتی شماره ${check.checkNumber} به بانک جهت وصول`;
+    } else if (targetState === 'cashed') {
+      defaultDesc = checkType === 'issued'
+        ? `وصول چک صادره شماره ${check.checkNumber} و کسر از حساب بانک`
+        : `وصول و واریز وجه چک دریافتی شماره ${check.checkNumber} به حساب بانک`;
+    } else if (targetState === 'assigned') {
+      defaultDesc = `خرج و واگذاری چک دریافتی شماره ${check.checkNumber}`;
+    } else if (targetState === 'bounced') {
+      defaultDesc = `برگشت چک شماره ${check.checkNumber} به علت عدم موجودی / نقص مدارک`;
+    } else if (targetState === 'bounced_assigned') {
+      defaultDesc = `برگشت چک خرج شده شماره ${check.checkNumber}`;
+    } else if (targetState === 'returned') {
+      defaultDesc = `عودت لاشه چک شماره ${check.checkNumber} به صاحب چک`;
+    } else {
+      defaultDesc = `تغییر وضعیت چک شماره ${check.checkNumber} به ${stateLabels[targetState] || targetState}`;
+    }
+
+    setStatusModalData({
+      isOpen: true,
+      targetState,
+      bankAccountId: defaultBank,
+      assignedPersonId: defaultPerson,
+      description: defaultDesc,
+      date: new Date().toISOString().split('T')[0]
+    });
+  };
+
+  const handleExecuteStatusChange = async () => {
+    if (!check || !statusModalData) return;
+    const { targetState, bankAccountId, assignedPersonId, description, date } = statusModalData;
+
+    if (targetState === 'deposited' && !bankAccountId) {
+      showNotification('لطفاً حساب بانکی مقصد جهت خواباندن چک را انتخاب کنید', 'error');
+      return;
+    }
+    if (targetState === 'cashed' && checkType === 'received' && !bankAccountId) {
+      showNotification('لطفاً حساب بانکی واریزی جهت وصول وجه چک را انتخاب کنید', 'error');
+      return;
+    }
+    if (targetState === 'assigned' && !assignedPersonId) {
+      showNotification('لطفاً شخص تحویل‌گیرنده چک را انتخاب کنید', 'error');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const oldState = check.status;
+      let newTx: any = null;
+
+      if (targetState === 'cashed' && oldState !== 'cashed') {
+        const chosenBankId = bankAccountId || check.bankAccountId || check.accountId || accounts[0]?.id;
+        if (chosenBankId) {
+          try {
+            newTx = await addTransaction({
+              type: checkType === 'issued' ? 'pay' : 'receive',
+              resourceType: 'bank',
+              resourceId: chosenBankId,
+              amount: check.amount,
+              isCheckCashing: true,
+              personId: checkType === 'issued' ? check.payeeId : check.payerId,
+              checkId: check.id,
+              date: date || new Date().toISOString(),
+              method: 'check',
+              receiptNumber: check.receiptNumber || check.checkNumber,
+              checkNumber: check.checkNumber,
+              description: description || (checkType === 'issued'
+                ? `تسویه و پاس شدن برگه چک صادره شماره ${check.checkNumber}`
+                : `وصول و نقد شدن چک دریافتی شماره ${check.checkNumber}`)
+            });
+          } catch (txErr) {
+            console.error('Error creating transaction for cashed check:', txErr);
+          }
+        }
+      } else if (oldState === 'cashed' && targetState !== 'cashed') {
+        try {
+          await rollbackCashedTransaction(
+            check.checkNumber,
+            checkType === 'issued' ? check.payeeId : check.payerId,
+            checkType === 'issued' ? 'issued' : 'receive'
+          );
+        } catch (rbErr) {
+          console.warn('Error rolling back cashed transaction:', rbErr);
+        }
+      }
+
+      let updatedCheck = {
+        ...check,
+        status: targetState,
+        bankAccountId: bankAccountId || check.bankAccountId,
+        depositAccountId: bankAccountId || check.depositAccountId,
+        assignedToId: assignedPersonId || check.assignedToId,
+        clearanceDate: targetState === 'cashed' ? (date || new Date().toISOString()) : check.clearanceDate,
+        transactionId: newTx ? newTx.id : (targetState !== 'cashed' && oldState === 'cashed' ? null : check.transactionId),
+        receiptNumber: newTx?.receiptNumber || check.receiptNumber || check.checkNumber
+      };
+
+      if (checkType === 'issued') {
+        await updateIssuedCheck(check.id, updatedCheck);
+      } else {
+        await updateReceivedCheck(check.id, updatedCheck);
+      }
+
+      try {
+        await addCheckHistoryLog({
+          checkId: check.id,
+          checkType: checkType,
+          oldStatus: oldState,
+          newStatus: targetState,
+          userId: currentUser,
+          transactionId: updatedCheck.transactionId,
+          receiptNumber: updatedCheck.receiptNumber,
+          description: description || `تغییر وضعیت به ${stateLabels[targetState] || targetState}`
+        });
+      } catch (logErr) {
+        console.warn('History log warning:', logErr);
+      }
+
+      if (financialEffectStates.includes(targetState)) {
+        await syncCheckAccountingDocument(checkType, updatedCheck, check);
+        showNotification('وضعیت چک و سند حسابداری مربوطه با موفقیت ثبت گردید', 'success');
+      } else {
+        showNotification('وضعیت چک با موفقیت تغییر یافت', 'success');
+      }
+
+      setStatusModalData(null);
+      await loadData();
+    } catch (e: any) {
+      console.error(e);
+      showNotification(e.message || 'خطا در ثبت وضعیت چک', 'error');
+    }
+    setSaving(false);
+  };
+
+  const handleForceSyncAccounting = async () => {
+    if (!check) return;
+    setSaving(true);
+    try {
+      await syncCheckAccountingDocument(checkType, check);
+      showNotification('سند حسابداری با موفقیت بررسی و همگام‌سازی شد', 'success');
+      await loadData();
+    } catch (e: any) {
+      showNotification('خطا در همگام‌سازی سند حسابداری', 'error');
+    }
+    setSaving(false);
+  };
+
+  const handleStateChange = async (newState: string) => {
+    openStatusModal(newState);
+  };
+
+  if (loading) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center p-8 bg-slate-50" dir="rtl">
+        <div className="w-12 h-12 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
+        <p className="mt-4 text-slate-500 font-medium">در حال دریافت اطلاعات...</p>
+      </div>
+    );
+  }
+
+  if (!check) {
+    return (
+      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="p-4 md:p-8 max-w-[1400px] w-full mx-auto h-full overflow-y-auto" dir="rtl">
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 mb-6 flex flex-col sm:flex-row justify-between items-center gap-4 sticky top-0 z-20 print:hidden">
+          <div className="flex items-center gap-4 w-full sm:w-auto">
+            <button onClick={onClose} className="p-2 text-slate-500 hover:bg-slate-100 rounded-xl transition-colors">
+              <ArrowRight className="w-5 h-5" />
+            </button>
+            <h1 className="text-xl font-black text-slate-800 tracking-tight font-display">
+              جستجو و انتخاب پرونده چک
+            </h1>
+          </div>
+          
+          <div className="flex items-center gap-3 w-full sm:w-auto flex-1 max-w-md relative">
+            <div className="flex bg-slate-100 rounded-xl p-1 shrink-0">
+                <button 
+                  onClick={() => {
+                     setCheckType('issued');
+                     setCurrentCheckId(null);
+                     setSearchQuery('');
+                  }}
+                  className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${checkType === 'issued' ? 'bg-white shadow-sm text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                  پرداختی
+                </button>
+                <button 
+                  onClick={() => {
+                     setCheckType('received');
+                     setCurrentCheckId(null);
+                     setSearchQuery('');
+                  }}
+                  className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${checkType === 'received' ? 'bg-white shadow-sm text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                  دریافتی
+                </button>
+            </div>
+            <div className="relative w-full">
+              <Search className="w-5 h-5 absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input 
+                type="text"
+                placeholder="جستجوی شماره چک یا مبلغ..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onFocus={() => setIsDropdownOpen(true)}
+                onBlur={() => setTimeout(() => setIsDropdownOpen(false), 200)}
+                className="w-full pl-3 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+              />
+              {isDropdownOpen && filteredChecks.length > 0 && (
+                <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-xl border border-slate-200 max-h-60 overflow-y-auto z-50">
+                  {filteredChecks.map(c => (
+                    <button
+                      key={c.id}
+                      onClick={() => {
+                         setCurrentCheckId(c.id);
+                         setSearchQuery('');
+                         setIsDropdownOpen(false);
+                      }}
+                      className="w-full text-right p-3 hover:bg-slate-50 border-b border-slate-100 last:border-0 flex items-center justify-between"
+                    >
+                      <div className="flex flex-col">
+                        <span className="font-bold text-slate-700">{c.checkNumber}</span>
+                        <span className="text-xs text-slate-400">{persons.find(p => p.id === (checkType === "received" ? c.payerId : c.payeeId))?.name || 'ناشناس'}</span>
+                      </div>
+                      <span className="text-indigo-600 font-bold text-sm">{Number(c.amount).toLocaleString()}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+        <div className="flex flex-col items-center justify-center py-20 bg-white border border-slate-200 rounded-2xl shadow-sm">
+          <div className="w-20 h-20 bg-indigo-50 rounded-full flex items-center justify-center mb-4">
+            <Search className="w-10 h-10 text-indigo-300" />
+          </div>
+          <h2 className="text-xl font-bold text-slate-600">یک چک را برای مشاهده پرونده انتخاب کنید</h2>
+          <p className="text-slate-400 mt-2">ابتدا نوع چک (پرداختی/دریافتی) را مشخص کرده و سپس در کادر بالا جستجو کنید</p>
+        </div>
+      <AnimatePresence>
+      {confirmModalData?.isOpen && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 print:hidden">
+          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="bg-white rounded-3xl shadow-xl border border-slate-200 p-8 max-w-sm w-full" dir="rtl">
+            <h3 className="text-xl font-black text-slate-800 mb-4">{confirmModalData.title}</h3>
+            <p className="text-slate-600 mb-6 font-medium leading-relaxed">{confirmModalData.message}</p>
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setConfirmModalData(null)} className="px-5 py-2.5 rounded-xl border border-slate-300 text-slate-700 font-bold hover:bg-slate-50 transition-colors">
+                انصراف
+              </button>
+              <button onClick={confirmModalData.onConfirm} disabled={saving} className="px-5 py-2.5 rounded-xl bg-indigo-600 text-white font-bold hover:bg-indigo-700 transition-colors flex items-center gap-2">
+                {saving ? 'در حال پردازش...' : 'بله، تایید میکنم'}
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+      </AnimatePresence>
+
+      </motion.div>
+  );
+}
+
+  const currentStatus = check.status || 'draft';
+  const allowedNext = transitions[currentStatus] || [];
+  const payee = persons.find(p => p.id === (checkType === "received" ? check.payerId : check.payeeId));
+  const isClosed = allowedNext.length === 0;
+
+
+  const getStaticPreviousStatus = (status: string, type: 'issued'|'received') => {
+    if (type === 'issued') {
+      if (status === 'accepted') return 'issued';
+      if (status === 'returned_to_issuer') return 'issued';
+      if (['cashed', 'bounced', 'returned'].includes(status)) return isDigitalCheck ? 'accepted' : 'issued';
+      if (status === 'issued') return 'draft';
+    } else {
+      if (['in_clearing', 'deposited', 'assigned'].includes(status)) return 'received';
+      if (status === 'bounced') return 'in_clearing';
+      if (status === 'bounced_assigned') return 'assigned';
+      if (status === 'returned') return 'received'; // typically goes back to received
+      if (status === 'received') return 'draft';
+    }
+    return null;
+  };
+
+  const lastStatusChangeLog = history.find(l => l.oldStatus && l.newStatus === check.status);
+  const previousStatus = lastStatusChangeLog ? lastStatusChangeLog.oldStatus : getStaticPreviousStatus(currentStatus, checkType);
+  const handleRevert = async () => {
+    if (!previousStatus) return;
+    if (!confirm(`آیا از بازگرداندن چک به وضعیت قبلی (${stateLabels[previousStatus] || previousStatus}) اطمینان دارید؟`)) return;
+    
+    setSaving(true);
+    try {
+      const oldState = check.status;
+      let updatedCheck = { ...check, status: previousStatus };
+      if (oldState === 'cashed') {
+        try {
+          await rollbackCashedTransaction(
+            check.checkNumber,
+            checkType === 'issued' ? check.payeeId : check.payerId,
+            checkType === 'issued' ? 'issued' : 'receive'
+          );
+          updatedCheck.transactionId = null;
+        } catch (_) {}
+      }
+      
+      if (checkType === 'issued') {
+        await updateIssuedCheck(check.id, updatedCheck);
+      } else {
+        await updateReceivedCheck(check.id, updatedCheck);
+      }
+      
+      await addCheckHistoryLog({
+        checkId: check.id,
+        checkType: checkType,
+        oldStatus: oldState,
+        newStatus: previousStatus,
+        description: 'بازگردانی به وضعیت قبل',
+        userId: currentUser,
+      });
+
+      await syncCheckAccountingDocument(checkType, updatedCheck, check);
+      showNotification('وضعیت چک و سند حسابداری مربوطه با موفقیت به حالت قبل بازگردانده شد', 'success');
+      loadData();
+    } catch (e: any) {
+      console.error(e);
+      showNotification(e.message || 'خطا در ثبت وضعیت', 'error');
+    }
+    setSaving(false);
+  };
+  return (
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="p-4 md:p-8 max-w-[1400px] w-full mx-auto h-full overflow-y-auto" dir="rtl">
+      
+      {/* Search Header */}
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 mb-6 flex flex-col sm:flex-row justify-between items-center gap-4 sticky top-0 z-20 print:hidden">
+        <div className="flex items-center gap-4 w-full sm:w-auto">
+          <button onClick={onClose} className="p-2 text-slate-500 hover:bg-slate-100 rounded-xl transition-colors">
+            <ArrowRight className="w-5 h-5" />
+          </button>
+          <h1 className="text-xl font-black text-slate-800 tracking-tight font-display">
+            پرونده چک {checkType === 'issued' ? 'پرداختی' : 'دریافتی'}
+          </h1>
+        </div>
+
+        <div className="flex items-center gap-3 w-full sm:w-auto flex-1 max-w-md relative">
+          <div className="relative w-full">
+            <Search className="w-5 h-5 absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input 
+              type="text"
+              placeholder="جستجوی شماره چک یا مبلغ..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onFocus={() => setIsDropdownOpen(true)}
+              onBlur={() => setTimeout(() => setIsDropdownOpen(false), 200)}
+              className="w-full pl-3 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+            />
+            {isDropdownOpen && filteredChecks.length > 0 && (
+              <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-xl border border-slate-200 max-h-60 overflow-y-auto z-50">
+                {filteredChecks.map(c => (
+                  <button
+                    key={c.id}
+                    onMouseDown={() => setCurrentCheckId(c.id)}
+                    className={`w-full text-right px-4 py-3 border-b border-slate-50 last:border-0 hover:bg-slate-50 transition-colors flex flex-col ${c.id === currentCheckId ? 'bg-indigo-50/50' : ''}`}
+                  >
+                    <span className="font-bold text-slate-700">چک {c.checkNumber}</span>
+                    <span className="text-xs text-slate-500">{Number(c.amount).toLocaleString('fa-IR')} {storeSettings?.currency || 'تومان'} - شناسه صیاد: {c.sayadId || 'ندارد'}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <CommentBadgeButton
+            entityType="check"
+            entityId={String(currentCheckId)}
+            onClick={() => setIsCommentsOpen(true)}
+            title="یادداشت‌ها و نظرات این چک"
+          />
+          <button onClick={() => window.print()} className="p-2.5 bg-slate-100 text-slate-700 rounded-xl hover:bg-slate-200 transition-colors" title="چاپ کارت">
+            <Printer className="w-5 h-5" />
+          </button>
+        </div>
+      </div>
+      
+      {/* Main Content */}
+      <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden print:shadow-none print:border-none print:rounded-none">
+        
+        {/* Top Banner (Status + Amount) */}
+        <div className="bg-gradient-to-l from-slate-900 to-slate-800 p-8 md:p-12 text-white relative overflow-hidden flex flex-col md:flex-row items-center md:items-start justify-between gap-6">
+          <div className="absolute -left-16 -top-16 opacity-5 pointer-events-none">
+            <CreditCard className="w-64 h-64 transform -rotate-12" />
+          </div>
+          
+          <div className="relative z-10 flex flex-col items-center md:items-start">
+            {isDigitalCheck && (
+              <div className="mb-2.5 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-500/30 border border-indigo-400/40 text-indigo-100 text-xs font-bold">
+                <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                <span>📱 چک امن دیجیتال (سامانه چکاد) - بدون نیاز به تحویل فیزیکی برگه</span>
+              </div>
+            )}
+            <span className="text-slate-400 text-sm font-medium mb-1">مبلغ چک</span>
+            <div className="flex items-end gap-2 mb-2">
+              <span className="text-4xl md:text-5xl font-black tracking-tighter text-white drop-shadow-sm font-sans" dir="ltr">
+                {Number(check.amount).toLocaleString('fa-IR')}
+              </span>
+              <span className="text-xl text-slate-300 font-medium mb-1">{storeSettings?.currency || 'تومان'}</span>
+            </div>
+            <span className="text-slate-400 text-sm bg-white/10 px-3 py-1 rounded-full">{Num2persian(check.amount)} {storeSettings?.currency || 'تومان'}</span>
+          </div>
+
+          <div className="relative z-10 flex flex-col items-center md:items-end">
+            <span className="text-slate-400 text-sm font-medium mb-1">وضعیت فعلی</span>
+            <div className={`px-6 py-3 rounded-2xl border-2 shadow-sm font-black text-lg ${stateColors[check.status]} bg-white/95 backdrop-blur-sm`}>
+              {stateLabels[check.status]}
+            </div>
+          </div>
+        </div>
+
+        {/* Tab Navigation */}
+        <div className="px-8 pt-6 border-b border-slate-100 flex gap-8 overflow-x-auto print:hidden bg-white">
+          <button onClick={() => setActiveTab('info')} className={`pb-4 flex items-center gap-2 font-bold text-[15px] whitespace-nowrap border-b-2 transition-colors ${activeTab === 'info' ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>
+            <FileText className="w-5 h-5" /> اطلاعات اصلی
+          </button>
+          <button onClick={() => setActiveTab('history')} className={`pb-4 flex items-center gap-2 font-bold text-[15px] whitespace-nowrap border-b-2 transition-colors ${activeTab === 'history' ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>
+            <HistoryIcon className="w-5 h-5" /> تاریخچه و سوابق
+          </button>
+          <button onClick={() => setActiveTab('actions')} className={`pb-4 flex items-center gap-2 font-bold text-[15px] whitespace-nowrap border-b-2 transition-colors ${activeTab === 'actions' ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>
+            <RefreshCw className="w-5 h-5" /> عملیات و فرم وضعیت
+          </button>
+        </div>
+
+        {/* Tab Content */}
+        <div className="p-8 bg-slate-50/50">
+          
+          {/* INFO TAB */}
+          {activeTab === 'info' && (
+            <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-8">
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                  <span className="flex items-center gap-1.5 text-slate-500 text-sm mb-2"><CreditCard className="w-4 h-4" /> شماره چک</span>
+                  <span className="text-xl font-black text-slate-800 font-sans tracking-widest">{check.checkNumber || '---'}</span>
+                </div>
+                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                  <span className="flex items-center gap-1.5 text-slate-500 text-sm mb-2"><List className="w-4 h-4" /> شناسه صیادی</span>
+                  <span className="text-xl font-black text-slate-800 font-sans tracking-widest">{check.sayadId || '---'}</span>
+                </div>
+                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                  <span className="flex items-center gap-1.5 text-slate-500 text-sm mb-2"><Calendar className="w-4 h-4" /> {checkType === 'issued' ? 'تاریخ صدور' : 'تاریخ دریافت'}</span>
+                  <span className="text-xl font-bold text-slate-800 font-sans">{formatDateDisplay(checkType === 'issued' ? check.issueDate : check.receiveDate, storeSettings?.calendarType)}</span>
+                </div>
+                <div className="bg-white p-5 rounded-2xl border border-rose-100 bg-rose-50/30 shadow-sm">
+                  <span className="flex items-center gap-1.5 text-rose-600 font-medium text-sm mb-2"><Calendar className="w-4 h-4" /> تاریخ سررسید</span>
+                  <span className="text-xl font-black text-rose-700 font-sans">{formatDateDisplay(check.dueDate, storeSettings?.calendarType)}</span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                  <div className="bg-slate-100/50 p-4 border-b border-slate-200">
+                    <h3 className="font-bold text-slate-800 flex items-center gap-2"><User className="w-5 h-5 text-indigo-500"/> طرف حساب</h3>
+                  </div>
+                  <div className="p-6">
+                    <div className="flex items-center gap-4">
+                      <div className="w-14 h-14 bg-indigo-50 rounded-2xl flex items-center justify-center border border-indigo-100">
+                        <User className="w-7 h-7 text-indigo-600"/>
+                      </div>
+                      <div>
+                        <span className="block text-slate-500 text-sm mb-1">{checkType === 'issued' ? 'در وجه (گیرنده)' : 'پرداخت کننده'}</span>
+                        <span className="text-lg font-black text-slate-800">
+                          {payee ? (payee.firstName + ' ' + payee.lastName) : 'ناشناس'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                  <div className="bg-slate-100/50 p-4 border-b border-slate-200">
+                    <h3 className="font-bold text-slate-800 flex items-center gap-2"><Building2 className="w-5 h-5 text-indigo-500"/> اطلاعات بانکی</h3>
+                  </div>
+                  <div className="p-6">
+                    {checkType === 'issued' ? (
+                      <div>
+                        <span className="block text-slate-500 text-sm mb-2">دسته چک متصل</span>
+                        <span className="text-lg font-black text-slate-800 bg-slate-50 px-4 py-2 rounded-xl inline-block border border-slate-100">
+                          {check.checkbookId ? (() => {
+                              const cb = checkbooks.find(c => String(c.id) === String(check.checkbookId));
+                              if (cb) {
+                                const acc = accounts.find(a => String(a.id) === String(cb.accountId));
+                                if (acc) return `بانک ${acc.bankName} - ${acc.accountNumber}`;
+                                return 'حساب متصل یافت نشد';
+                              }
+                              return 'دسته چک یافت نشد';
+                          })() : '---'}
+                        </span>
+                      </div>
+                    ) : (
+                      <div>
+                        <span className="block text-slate-500 text-sm mb-2">بانک و شعبه عهده</span>
+                        <span className="text-lg font-black text-slate-800 bg-slate-50 px-4 py-2 rounded-xl inline-block border border-slate-100">
+                          {check.bankName ? `بانک ${check.bankName} ${check.branchName ? 'شعبه ' + check.branchName : ''}` : '---'}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                <div className="bg-slate-100/50 p-4 border-b border-slate-200">
+                  <h3 className="font-bold text-slate-800 flex items-center gap-2"><FileText className="w-5 h-5 text-indigo-500"/> توضیحات و سوابق</h3>
+                </div>
+                <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-8">
+                  <div>
+                    <span className="block text-slate-500 text-sm mb-2">بابت / شرح صدور</span>
+                    <p className="text-slate-800 font-medium leading-loose bg-slate-50 p-4 rounded-xl border border-slate-100 min-h-[100px]">{check.reason || 'توضیحی ثبت نشده است.'}</p>
+                  </div>
+                  <div>
+                    <span className="block text-slate-500 text-sm mb-2">یادداشت تکمیلی پرونده</span>
+                    <p className="text-slate-700 leading-loose bg-amber-50/50 p-4 rounded-xl border border-amber-100 min-h-[100px]">{check.description || 'توضیحی ثبت نشده است.'}</p>
+                  </div>
+                </div>
+                {(check.receiptNumber || check.transactionId) && (
+                  <div className="mx-6 mb-6 p-4 bg-indigo-50/60 border border-indigo-100 rounded-xl flex items-center gap-3">
+                    <FileText className="w-5 h-5 text-indigo-600 shrink-0" />
+                    <div>
+                      <span className="text-xs text-indigo-900/70 block">سند یا تراکنش متصل به پرونده:</span>
+                      <span className="font-mono font-bold text-sm text-indigo-950">{check.receiptNumber ? `رسید #${check.receiptNumber}` : `شناسه تراکنش: ${check.transactionId}`}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Linked Accounting Documents Card */}
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                <div className="bg-slate-100/50 p-4 border-b border-slate-200 flex items-center justify-between">
+                  <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                    <FileText className="w-5 h-5 text-indigo-500"/> اسناد حسابداری مرتبط با این پرونده
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={handleForceSyncAccounting}
+                    disabled={saving}
+                    className="text-xs bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-lg font-bold border border-indigo-200 flex items-center gap-1.5 transition-colors"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" /> بروزرسانی و صدور مجدد سند
+                  </button>
+                </div>
+                <div className="p-6">
+                  {linkedDocs.length > 0 ? (
+                    <div className="space-y-3">
+                      {linkedDocs.map((doc: any, dIdx: number) => {
+                        const totalDebit = (doc.items || []).reduce((acc: number, it: any) => acc + (Number(it.debit) || 0), 0);
+                        const isInit = doc.sourceType?.includes('_init');
+                        return (
+                          <div key={doc.id || dIdx} className="bg-slate-50 hover:bg-slate-100/80 p-4 rounded-xl border border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4 transition-colors">
+                            <div className="flex items-start gap-3">
+                              <div className={`p-2.5 rounded-xl ${isInit ? 'bg-sky-100 text-sky-700' : 'bg-emerald-100 text-emerald-700'} shrink-0 mt-0.5`}>
+                                <FileText className="w-5 h-5" />
+                              </div>
+                              <div>
+                                <div className="flex items-center gap-2 mb-1">
+                                  <span className="font-black text-slate-800 text-sm">
+                                    سند حسابداری {doc.docNumber ? `#${doc.docNumber}` : doc.id}
+                                  </span>
+                                  <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${isInit ? 'bg-sky-100 text-sky-800' : 'bg-emerald-100 text-emerald-800'}`}>
+                                    {isInit ? 'ثبت اولیه چک' : 'سند تغییر وضعیت'}
+                                  </span>
+                                </div>
+                                <p className="text-xs text-slate-600 line-clamp-2 leading-relaxed">
+                                  {doc.description || 'ثبت سند حسابداری خودکار چک'}
+                                </p>
+                                <div className="flex items-center gap-4 mt-2 text-xs text-slate-500">
+                                  <span>تاریخ: <strong className="text-slate-700 font-sans">{formatDateDisplay(doc.date, storeSettings?.calendarType)}</strong></span>
+                                  <span>مبلغ سند: <strong className="text-slate-800 font-mono font-bold">{Number(totalDebit).toLocaleString('fa-IR')}</strong> {storeSettings?.currency || 'تومان'}</span>
+                                  <span className="text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded">تراز شده ✓</span>
+                                </div>
+                              </div>
+                            </div>
+
+                            {onViewAccountingDoc && (
+                              <button
+                                type="button"
+                                onClick={() => onViewAccountingDoc(doc)}
+                                className="px-4 py-2 bg-white hover:bg-indigo-50 text-indigo-700 border border-slate-200 hover:border-indigo-300 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-2xs transition-colors shrink-0"
+                              >
+                                <ExternalLink className="w-4 h-4 text-indigo-500" />
+                                مشاهده سند کامل
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="text-center py-6 bg-slate-50/50 rounded-xl border border-dashed border-slate-200">
+                      <FileText className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                      <p className="text-slate-500 text-sm font-medium">سند حسابداری برای وضعیت فعلی چک در حال حاضر ثبت نشده است.</p>
+                      <button
+                        type="button"
+                        onClick={handleForceSyncAccounting}
+                        disabled={saving}
+                        className="mt-3 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold inline-flex items-center gap-1.5 transition-colors shadow-sm"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        صدور خودکار سند حسابداری هم‌اکنون
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+            </div>
+          )}
+
+          {/* HISTORY TAB */}
+          {activeTab === 'history' && (
+            <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-8 max-w-4xl mx-auto">
+                <h3 className="text-xl font-black text-slate-800 mb-8 flex items-center gap-3">
+                  <HistoryIcon className="w-6 h-6 text-indigo-500" /> روند تغییرات پرونده
+                </h3>
+                
+                <div className="relative border-r-2 border-indigo-100 pr-8 ml-4 space-y-8">
+                  {history.map((log, idx) => {
+                     const actionLabel = log.oldStatus ? 'تغییر وضعیت' : (log.description?.includes('ثبت') ? 'ثبت اولیه چک' : 'تغییر وضعیت/عملیات');
+                     const nV = log.newStatus;
+                     const oV = log.oldStatus;
+                     
+                     return (
+                       <div key={log.id || idx} className="relative">
+                         <span className="absolute -right-[41px] bg-white border-4 border-indigo-500 w-5 h-5 rounded-full mt-1.5 shadow-sm ring-4 ring-white"></span>
+                         <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow">
+                           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
+                             <span className="text-lg font-black text-slate-800">{actionLabel}</span>
+                             <div className="flex items-center gap-2 text-slate-500 bg-white px-3 py-1.5 rounded-lg border border-slate-200 text-sm">
+                               <Clock className="w-4 h-4" />
+                               <span className="font-sans" dir="ltr">{new Date(log.createdAt).toLocaleString('fa-IR')}</span>
+                             </div>
+                           </div>
+                           {(nV || oV) && (
+                             <div className="flex flex-wrap items-center gap-3 mt-4 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                               {oV && <span className="px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg font-bold border border-slate-200">{stateLabels[oV] || oV}</span>}
+                               {oV && nV && <ArrowRight className="w-5 h-5 text-slate-300" />}
+                               {nV && <span className={`px-3 py-1.5 rounded-lg font-black border ${stateColors[nV] || 'bg-slate-100 text-slate-800'}`}>{stateLabels[nV] || nV}</span>}
+                             </div>
+                           )}
+                           {log.description && (
+                             <div className="mt-4 p-3 bg-white rounded-xl border border-slate-200 text-sm text-slate-700 leading-relaxed">
+                               {log.description}
+                             </div>
+                           )}
+                           {(log.receiptNumber || log.transactionId) && (
+                             <div className="mt-3 flex items-center gap-2 text-xs text-indigo-700 bg-indigo-50 border border-indigo-100 px-3 py-1.5 rounded-lg w-fit font-mono">
+                               <FileText className="w-4 h-4 text-indigo-500" />
+                               <span className="font-sans font-bold">شناسه سند/تراکنش مرتبط:</span>
+                               <span>{log.receiptNumber ? `رسید #${log.receiptNumber}` : `شناسه: ${log.transactionId}`}</span>
+                             </div>
+                           )}
+                           <div className="text-sm text-slate-500 mt-6 flex items-center gap-2 pt-4 border-t border-slate-200 border-dashed">
+                             {(() => {
+                               const logUser = users.find(u => String(u.id) === String(log.userId));
+                               let userName = log.userId || 'سیستم';
+                               if (logUser) {
+                                 if (logUser.personId) {
+                                   const p = persons.find(px => String(px.id) === String(logUser.personId));
+                                   if (p) userName = p.name;
+                                   else userName = logUser.name || logUser.username || log.userId;
+                                 } else {
+                                   userName = logUser.name || logUser.username || log.userId;
+                                 }
+                               } else if (log.userId === 'system') {
+                                 userName = 'سیستم';
+                               }
+                               return <><User className="w-4 h-4" /> کاربر ثبت کننده: <span className="font-bold text-slate-700 mr-1">{userName}</span></>;
+                             })()}
+                           </div>
+                         </div>
+                       </div>
+                     )
+                  })}
+                  {history.length === 0 && (
+                    <div className="text-slate-400 italic p-8 text-center text-lg bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                      تاکنون سابقه و تاریخچه‌ای برای این پرونده ثبت نشده است.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ACTIONS TAB */}
+          {activeTab === 'actions' && (
+            <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <div className="max-w-4xl mx-auto space-y-8">
+                
+                {isClosed ? (
+                  <div className="p-10 bg-emerald-50 text-emerald-800 rounded-3xl border-2 border-emerald-200 flex flex-col items-center justify-center text-center gap-4 shadow-sm">
+                    <CheckCircle className="w-16 h-16 text-emerald-500" />
+                    <div>
+                      <h2 className="font-black text-2xl mb-2 text-emerald-900">پرونده این چک کاملا بسته شده است</h2>
+                      <p className="text-emerald-700/80 text-lg">وضعیت فعلی چک نشان‌دهنده پایان چرخه حیات آن است و تغییر وضعیت جدیدی امکان‌پذیر نیست.</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-8">
+                    <h3 className="text-xl font-black text-slate-800 mb-8 flex items-center gap-3">
+                      <RefreshCw className="w-6 h-6 text-indigo-500" /> تغییر وضعیت پرونده
+                    </h3>
+
+                    {isDigitalCheck && (
+                      <div className="p-4 bg-indigo-50/70 border border-indigo-200/80 rounded-2xl flex items-start gap-3 mb-6">
+                        <Smartphone className="w-5 h-5 text-indigo-600 shrink-0 mt-0.5" />
+                        <div className="text-xs text-indigo-950 leading-relaxed">
+                          <strong className="block text-indigo-900 font-black mb-1">فرآیند چک امن دیجیتال (سامانه چکاد بانک مرکزی):</strong>
+                          این چک کاملاً الکترونیکی صادر شده و نیازی به تحویل فیزیکی لاشه چک ندارد. پس از صدور، طرف مقابل در سامانه صیاد/چکاد می‌تواند آن را دریافت و تایید کند («تایید و دریافت در صیاد») یا در صورت عدم تطابق آن را عودت دهد («عودت چک دیجیتال»).
+                        </div>
+                      </div>
+                    )}
+
+                    <p className="text-slate-500 mb-6 text-lg">با توجه به وضعیت فعلی (<span className="font-bold text-slate-700">{stateLabels[check.status]}</span>)، می‌توانید پرونده را به یکی از وضعیت‌های زیر منتقل کنید:</p>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {allowedNext.map(nextState => {
+                        const isFinancial = financialEffectStates.includes(nextState);
+                        return (
+                          <button 
+                            key={nextState}
+                            onClick={() => handleStateChange(nextState)}
+                            disabled={saving}
+                            className={`
+                              text-right px-6 py-5 rounded-2xl border-2 font-bold flex items-center justify-between group transition-all
+                              ${stateColors[nextState]} hover:shadow-md hover:-translate-y-1 active:translate-y-0
+                            `}
+                          >
+                            <div className="flex flex-col gap-2">
+                              <span className="text-lg">{stateLabels[nextState]}</span>
+                              {isFinancial && (
+                                 <span className="text-xs bg-white/80 text-slate-700 px-2 py-1 rounded-md flex items-center gap-1.5 w-max font-medium">
+                                   <FileText className="w-3.5 h-3.5 text-indigo-500" /> ثبت سند مالی خودکار
+                                 </span>
+                              )}
+                            </div>
+                            <div className="w-10 h-10 rounded-full bg-white/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all transform group-hover:-translate-x-2">
+                              <ArrowRight className="w-5 h-5" />
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {previousStatus && (
+                    <button 
+                      onClick={handleRevert}
+                      disabled={saving}
+                      className="mt-6 w-full text-right px-6 py-4 rounded-2xl border-2 font-bold flex items-center justify-between group transition-all bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100 hover:shadow-md hover:-translate-y-1"
+                    >
+                      <div className="flex flex-col gap-2">
+                        <span className="text-lg">بازگردانی به وضعیت قبل ({stateLabels[previousStatus] || previousStatus})</span>
+                        <span className="text-xs opacity-80">
+                          ممکن است به صورت اشتباه یک وضعیت انتخاب شده باشد. (اسناد مالی مربوطه را دستی بررسی کنید)
+                        </span>
+                      </div>
+                      <div className="w-10 h-10 rounded-full bg-white/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all transform group-hover:translate-x-2">
+                         <HistoryIcon className="w-5 h-5" />
+                      </div>
+                    </button>
+                  )}
+                  </div>
+                )}
+                
+                <div className="bg-indigo-50/50 rounded-3xl border border-indigo-100 p-8 shadow-sm">
+                  <h3 className="font-bold text-indigo-900 mb-4 flex items-center gap-2 text-lg">
+                    <FileText className="w-6 h-6 text-indigo-600" /> اسناد مالی مرتبط
+                  </h3>
+                  <p className="text-indigo-700/80 mb-6 leading-relaxed">
+                    در صورتی که این چک دارای سند حسابداری متصل در سیستم است (مانند سند واگذاری، وصول، یا برگشت)، می‌توانید آن را مشاهده کنید.
+                  </p>
+                  <button onClick={() => {
+                    const doc = transactions?.find(t => 
+                      String(t.linkedCheckId) === String(check.id) || 
+                      String(t.checkId) === String(check.id) || 
+                      (check.transactionId && String(t.id) === String(check.transactionId)) || 
+                      (check.receiptNumber && String(t.receiptNumber) === String(check.receiptNumber)) || 
+                      t.items?.some(i => i.description?.includes(check.checkNumber))
+                    );
+                    if (doc && onViewAccountingDoc) onViewAccountingDoc(doc);
+                    else showNotification('سند حسابداری برای این چک یافت نشد.', 'info');
+                  }} className="w-full sm:w-auto flex items-center justify-center gap-3 px-8 py-4 bg-white text-indigo-700 border-2 border-indigo-200 hover:border-indigo-400 hover:bg-indigo-50 rounded-xl transition-all font-bold text-lg shadow-sm">
+                    <ExternalLink className="w-6 h-6" />
+                    مشاهده سند حسابداری متصل
+                  </button>
+                </div>
+                
+              </div>
+            </div>
+          )}
+
+        </div>
+      </div>
+
+      {/* STATUS CHANGE MODAL */}
+      <AnimatePresence>
+      {statusModalData?.isOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 print:hidden">
+          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="bg-white rounded-3xl shadow-2xl border border-slate-200 p-6 md:p-8 max-w-lg w-full max-h-[90vh] overflow-y-auto" dir="rtl">
+            <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-6">
+              <div className="flex items-center gap-3">
+                <div className={`p-2.5 rounded-2xl ${stateColors[statusModalData.targetState]}`}>
+                  <RefreshCw className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-black text-slate-800">
+                    تغییر وضعیت به "{stateLabels[statusModalData.targetState] || statusModalData.targetState}"
+                  </h3>
+                  <span className="text-xs text-slate-500">
+                    پرونده چک شماره {check.checkNumber} - مبلغ {Number(check.amount).toLocaleString('fa-IR')} {storeSettings?.currency || 'تومان'}
+                  </span>
+                </div>
+              </div>
+              <button onClick={() => setStatusModalData(null)} className="p-2 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 transition-colors">
+                <XCircle className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {/* If deposited: choose bank account */}
+              {statusModalData.targetState === 'deposited' && (
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-1.5">
+                    حساب بانکی مقصد جهت خواباندن چک (در جریان وصول) *
+                  </label>
+                  <select
+                    value={statusModalData.bankAccountId}
+                    onChange={(e) => setStatusModalData({ ...statusModalData, bankAccountId: e.target.value })}
+                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
+                    required
+                  >
+                    <option value="">-- انتخاب حساب بانکی --</option>
+                    {(accounts || []).map((acc: any) => (
+                      <option key={acc.id} value={acc.id}>
+                        {acc.bankName} - شماره حساب: {acc.accountNumber} ({acc.accountHolder || 'اصلی'})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* If cashed: choose bank account for receiving money */}
+              {statusModalData.targetState === 'cashed' && checkType === 'received' && (
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-1.5">
+                    حساب بانکی واریزی جهت وصول وجه چک *
+                  </label>
+                  <select
+                    value={statusModalData.bankAccountId}
+                    onChange={(e) => setStatusModalData({ ...statusModalData, bankAccountId: e.target.value })}
+                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
+                    required
+                  >
+                    <option value="">-- انتخاب حساب بانکی واریزی --</option>
+                    {(accounts || []).map((acc: any) => (
+                      <option key={acc.id} value={acc.id}>
+                        {acc.bankName} - شماره حساب: {acc.accountNumber}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* If assigned: choose person */}
+              {statusModalData.targetState === 'assigned' && (
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-1.5">
+                    شخص تحویل‌گیرنده چک (خرج شده به) *
+                  </label>
+                  <select
+                    value={statusModalData.assignedPersonId}
+                    onChange={(e) => setStatusModalData({ ...statusModalData, assignedPersonId: e.target.value })}
+                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
+                    required
+                  >
+                    <option value="">-- انتخاب شخص / بستانکار --</option>
+                    {(persons || []).map((p: any) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name || `${p.firstName || ''} ${p.lastName || ''}`} {p.phone ? `(${p.phone})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Date */}
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-1.5">
+                  تاریخ اقدام
+                </label>
+                <input
+                  type="date"
+                  value={statusModalData.date}
+                  onChange={(e) => setStatusModalData({ ...statusModalData, date: e.target.value })}
+                  className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              {/* Description */}
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-1.5">
+                  توضیحات و شرح تغییر وضعیت
+                </label>
+                <textarea
+                  value={statusModalData.description}
+                  onChange={(e) => setStatusModalData({ ...statusModalData, description: e.target.value })}
+                  rows={2}
+                  className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-medium text-sm text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
+                  placeholder="شرح وضعیت را وارد کنید..."
+                />
+              </div>
+
+              {/* Notice regarding accounting doc */}
+              {financialEffectStates.includes(statusModalData.targetState) && (
+                <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center gap-2.5 text-xs text-emerald-800 font-bold">
+                  <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" />
+                  <span>
+                    سند دوبل حسابداری مربوط به این وضعیت به صورت خودکار صادر و ثبت خواهد شد.
+                  </span>
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setStatusModalData(null)}
+                className="px-5 py-2.5 rounded-xl border border-slate-300 text-slate-700 font-bold hover:bg-slate-50 transition-colors text-sm"
+              >
+                انصراف
+              </button>
+              <button
+                type="button"
+                onClick={handleExecuteStatusChange}
+                disabled={saving}
+                className="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold transition-colors flex items-center gap-2 shadow-sm text-sm"
+              >
+                {saving ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    در حال ثبت و صدور سند...
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-4 h-4" />
+                    تأیید و صدور سند حسابداری
+                  </>
+                )}
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+      </AnimatePresence>
+
+      {isEditModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 print:hidden">
+          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-white rounded-3xl shadow-xl border border-slate-200 p-8 max-w-2xl w-full max-h-[90vh] overflow-y-auto" dir="rtl">
+            <h3 className="text-xl font-black text-slate-800 mb-6 flex items-center gap-2">
+              <Edit3 className="w-6 h-6 text-indigo-500" />
+              ویرایش اطلاعات چک
+            </h3>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-1">شماره چک</label>
+                <input type="text" value={editFormData.checkNumber} onChange={e => setEditFormData({...editFormData, checkNumber: e.target.value})} className="w-full px-3 py-2 border rounded-xl" />
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-1">مبلغ ({storeSettings?.currency || 'تومان'})</label>
+                <input type="number" value={editFormData.amount} onChange={e => setEditFormData({...editFormData, amount: e.target.value})} className="w-full px-3 py-2 border rounded-xl" />
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-1">شناسه صیاد</label>
+                <input type="text" value={editFormData.sayadId} onChange={e => setEditFormData({...editFormData, sayadId: e.target.value})} className="w-full px-3 py-2 border rounded-xl" />
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-1">در وجه</label>
+                <input type="text" value={editFormData.payeeName} onChange={e => setEditFormData({...editFormData, payeeName: e.target.value})} className="w-full px-3 py-2 border rounded-xl" />
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-1">تاریخ صدور</label>
+                <input type="date" value={editFormData.issueDate?.split('T')[0] || ''} onChange={e => setEditFormData({...editFormData, issueDate: e.target.value})} className="w-full px-3 py-2 border rounded-xl" />
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-1">تاریخ سررسید</label>
+                <input type="date" value={editFormData.dueDate?.split('T')[0] || ''} onChange={e => setEditFormData({...editFormData, dueDate: e.target.value})} className="w-full px-3 py-2 border rounded-xl" />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-bold text-slate-700 mb-1">بابت</label>
+                <input type="text" value={editFormData.reason} onChange={e => setEditFormData({...editFormData, reason: e.target.value})} className="w-full px-3 py-2 border rounded-xl" />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-bold text-slate-700 mb-1">توضیحات تکمیلی</label>
+                <textarea value={editFormData.description} onChange={e => setEditFormData({...editFormData, description: e.target.value})} className="w-full px-3 py-2 border rounded-xl h-24"></textarea>
+              </div>
+            </div>
+            
+            <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
+              <button onClick={() => setIsEditModalOpen(false)} className="px-6 py-2.5 rounded-xl border border-slate-300 text-slate-700 font-bold hover:bg-slate-50 transition-colors">
+                انصراف
+              </button>
+              <button onClick={handleSaveEdit} disabled={saving} className="px-6 py-2.5 rounded-xl bg-indigo-600 text-white font-bold hover:bg-indigo-700 transition-colors flex items-center gap-2">
+                {saving && <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
+                ذخیره تغییرات
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Universal Comments Drawer for Check Card */}
+      <UniversalCommentsDrawer
+        isOpen={isCommentsOpen}
+        onClose={() => setIsCommentsOpen(false)}
+        entityType="check"
+        entityId={String(currentCheckId)}
+        entityTitle={
+          check
+            ? `چک ${checkType === "issued" ? "پرداختی" : "دریافتی"} شماره ${toPersianDigits(check.checkNumber || currentCheckId)} (${check.bankName || "بانک نامشخص"})`
+            : ""
+        }
+      />
+    </motion.div>
+  );
+}

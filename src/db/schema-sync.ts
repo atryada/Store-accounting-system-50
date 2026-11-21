@@ -1,0 +1,706 @@
+import { getActivePgPool, isPgActive } from './connection';
+
+export const KNOWN_TABLES = ['businesses', 'notifications', 'customers_risk_profile', 'repayment_transactions', 'repayment_schedules', 'loan_accounts', 'collaterals', 'loan_applications', 'loan_types', 
+  'users', 'company_profile', 'financial_years', 'person_groups', 'person_roles',
+  'payslips', 'salary_components', 'rent_contracts', 'employee_contracts', 'contract_components', 'monthly_attendance', 'daily_attendance', 'employee_leaves', 'employee_missions', 'payslip_items', 'debtors_trackings',
+  'accounts', 'cashboxes', 'warehouses', 'product_categories', 'products',
+  'transactions', 'invoices', 'accounting_documents', 'checkbooks', 'invoice_items', 'accounting_document_items', 'stocktaking_items',
+  'warehouse_stocks', 'stocktakings', 'person_follow_ups', 'loans', 'loan_history',
+  'ledger_accounts', 'installments', 'sms_messages', 'person_opening_balances', 'product_price_history', 'sales_invoice_payments', 'purchase_invoice_payments',
+  'issued_checks', 'received_checks', 'check_history', 'check_audit_logs', 'refundRequests', 'crm_columns', 'personal_notes', 'doc_counters', 'backupConfig', 'databaseLogs',
+  'persons', 'person_contacts', 'person_bank_accounts', 'system_logs',
+  'person_categories', 'person_category_mappings', 'person_roles_mapping',
+  'roles', 'database_logs', 'backupConfig',
+  'purchase_invoices', 'purchase_invoice_items',
+  'sales_invoices', 'sales_invoice_items',
+  'warehouse_receipts', 'warehouse_receipt_items', 'warehouse_receipts_item', 'warehouse_receipts_items',
+  'warehouse_remittances', 'warehouse_remittance_items', 'warehouse_remittances_item', 'warehouse_remittances_items',
+  'proforma_invoices', 'proforma_invoice_items',
+  'sale_returns', 'sale_return_items',
+  'purchase_returns', 'purchase_return_items',
+  'wastes', 'waste_items',
+  'receipt_transactions', 'payment_transactions',
+  'issued_checks', 'received_checks', 'payslips'
+, 'InventoryTransactions', 'inventory_transactions', 'kardex', 'personal_notes', 'entity_comments',
+  'sms_providers', 'sms_provider_settings', 'sms_templates', 'sms_campaigns',
+  'sms_delivery_logs', 'sms_retry_logs', 'sms_settings', 'sms_quota_logs', 'sms_audit_logs', 'employee_orders', 'employee_profiles', 'order_templates', 'workplaces', 'person_specialties'];
+export interface TableSyncProgress {
+  status: 'idle' | 'running' | 'completed' | 'error';
+  percent: number;
+  stageTitle: string;
+  stageDescription: string;
+}
+
+export function getFriendlyStageInfo(percent: number): { stageTitle: string; stageDescription: string } {
+  if (percent < 25) {
+    return {
+      stageTitle: 'پیکربندی ساختارهای پایه و تعاریف هویتی',
+      stageDescription: 'راه‌اندازی پروفایل کسب‌وکار، سطوح دسترسی کاربران و تنظیمات عمومی سامانه'
+    };
+  } else if (percent < 50) {
+    return {
+      stageTitle: 'راه‌اندازی ماژول‌های حسابداری و اسناد مالی',
+      stageDescription: 'سازمان‌دهی کدینگ حساب‌ها، دفاتر مالی، اسناد حسابداری و سال مالی'
+    };
+  } else if (percent < 75) {
+    return {
+      stageTitle: 'پیکربندی انبارداری و کاتالوگ محصولات',
+      stageDescription: 'آماده‌سازی موجودی کالاها، انبارها، قیمت‌گذاری و مدیریت فاکتورها'
+    };
+  } else if (percent < 95) {
+    return {
+      stageTitle: 'ساماندهی طرف‌های حساب و مدیریت دریافت/پرداخت',
+      stageDescription: 'پیکربندی پرونده اشخاص، ماژول چک‌ها، بانک‌ها و صندوق‌های نقدی'
+    };
+  } else {
+    return {
+      stageTitle: 'بهینه‌سازی نهایی و ایجاد ایندکس‌های امنیتی',
+      stageDescription: 'تسریع دسترسی به داده‌ها، راه‌اندازی ایندکس‌های محاسباتی و تکمیل فرآیند'
+    };
+  }
+}
+
+export let currentSyncProgress: TableSyncProgress = {
+  status: 'idle',
+  percent: 0,
+  stageTitle: 'آماده‌سازی و راه‌اندازی پایگاه داده',
+  stageDescription: 'در حال تنظیم و پیکربندی اولیه زیرساخت‌های پایگاه داده PostgreSQL'
+};
+
+export function updateSyncProgress(current: number, _tableName?: string, status: 'idle' | 'running' | 'completed' | 'error' = 'running', customDesc?: string) {
+  const total = KNOWN_TABLES.length;
+  const percent = total > 0 ? Math.min(100, Math.round((current / total) * 100)) : 100;
+  const stage = getFriendlyStageInfo(percent);
+  currentSyncProgress = {
+    status,
+    percent,
+    stageTitle: stage.stageTitle,
+    stageDescription: customDesc || stage.stageDescription
+  };
+}
+
+export async function ensureBusinessesTable(pool: any) {
+  if (!pool) return;
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS businesses (
+        id VARCHAR PRIMARY KEY,
+        name VARCHAR NOT NULL DEFAULT '',
+        company_name VARCHAR,
+        calendar_type VARCHAR,
+        currency VARCHAR,
+        phone VARCHAR,
+        address VARCHAR,
+        activity_field VARCHAR,
+        tax_percent NUMERIC,
+        db_type VARCHAR DEFAULT 'postgres',
+        db_host VARCHAR,
+        db_port VARCHAR,
+        db_name VARCHAR,
+        db_user VARCHAR,
+        db_password VARCHAR,
+        created_at VARCHAR,
+        updated_at VARCHAR
+      );
+      ALTER TABLE businesses ADD COLUMN IF NOT EXISTS name VARCHAR;
+      ALTER TABLE businesses ADD COLUMN IF NOT EXISTS company_name VARCHAR;
+      ALTER TABLE businesses ADD COLUMN IF NOT EXISTS calendar_type VARCHAR;
+      ALTER TABLE businesses ADD COLUMN IF NOT EXISTS currency VARCHAR;
+      ALTER TABLE businesses ADD COLUMN IF NOT EXISTS phone VARCHAR;
+      ALTER TABLE businesses ADD COLUMN IF NOT EXISTS address VARCHAR;
+      ALTER TABLE businesses ADD COLUMN IF NOT EXISTS activity_field VARCHAR;
+      ALTER TABLE businesses ADD COLUMN IF NOT EXISTS tax_percent NUMERIC;
+      ALTER TABLE businesses ADD COLUMN IF NOT EXISTS db_type VARCHAR DEFAULT 'postgres';
+      ALTER TABLE businesses ADD COLUMN IF NOT EXISTS db_host VARCHAR;
+      ALTER TABLE businesses ADD COLUMN IF NOT EXISTS db_port VARCHAR;
+      ALTER TABLE businesses ADD COLUMN IF NOT EXISTS db_name VARCHAR;
+      ALTER TABLE businesses ADD COLUMN IF NOT EXISTS db_user VARCHAR;
+      ALTER TABLE businesses ADD COLUMN IF NOT EXISTS db_password VARCHAR;
+      ALTER TABLE businesses ADD COLUMN IF NOT EXISTS created_at VARCHAR;
+      ALTER TABLE businesses ADD COLUMN IF NOT EXISTS updated_at VARCHAR;
+    `);
+  } catch (e: any) {
+    console.warn('ensureBusinessesTable notice:', e?.message || e);
+  }
+}
+
+export const tableSchemas = new Map<string, Map<string, string>>();
+
+export const isNumericField = (k: string) => {
+  const lower = k.toLowerCase();
+  return (
+    /^(amount|totalamount|payableamount|paidamount|balance|initialbalance|balanceafter|stockbefore|stockafter|buyprice|sellprice|wholesaleprice|purchaseprice|price|stock|quantity|basequantity|unitprice|baseunitprice|totalprice|discount|discountamount|discountpercent|tax|taxamount|taxrate|taxpercent|netprice|debit|credit|cost|costtotal|interestrate|penaltyrate|unitratio|ratio|version|rate|percent|score|priority|order|sortorder|weight|width|height|length)$/i.test(lower) ||
+    lower.endsWith('amount') ||
+    lower.endsWith('price') ||
+    lower.endsWith('quantity') ||
+    lower.endsWith('rate') ||
+    lower.endsWith('percent') ||
+    lower.endsWith('ratio') ||
+    lower.endsWith('balance')
+  ) && !/date|time|created|updated|stamp|phone|mobile|code|number|sayad|sheba|card|account/i.test(lower);
+};
+
+export const isNonNumericIdentifierOrDateField = (k: string) => {
+  if (isNumericField(k)) return false;
+  return /date|time|created|updated|deleted|stamp|phone|mobile|tel|fax|postal|national|economic|barcode|invoice|receipt|document|check|sayad|account|card|sheba|number|name|title|unit|status|type|role|note|desc|address|alias|category|group|warehouse|person|customer|supplier|user/i.test(k);
+};
+
+export function findMatchingColumn(knownCols: Map<string, string>, propKey: string): { dbColName: string; colType: string } | null {
+  if (!knownCols || knownCols.size === 0) return null;
+  // 1. Exact match
+  if (knownCols.has(propKey)) {
+    return { dbColName: propKey, colType: knownCols.get(propKey) || '' };
+  }
+
+  // 2. Critical disambiguation for 'userName' vs 'username':
+  // In the application, 'username' is the login account identifier, while 'userName' is the user's display/full name.
+  // 'userName' must NEVER be mapped to database column 'username'!
+  if (propKey === 'userName') {
+    if (knownCols.has('user_name')) {
+      return { dbColName: 'user_name', colType: knownCols.get('user_name') || '' };
+    }
+    for (const [colName, colType] of knownCols.entries()) {
+      if (colName === 'userName' || colName.toLowerCase() === 'user_name') {
+        return { dbColName: colName, colType };
+      }
+    }
+    // Return null so syncTableSchema will create the separate "userName" column
+    return null;
+  }
+  if (propKey === 'username') {
+    if (knownCols.has('username')) {
+      return { dbColName: 'username', colType: knownCols.get('username') || '' };
+    }
+    for (const [colName, colType] of knownCols.entries()) {
+      if (colName === 'username') {
+        return { dbColName: colName, colType };
+      }
+    }
+    return null;
+  }
+
+  // 3. Snake case conversion: e.g. createdAt -> created_at
+  const snakeProp = propKey.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`).toLowerCase();
+  if (snakeProp !== propKey.toLowerCase()) {
+    if (knownCols.has(snakeProp)) {
+      return { dbColName: snakeProp, colType: knownCols.get(snakeProp) || '' };
+    }
+    for (const [colName, colType] of knownCols.entries()) {
+      if (colName.toLowerCase() === snakeProp) {
+        return { dbColName: colName, colType };
+      }
+    }
+  }
+
+  // 4. Exact case-insensitive match against actual column names in knownCols
+  const lowerProp = propKey.toLowerCase();
+  for (const [colName, colType] of knownCols.entries()) {
+    if (colName.toLowerCase() === lowerProp) {
+      if (propKey === 'userName' && colName.toLowerCase() === 'username') {
+        continue;
+      }
+      return { dbColName: colName, colType };
+    }
+  }
+
+  // 5. Camel case conversion: e.g. bank_name -> bankName, created_at -> createdAt
+  const camelProp = propKey.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
+  if (camelProp !== propKey) {
+    if (knownCols.has(camelProp)) {
+      return { dbColName: camelProp, colType: knownCols.get(camelProp) || '' };
+    }
+    for (const [colName, colType] of knownCols.entries()) {
+      if (colName === camelProp || colName.toLowerCase() === camelProp.toLowerCase()) {
+        return { dbColName: colName, colType };
+      }
+    }
+  }
+
+  // 6. Semantic relational alias mappings:
+  // e.g. In the relational schema "invoices", personId/customerId/supplierId is stored in "person_id"
+  if (['fiscalYearId', 'fiscal_year_id', 'financialYearId', 'financial_year_id', 'fiscalyearid'].includes(propKey)) {
+    if (knownCols.has('fiscal_year_id')) return { dbColName: 'fiscal_year_id', colType: knownCols.get('fiscal_year_id') || '' };
+    if (knownCols.has('fiscalYearId')) return { dbColName: 'fiscalYearId', colType: knownCols.get('fiscalYearId') || '' };
+    if (knownCols.has('fiscalyearid')) return { dbColName: 'fiscalyearid', colType: knownCols.get('fiscalyearid') || '' };
+  }
+  if (['invoiceId', 'invoice_id', 'invoiceid'].includes(propKey)) {
+    if (knownCols.has('invoice_id')) return { dbColName: 'invoice_id', colType: knownCols.get('invoice_id') || '' };
+    if (knownCols.has('invoiceId')) return { dbColName: 'invoiceId', colType: knownCols.get('invoiceId') || '' };
+    if (knownCols.has('invoiceid')) return { dbColName: 'invoiceid', colType: knownCols.get('invoiceid') || '' };
+  }
+  if (['documentId', 'document_id', 'documentid'].includes(propKey)) {
+    if (knownCols.has('document_id')) return { dbColName: 'document_id', colType: knownCols.get('document_id') || '' };
+    if (knownCols.has('documentId')) return { dbColName: 'documentId', colType: knownCols.get('documentId') || '' };
+    if (knownCols.has('documentid')) return { dbColName: 'documentid', colType: knownCols.get('documentid') || '' };
+  }
+  if (['productId', 'product_id', 'productid'].includes(propKey)) {
+    if (knownCols.has('product_id')) return { dbColName: 'product_id', colType: knownCols.get('product_id') || '' };
+    if (knownCols.has('productId')) return { dbColName: 'productId', colType: knownCols.get('productId') || '' };
+    if (knownCols.has('productid')) return { dbColName: 'productid', colType: knownCols.get('productid') || '' };
+  }
+  if (['warehouseId', 'warehouse_id', 'warehouseid'].includes(propKey)) {
+    if (knownCols.has('warehouse_id')) return { dbColName: 'warehouse_id', colType: knownCols.get('warehouse_id') || '' };
+    if (knownCols.has('warehouseId')) return { dbColName: 'warehouseId', colType: knownCols.get('warehouseId') || '' };
+    if (knownCols.has('warehouseid')) return { dbColName: 'warehouseid', colType: knownCols.get('warehouseid') || '' };
+  }
+  if (['unitPrice', 'unit_price', 'unitprice'].includes(propKey)) {
+    if (knownCols.has('unit_price')) return { dbColName: 'unit_price', colType: knownCols.get('unit_price') || '' };
+    if (knownCols.has('unitPrice')) return { dbColName: 'unitPrice', colType: knownCols.get('unitPrice') || '' };
+    if (knownCols.has('unitprice')) return { dbColName: 'unitprice', colType: knownCols.get('unitprice') || '' };
+  }
+  if (['invoiceNumber', 'invoice_number', 'invoicenumber'].includes(propKey)) {
+    if (knownCols.has('invoice_number')) return { dbColName: 'invoice_number', colType: knownCols.get('invoice_number') || '' };
+    if (knownCols.has('invoiceNumber')) return { dbColName: 'invoiceNumber', colType: knownCols.get('invoiceNumber') || '' };
+    if (knownCols.has('invoicenumber')) return { dbColName: 'invoicenumber', colType: knownCols.get('invoicenumber') || '' };
+  }
+  if (['customerId', 'customer_id', 'supplierId', 'supplier_id'].includes(propKey)) {
+    if (knownCols.has('person_id')) return { dbColName: 'person_id', colType: knownCols.get('person_id') || '' };
+    if (knownCols.has('personId')) return { dbColName: 'personId', colType: knownCols.get('personId') || '' };
+    if (knownCols.has('personid')) return { dbColName: 'personid', colType: knownCols.get('personid') || '' };
+  }
+  if (['personId', 'person_id'].includes(propKey)) {
+    if (knownCols.has('customer_id')) return { dbColName: 'customer_id', colType: knownCols.get('customer_id') || '' };
+    if (knownCols.has('customerId')) return { dbColName: 'customerId', colType: knownCols.get('customerId') || '' };
+    if (knownCols.has('customerid')) return { dbColName: 'customerid', colType: knownCols.get('customerid') || '' };
+  }
+  if (['payableAmount', 'payable_amount'].includes(propKey)) {
+    if (knownCols.has('total_amount') && !knownCols.has('payable_amount')) return { dbColName: 'total_amount', colType: knownCols.get('total_amount') || '' };
+    if (knownCols.has('totalAmount') && !knownCols.has('payableAmount')) return { dbColName: 'totalAmount', colType: knownCols.get('totalAmount') || '' };
+  }
+  if (['netPrice', 'net_price'].includes(propKey)) {
+    if (knownCols.has('total_price') && !knownCols.has('net_price')) return { dbColName: 'total_price', colType: knownCols.get('total_price') || '' };
+    if (knownCols.has('totalPrice') && !knownCols.has('netPrice')) return { dbColName: 'totalPrice', colType: knownCols.get('totalPrice') || '' };
+  }
+
+  return null;
+}
+
+export function preparePgItem(key: string, item: Record<string, any>) {
+  const colMap = tableSchemas.get(key);
+  const itemKeys: string[] = [];
+  const itemVals: any[] = [];
+  const seenCols = new Set<string>();
+  
+  for (const [k, rawVal] of Object.entries(item)) {
+    if (rawVal === undefined) continue;
+    let targetCol = k;
+    let colType = '';
+
+    if (colMap && colMap.size > 0) {
+      const matched = findMatchingColumn(colMap, k);
+      if (matched) {
+        targetCol = matched.dbColName;
+        colType = matched.colType;
+      } else {
+        // Critical safeguard: if colMap exists and this key does NOT exist in the table,
+        // do not send it in the INSERT/UPDATE query to prevent PostgreSQL 42703 column does not exist errors!
+        continue;
+      }
+    }
+
+    // Deduplication check: NEVER allow the same column name to appear twice in itemKeys.
+    // This strictly prevents PostgreSQL 42701 "column specified more than once" errors.
+    if (seenCols.has(targetCol)) {
+      continue;
+    }
+    seenCols.add(targetCol);
+
+    itemKeys.push(targetCol);
+    let val = rawVal;
+    if (val instanceof Date) {
+      val = val.toISOString();
+    } else if (val !== null && typeof val === 'object') {
+      val = JSON.stringify(val);
+    }
+
+    const isNumCol = colType && ['double precision', 'real', 'numeric', 'integer', 'bigint', 'smallint'].includes(colType);
+    if (isNumCol) {
+      if (typeof val === 'string') {
+        const trimmed = val.trim();
+        if (trimmed === '' || isNaN(Number(trimmed))) {
+          // Never pass a date string or non-numeric text into a double precision / numeric column
+          val = null;
+        } else {
+          val = Number(trimmed);
+        }
+      } else if (typeof val !== 'number') {
+        val = null;
+      }
+    }
+
+    const isDateCol = colType && (colType.includes('timestamp') || colType.includes('date') || colType.includes('time'));
+    if (isDateCol) {
+      if (typeof val === 'string') {
+        const trimmed = val.trim();
+        if (trimmed === '' || trimmed === 'null' || trimmed === 'undefined') {
+          val = null;
+        }
+      } else if (!val) {
+        val = null;
+      }
+    }
+    itemVals.push(val);
+  }
+  return { itemKeys, itemVals };
+}
+
+export async function syncTableSchema(client: any, tableName: string, dataObj: any) {
+    if (!dataObj || typeof dataObj !== 'object') return;
+    let knownCols = tableSchemas.get(tableName);
+    if (!knownCols) {
+        knownCols = new Map<string, string>();
+        try {
+            const res = await client.query("SELECT column_name, data_type FROM information_schema.columns WHERE table_schema = 'public' AND (table_name = $1 OR table_name = lower($1))", [tableName]);
+            for (const row of res.rows) {
+                const colType = (row.data_type || '').toLowerCase();
+                knownCols.set(row.column_name, colType);
+                knownCols.set(row.column_name.toLowerCase(), colType);
+            }
+        } catch (e) {}
+        tableSchemas.set(tableName, knownCols);
+    }
+    
+    // Ensure base metadata columns exist on the table
+    if (!knownCols.has('version') && !knownCols.has('version'.toLowerCase())) {
+        try {
+            await client.query(`ALTER TABLE "${tableName}" ADD COLUMN IF NOT EXISTS "version" NUMERIC DEFAULT 1`);
+            knownCols.set('version', 'numeric');
+            knownCols.set('version'.toLowerCase(), 'numeric');
+        } catch (e) {}
+    }
+    if (!knownCols.has('createdAt') && !knownCols.has('createdat')) {
+        try {
+            await client.query(`ALTER TABLE "${tableName}" ADD COLUMN IF NOT EXISTS "createdAt" TEXT`);
+            knownCols.set('createdAt', 'text');
+            knownCols.set('createdat', 'text');
+        } catch (e) {}
+    }
+    if (!knownCols.has('updatedAt') && !knownCols.has('updatedat')) {
+        try {
+            await client.query(`ALTER TABLE "${tableName}" ADD COLUMN IF NOT EXISTS "updatedAt" TEXT`);
+            knownCols.set('updatedAt', 'text');
+            knownCols.set('updatedat', 'text');
+        } catch (e) {}
+    }
+
+    for (const [k, v] of Object.entries(dataObj)) {
+        if (v === undefined) continue;
+        const matched = findMatchingColumn(knownCols, k);
+
+        if (!matched) {
+            let colType = 'TEXT';
+            if (v === null) colType = 'TEXT';
+            else if (typeof v === 'boolean') colType = 'BOOLEAN';
+            else if (typeof v === 'object') colType = 'JSONB';
+            else if (typeof v === 'number') {
+                colType = isNumericField(k) ? 'DOUBLE PRECISION' : 'TEXT';
+            }
+            
+            try {
+               await client.query(`ALTER TABLE "${tableName}" ADD COLUMN IF NOT EXISTS "${k}" ${colType}`);
+               knownCols.set(k, colType.toLowerCase());
+               knownCols.set(k.toLowerCase(), colType.toLowerCase());
+            } catch (e: any) {
+               console.error(`Error adding column ${k} to ${tableName}:`, e?.message);
+            }
+        } else {
+            // Check if existing column is numeric/double precision but receiving a date or string value
+            const { dbColName, colType: existingType } = matched;
+            const isNumericType = ['double precision', 'real', 'numeric', 'integer', 'bigint', 'smallint'].includes(existingType);
+            const isIncomingNonNumericString = typeof v === 'string' && (v.trim() === '' || isNaN(Number(v)));
+            const isDateField = isNonNumericIdentifierOrDateField(k) || isNonNumericIdentifierOrDateField(dbColName);
+            
+            if (isNumericType && (isDateField || isIncomingNonNumericString)) {
+                try {
+                    await client.query(`ALTER TABLE "${tableName}" ALTER COLUMN "${dbColName}" TYPE TEXT USING "${dbColName}"::TEXT`);
+                    knownCols.set(dbColName, 'text');
+                    knownCols.set(dbColName.toLowerCase(), 'text');
+                } catch (alterErr: any) {
+                    try {
+                        const lowerName = dbColName.toLowerCase();
+                        await client.query(`ALTER TABLE "${tableName}" ALTER COLUMN ${lowerName} TYPE TEXT USING ${lowerName}::TEXT`);
+                        knownCols.set(lowerName, 'text');
+                    } catch (e2) {}
+                }
+            }
+        }
+    }
+}
+export async function ensurePostgresTables(poolOverride?: any) {
+  const p = poolOverride || (isPgActive() ? getActivePgPool() : null);
+  if (p) {
+    try {
+      await p.query('GRANT ALL ON SCHEMA public TO public');
+    } catch (e: any) {
+      console.warn('Could not grant schema privileges:', e.message);
+    }
+
+    // Automated schema correction: convert any date/time/code/identifier columns
+    // that were accidentally created as numeric/double precision to TEXT
+    try {
+      await p.query(`
+        DO $$
+        DECLARE
+            r RECORD;
+        BEGIN
+            FOR r IN
+                SELECT table_name, column_name, data_type
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND data_type IN ('double precision', 'real', 'numeric', 'integer', 'bigint', 'smallint')
+                  AND (
+                    column_name ILIKE '%created%'
+                    OR column_name ILIKE '%updated%'
+                    OR column_name ILIKE '%deleted%'
+                    OR column_name ILIKE '%date%'
+                    OR column_name ILIKE '%time%'
+                    OR column_name ILIKE '%stamp%'
+                    OR column_name ILIKE '%code%'
+                    OR column_name ILIKE '%phone%'
+                    OR column_name ILIKE '%mobile%'
+                    OR column_name ILIKE '%tel%'
+                    OR column_name ILIKE '%fax%'
+                    OR column_name ILIKE '%postal%'
+                    OR column_name ILIKE '%national%'
+                    OR column_name ILIKE '%economic%'
+                    OR column_name ILIKE '%barcode%'
+                    OR column_name ILIKE '%sayad%'
+                    OR column_name ILIKE '%sheba%'
+                    OR column_name ILIKE '%account%'
+                    OR column_name ILIKE '%card%'
+                    OR column_name ILIKE '%check%'
+                    OR column_name ILIKE '%receipt%'
+                    OR column_name ILIKE '%invoice%'
+                    OR column_name ILIKE '%number%'
+                    OR column_name ILIKE '%status%'
+                    OR column_name ILIKE '%type%'
+                    OR column_name ILIKE '%role%'
+                    OR column_name ILIKE '%name%'
+                    OR column_name ILIKE '%title%'
+                    OR column_name ILIKE '%desc%'
+                    OR column_name ILIKE '%note%'
+                    OR column_name ILIKE '%address%'
+                    OR column_name ILIKE '%unit%'
+                    OR column_name IN ('rawDate', 'displayDate', 'rawCheckDueDate', 'displayCheckDueDate', 'phone', 'mobile', 'tel', 'fax', 'code', 'barcode', 'personCode', 'invoiceNumber', 'receiptNumber', 'documentNumber', 'checkNumber', 'sayadNumber', 'accountNumber', 'cardNumber', 'shebaNumber', 'postalCode', 'nationalId', 'economicCode', 'birthDate', 'expiryDate', 'productionDate', 'priceChangeDate', 'issueDate', 'dueDate')
+                  )
+                  AND column_name NOT IN ('amount', 'totalAmount', 'payableAmount', 'paidAmount', 'balance', 'initialBalance', 'balanceAfter', 'stockBefore', 'stockAfter', 'buyPrice', 'sellPrice', 'wholesalePrice', 'purchasePrice', 'price', 'stock', 'quantity', 'baseQuantity', 'baseUnitPrice', 'unitPrice', 'totalPrice', 'discount', 'discountAmount', 'discountPercent', 'tax', 'taxAmount', 'taxRate', 'taxPercent', 'netPrice', 'debit', 'credit', 'cost', 'costTotal', 'interestRate', 'penaltyRate', 'unitRatio', 'version')
+            LOOP
+                BEGIN
+                    EXECUTE format('ALTER TABLE %I ALTER COLUMN %I TYPE TEXT USING %I::TEXT', r.table_name, r.column_name, r.column_name);
+                EXCEPTION WHEN OTHERS THEN
+                    -- Ignore if table or column is locked or cannot be altered
+                END;
+            END LOOP;
+        END $$;
+      `);
+    } catch (migErr: any) {
+      console.warn('Could not run automated date column migration:', migErr?.message);
+    }
+
+    await ensureBusinessesTable(p);
+
+    let tableIdx = 0;
+    const totalTables = KNOWN_TABLES.length;
+    for (const key of KNOWN_TABLES) {
+      tableIdx++;
+      updateSyncProgress(tableIdx, undefined, 'running');
+      try {
+        await p.query(`
+          CREATE TABLE IF NOT EXISTS "${key}" (id VARCHAR PRIMARY KEY);
+          ALTER TABLE "${key}" ADD COLUMN IF NOT EXISTS "version" DOUBLE PRECISION DEFAULT 1;
+          ALTER TABLE "${key}" ADD COLUMN IF NOT EXISTS "createdAt" TEXT;
+          ALTER TABLE "${key}" ADD COLUMN IF NOT EXISTS "updatedAt" TEXT;
+          ALTER TABLE "${key}" ADD COLUMN IF NOT EXISTS "isDeleted" BOOLEAN DEFAULT FALSE;
+          ALTER TABLE "${key}" ADD COLUMN IF NOT EXISTS "deleted_at" TIMESTAMP;
+          ALTER TABLE "${key}" ADD COLUMN IF NOT EXISTS "rawDate" TEXT;
+          ALTER TABLE "${key}" ADD COLUMN IF NOT EXISTS "displayDate" TEXT;
+          ALTER TABLE "${key}" ADD COLUMN IF NOT EXISTS "fiscalYearId" TEXT;
+          ALTER TABLE "${key}" ADD COLUMN IF NOT EXISTS "fiscal_year_id" TEXT;
+          ALTER TABLE "${key}" ADD COLUMN IF NOT EXISTS "personId" TEXT;
+          ALTER TABLE "${key}" ADD COLUMN IF NOT EXISTS "person_id" TEXT;
+        `);
+        if (key === 'invoice_items' || key.endsWith('_invoice_items') || key.endsWith('_receipt_items') || key.endsWith('_remittance_items') || key.endsWith('_return_items') || key.endsWith('waste_items')) {
+          try {
+            await p.query(`
+              ALTER TABLE "${key}" ADD COLUMN IF NOT EXISTS "invoiceId" TEXT;
+              ALTER TABLE "${key}" ADD COLUMN IF NOT EXISTS "invoice_id" TEXT;
+              ALTER TABLE "${key}" ADD COLUMN IF NOT EXISTS "productId" TEXT;
+              ALTER TABLE "${key}" ADD COLUMN IF NOT EXISTS "product_id" TEXT;
+              ALTER TABLE "${key}" ADD COLUMN IF NOT EXISTS "warehouseId" TEXT;
+              ALTER TABLE "${key}" ADD COLUMN IF NOT EXISTS "warehouse_id" TEXT;
+            `);
+          } catch (_) {}
+        }
+        if (key === 'accounting_document_items') {
+          try {
+            await p.query(`
+              ALTER TABLE "${key}" ADD COLUMN IF NOT EXISTS "documentId" TEXT;
+              ALTER TABLE "${key}" ADD COLUMN IF NOT EXISTS "document_id" TEXT;
+              ALTER TABLE "${key}" ADD COLUMN IF NOT EXISTS "accountId" TEXT;
+              ALTER TABLE "${key}" ADD COLUMN IF NOT EXISTS "account_id" TEXT;
+            `);
+          } catch (_) {}
+        }
+        if (key === 'stocktaking_items') {
+          try {
+            await p.query(`
+              ALTER TABLE "${key}" ADD COLUMN IF NOT EXISTS "stocktakingId" TEXT;
+              ALTER TABLE "${key}" ADD COLUMN IF NOT EXISTS "stocktaking_id" TEXT;
+              ALTER TABLE "${key}" ADD COLUMN IF NOT EXISTS "productId" TEXT;
+              ALTER TABLE "${key}" ADD COLUMN IF NOT EXISTS "product_id" TEXT;
+            `);
+          } catch (_) {}
+        }
+        if (key === 'system_logs') {
+          try {
+            await p.query(`
+              ALTER TABLE "system_logs" ADD COLUMN IF NOT EXISTS "username" TEXT;
+              ALTER TABLE "system_logs" ADD COLUMN IF NOT EXISTS "userName" TEXT;
+              ALTER TABLE "system_logs" ADD COLUMN IF NOT EXISTS "userId" TEXT;
+              ALTER TABLE "system_logs" ADD COLUMN IF NOT EXISTS "userRole" TEXT;
+              ALTER TABLE "system_logs" ADD COLUMN IF NOT EXISTS "action" TEXT;
+              ALTER TABLE "system_logs" ADD COLUMN IF NOT EXISTS "details" TEXT;
+              ALTER TABLE "system_logs" ADD COLUMN IF NOT EXISTS "entityType" TEXT;
+              ALTER TABLE "system_logs" ADD COLUMN IF NOT EXISTS "entityId" TEXT;
+              ALTER TABLE "system_logs" ADD COLUMN IF NOT EXISTS "timestamp" NUMERIC;
+            `);
+          } catch (sysLogErr: any) {}
+        }
+        if (key === 'checkbooks') {
+          try {
+            await p.query(`
+              ALTER TABLE "checkbooks" ADD COLUMN IF NOT EXISTS "bankName" VARCHAR;
+              ALTER TABLE "checkbooks" ADD COLUMN IF NOT EXISTS "bank_name" VARCHAR;
+              ALTER TABLE "checkbooks" ADD COLUMN IF NOT EXISTS "accountId" VARCHAR;
+              ALTER TABLE "checkbooks" ADD COLUMN IF NOT EXISTS "account_id" VARCHAR;
+              ALTER TABLE "checkbooks" ADD COLUMN IF NOT EXISTS "accountNumber" VARCHAR;
+              ALTER TABLE "checkbooks" ADD COLUMN IF NOT EXISTS "account_number" VARCHAR;
+              ALTER TABLE "checkbooks" ADD COLUMN IF NOT EXISTS "type" VARCHAR DEFAULT 'paper';
+              ALTER TABLE "checkbooks" ADD COLUMN IF NOT EXISTS "startNumber" VARCHAR;
+              ALTER TABLE "checkbooks" ADD COLUMN IF NOT EXISTS "start_number" VARCHAR;
+              ALTER TABLE "checkbooks" ADD COLUMN IF NOT EXISTS "endNumber" VARCHAR;
+              ALTER TABLE "checkbooks" ADD COLUMN IF NOT EXISTS "end_number" VARCHAR;
+              ALTER TABLE "checkbooks" ADD COLUMN IF NOT EXISTS "totalLeaves" INTEGER;
+              ALTER TABLE "checkbooks" ADD COLUMN IF NOT EXISTS "total_leaves" INTEGER;
+              ALTER TABLE "checkbooks" ADD COLUMN IF NOT EXISTS "issuedDate" TEXT;
+              ALTER TABLE "checkbooks" ADD COLUMN IF NOT EXISTS "issued_date" TEXT;
+              ALTER TABLE "checkbooks" ADD COLUMN IF NOT EXISTS "fiscalYearId" VARCHAR;
+              ALTER TABLE "checkbooks" ADD COLUMN IF NOT EXISTS "fiscal_year_id" VARCHAR;
+              ALTER TABLE "checkbooks" ADD COLUMN IF NOT EXISTS "description" TEXT;
+              ALTER TABLE "checkbooks" ADD COLUMN IF NOT EXISTS "deletedAt" TEXT;
+            `);
+          } catch (_) {}
+        }
+        if (key === 'issued_checks') {
+          try {
+            await p.query(`
+              ALTER TABLE "issued_checks" ADD COLUMN IF NOT EXISTS "checkbookId" VARCHAR;
+              ALTER TABLE "issued_checks" ADD COLUMN IF NOT EXISTS "checkbook_id" VARCHAR;
+              ALTER TABLE "issued_checks" ADD COLUMN IF NOT EXISTS "bankAccountId" VARCHAR;
+              ALTER TABLE "issued_checks" ADD COLUMN IF NOT EXISTS "bank_account_id" VARCHAR;
+              ALTER TABLE "issued_checks" ADD COLUMN IF NOT EXISTS "checkNumber" VARCHAR;
+              ALTER TABLE "issued_checks" ADD COLUMN IF NOT EXISTS "check_number" VARCHAR;
+              ALTER TABLE "issued_checks" ADD COLUMN IF NOT EXISTS "sayadId" VARCHAR;
+              ALTER TABLE "issued_checks" ADD COLUMN IF NOT EXISTS "sayad_id" VARCHAR;
+              ALTER TABLE "issued_checks" ADD COLUMN IF NOT EXISTS "amount" DOUBLE PRECISION DEFAULT 0;
+              ALTER TABLE "issued_checks" ADD COLUMN IF NOT EXISTS "issueDate" TEXT;
+              ALTER TABLE "issued_checks" ADD COLUMN IF NOT EXISTS "issue_date" TEXT;
+              ALTER TABLE "issued_checks" ADD COLUMN IF NOT EXISTS "dueDate" TEXT;
+              ALTER TABLE "issued_checks" ADD COLUMN IF NOT EXISTS "due_date" TEXT;
+              ALTER TABLE "issued_checks" ADD COLUMN IF NOT EXISTS "payeeId" VARCHAR;
+              ALTER TABLE "issued_checks" ADD COLUMN IF NOT EXISTS "payee_id" VARCHAR;
+              ALTER TABLE "issued_checks" ADD COLUMN IF NOT EXISTS "status" VARCHAR DEFAULT 'blank';
+              ALTER TABLE "issued_checks" ADD COLUMN IF NOT EXISTS "receiptNumber" VARCHAR;
+              ALTER TABLE "issued_checks" ADD COLUMN IF NOT EXISTS "receipt_number" VARCHAR;
+              ALTER TABLE "issued_checks" ADD COLUMN IF NOT EXISTS "assignedToId" VARCHAR;
+              ALTER TABLE "issued_checks" ADD COLUMN IF NOT EXISTS "assigned_to_id" VARCHAR;
+              ALTER TABLE "issued_checks" ADD COLUMN IF NOT EXISTS "checkType" VARCHAR DEFAULT 'paper';
+              ALTER TABLE "issued_checks" ADD COLUMN IF NOT EXISTS "check_type" VARCHAR DEFAULT 'paper';
+              ALTER TABLE "issued_checks" ADD COLUMN IF NOT EXISTS "isDigital" BOOLEAN DEFAULT false;
+              ALTER TABLE "issued_checks" ADD COLUMN IF NOT EXISTS "is_digital" BOOLEAN DEFAULT false;
+              ALTER TABLE "issued_checks" ADD COLUMN IF NOT EXISTS "description" TEXT;
+              ALTER TABLE "issued_checks" ADD COLUMN IF NOT EXISTS "imageUrl" TEXT;
+              ALTER TABLE "issued_checks" ADD COLUMN IF NOT EXISTS "image_url" TEXT;
+              ALTER TABLE "issued_checks" ADD COLUMN IF NOT EXISTS "fiscalYearId" VARCHAR;
+              ALTER TABLE "issued_checks" ADD COLUMN IF NOT EXISTS "fiscal_year_id" VARCHAR;
+              ALTER TABLE "issued_checks" ADD COLUMN IF NOT EXISTS "deletedAt" TEXT;
+            `);
+          } catch (_) {}
+        }
+        if (key === 'received_checks') {
+          try {
+            await p.query(`
+              ALTER TABLE "received_checks" ADD COLUMN IF NOT EXISTS "checkNumber" VARCHAR;
+              ALTER TABLE "received_checks" ADD COLUMN IF NOT EXISTS "check_number" VARCHAR;
+              ALTER TABLE "received_checks" ADD COLUMN IF NOT EXISTS "sayadId" VARCHAR;
+              ALTER TABLE "received_checks" ADD COLUMN IF NOT EXISTS "sayad_id" VARCHAR;
+              ALTER TABLE "received_checks" ADD COLUMN IF NOT EXISTS "bankName" VARCHAR;
+              ALTER TABLE "received_checks" ADD COLUMN IF NOT EXISTS "bank_name" VARCHAR;
+              ALTER TABLE "received_checks" ADD COLUMN IF NOT EXISTS "branchName" VARCHAR;
+              ALTER TABLE "received_checks" ADD COLUMN IF NOT EXISTS "branch_name" VARCHAR;
+              ALTER TABLE "received_checks" ADD COLUMN IF NOT EXISTS "amount" DOUBLE PRECISION DEFAULT 0;
+              ALTER TABLE "received_checks" ADD COLUMN IF NOT EXISTS "receiveDate" TEXT;
+              ALTER TABLE "received_checks" ADD COLUMN IF NOT EXISTS "receive_date" TEXT;
+              ALTER TABLE "received_checks" ADD COLUMN IF NOT EXISTS "dueDate" TEXT;
+              ALTER TABLE "received_checks" ADD COLUMN IF NOT EXISTS "due_date" TEXT;
+              ALTER TABLE "received_checks" ADD COLUMN IF NOT EXISTS "payerId" VARCHAR;
+              ALTER TABLE "received_checks" ADD COLUMN IF NOT EXISTS "payer_id" VARCHAR;
+              ALTER TABLE "received_checks" ADD COLUMN IF NOT EXISTS "status" VARCHAR DEFAULT 'received';
+              ALTER TABLE "received_checks" ADD COLUMN IF NOT EXISTS "receiptNumber" VARCHAR;
+              ALTER TABLE "received_checks" ADD COLUMN IF NOT EXISTS "receipt_number" VARCHAR;
+              ALTER TABLE "received_checks" ADD COLUMN IF NOT EXISTS "assignedToId" VARCHAR;
+              ALTER TABLE "received_checks" ADD COLUMN IF NOT EXISTS "assigned_to_id" VARCHAR;
+              ALTER TABLE "received_checks" ADD COLUMN IF NOT EXISTS "accountId" VARCHAR;
+              ALTER TABLE "received_checks" ADD COLUMN IF NOT EXISTS "account_id" VARCHAR;
+              ALTER TABLE "received_checks" ADD COLUMN IF NOT EXISTS "description" TEXT;
+              ALTER TABLE "received_checks" ADD COLUMN IF NOT EXISTS "deletedAt" TEXT;
+            `);
+          } catch (_) {}
+        }
+      } catch (err: any) {
+        console.error(`Error creating/updating table ${key}:`, err.message);
+      }
+      for (const col of ['createdAt', 'updatedAt', 'created_at', 'updated_at', 'rawDate', 'displayDate', 'rawCheckDueDate', 'displayCheckDueDate', 'date', 'birthDate', 'expiryDate', 'productionDate', 'issueDate', 'dueDate']) {
+        try {
+          await p.query(`ALTER TABLE "${key}" ALTER COLUMN "${col}" TYPE TEXT USING "${col}"::TEXT`);
+        } catch (e: any) {}
+        try {
+          await p.query(`ALTER TABLE "${key}" ALTER COLUMN ${col.toLowerCase()} TYPE TEXT USING ${col.toLowerCase()}::TEXT`);
+        } catch (e: any) {}
+      }
+    }
+    tableSchemas.clear();
+    updateSyncProgress(totalTables, undefined, 'completed');
+    // Create essential performance indexes
+    const essentialIndexes = [
+      'CREATE INDEX IF NOT EXISTS idx_invoices_date ON "invoices" ("date")',
+      'CREATE INDEX IF NOT EXISTS idx_invoices_person ON "invoices" ("personId")',
+      'CREATE INDEX IF NOT EXISTS idx_invoices_warehouse ON "invoices" ("warehouseId")',
+      'CREATE INDEX IF NOT EXISTS idx_invoices_num ON "invoices" ("invoiceNumber")',
+      'CREATE INDEX IF NOT EXISTS idx_invoices_type ON "invoices" ("type")',
+      'CREATE INDEX IF NOT EXISTS idx_invoice_items_inv ON "invoice_items" ("invoiceId")',
+      'CREATE INDEX IF NOT EXISTS idx_invoice_items_prod ON "invoice_items" ("productId")',
+      'CREATE INDEX IF NOT EXISTS idx_acc_docs_num ON "accounting_documents" ("documentNumber")',
+      'CREATE INDEX IF NOT EXISTS idx_acc_docs_date ON "accounting_documents" ("date")',
+      'CREATE INDEX IF NOT EXISTS idx_acc_doc_items_doc ON "accounting_document_items" ("documentId")',
+      'CREATE INDEX IF NOT EXISTS idx_inv_tx_prod ON "inventory_transactions" ("productId")',
+      'CREATE INDEX IF NOT EXISTS idx_inv_tx_wh ON "inventory_transactions" ("warehouseId")',
+      'CREATE INDEX IF NOT EXISTS idx_inv_tx_date ON "inventory_transactions" ("date")',
+      'CREATE INDEX IF NOT EXISTS idx_inv_tx_doc ON "inventory_transactions" ("documentId")',
+      'CREATE INDEX IF NOT EXISTS idx_persons_name ON "persons" ("name")',
+      'CREATE INDEX IF NOT EXISTS idx_persons_phone ON "persons" ("phone")',
+      'CREATE INDEX IF NOT EXISTS idx_products_code ON "products" ("code")',
+      'CREATE INDEX IF NOT EXISTS idx_products_barcode ON "products" ("barcode")',
+      'CREATE INDEX IF NOT EXISTS idx_syslogs_timestamp ON "system_logs" ("timestamp" DESC)',
+      'CREATE INDEX IF NOT EXISTS idx_dblogs_timestamp ON "database_logs" ("timestamp" DESC)',
+    ];
+    for (const idxQuery of essentialIndexes) {
+      try {
+        await p.query(idxQuery);
+      } catch (e: any) {
+        // column may not exist yet until table populated; ignore silently
+      }
+    }
+    updateSyncProgress(totalTables, undefined, 'completed', 'تمامی زیرساخت‌ها و ساختارهای داده با موفقیت پیکربندی و آماده استفاده گردیدند.');
+  }
+}

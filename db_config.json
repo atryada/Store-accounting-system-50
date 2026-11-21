@@ -1,0 +1,9 @@
+{
+  "engine": "postgres",
+  "host": "localhost",
+  "port": "5432",
+  "user": "postgres",
+  "password": "84315308",
+  "dbName": "store_db9000",
+  "connectionString": "postgresql://postgres:84315308@localhost:5432/store_dbv42"
+}

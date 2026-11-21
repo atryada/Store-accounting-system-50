@@ -1,0 +1,741 @@
+export type PersonGroup = {
+  id: string;
+  name: string;
+  description?: string;
+  color?: string;
+  icon?: string;
+  parentId?: string | null;
+  sortOrder?: number;
+  isActive?: boolean;
+};
+
+export type PersonRole = {
+  id: string;
+  name: string;
+  code: string;
+  description?: string;
+  color?: string;
+};
+
+export type PersonCategory = {
+  id: string;
+  name: string;
+  color?: string;
+  icon?: string;
+};
+
+export type PersonSpecialty = {
+  id: string;
+  name: string;
+  category?: string;
+  icon?: string;
+  color?: string;
+  description?: string;
+  isDefault?: boolean;
+};
+
+export type Person = { 
+  id: string | number; 
+  personCode?: string;
+  accountingCode?: string;
+  title?: string;
+  gender?: string;
+  name: string; 
+  firstName?: string;
+  lastName?: string;
+  alias?: string;
+  companyName?: string;
+  fatherName?: string;
+  nationalId?: string;
+  address?: string;
+  imageUrl?: string;
+  personType: 'real' | 'legal';
+  role: 'customer' | 'employee' | 'supplier';
+  roles?: string[];
+  categories?: string[];
+  tags?: string[];
+  taxNumber?: string;
+  registrationNumber?: string; 
+  phone: string;
+  mobile?: string;
+  contacts?: { id?: string; type: 'mobile' | 'phone' | 'fax' | 'other'; number: string; title?: string }[]; 
+  bankName?: string;
+  bankAccountNumber?: string;
+  cardNumber?: string;
+  shebaNumber?: string;
+  bankAccounts?: { id?: string; bankName: string; accountNumber?: string; cardNumber?: string; shebaNumber?: string; title?: string }[];
+  additionalNotes?: string;
+  attachments?: { name: string; url: string; size?: number; type?: string; }[];
+  group?: string;
+  province?: string;
+  city?: string;
+  isActive?: boolean;
+  registrationDate?: string;
+  initialBalance?: number; // مانده اولیه (افتتاحیه)
+  initialBalanceType?: 'debtor' | 'creditor' | 'settled';
+  creditLimit?: number; // سقف اعتبار
+
+  // Employee specific fields
+  insuranceNumber?: string;
+  insuranceType?: string;
+  educationLevel?: string;
+  experienceYears?: number | string;
+  maritalStatus?: string;
+  studyField?: string;
+  jobTitle?: string;
+  jobCategory?: string;
+  employmentType?: string;
+  childrenCount?: number | string;
+
+  // Specialist & Craft fields
+  specialties?: string[]; // IDs of PersonSpecialty
+  availabilityStatus?: 'available' | 'busy' | 'unavailable'; // وضعیت در دسترس بودن
+  specialistRating?: number; // امتیاز ۱ تا ۵ ستاره
+  skillNotes?: string; // یادداشت مهارت‌ها، سوابق و ابزار موجود
+  dailyWage?: number; // دستمزد روزانه تقریبی
+};
+
+export type Checkbook = {
+  id: string | number;
+  accountId: string | number;
+  bankName?: string;
+  startNumber: string;
+  endNumber: string;
+  totalLeaves: number;
+  issuedDate: string;
+};
+
+export type IssuedCheck = {
+  id: string | number;
+  checkbookId: string | number;
+  checkNumber: string;
+  sayadId: string;
+  reason?: string;
+  amount: number;
+  issueDate: string;
+  dueDate: string;
+  payeeId: string | number;
+  status: 'blank' | 'issued' | 'cashed' | 'bounced' | 'cancelled';
+  receiptNumber?: string;
+  transactionId?: string | number | null;
+  assignedToId?: string | number;
+  bankAccountId?: string | number;
+  description?: string;
+  imageUrl?: string;
+  attachments?: string[];
+  history?: { status: string, date: string, desc?: string, user?: string, transactionId?: string | number, receiptNumber?: string | number }[];
+  isActive?: boolean;
+  salePrice?: number;
+  discountPercent?: number;
+  minStockLevel?: number;
+};
+
+export type ReceivedCheck = {
+  id: string | number;
+  checkNumber: string;
+  sayadId: string;
+  reason?: string;
+  bankName: string;
+  branchName?: string;
+  amount: number;
+  receiveDate: string;
+  dueDate: string;
+  payerId: string | number;
+  status: 'received' | 'deposited' | 'cashed' | 'bounced' | 'returned' | 'assigned' | 'bounced_assigned';
+  receiptNumber?: string;
+  transactionId?: string | number | null;
+  assignedToId?: string | number;
+  accountId?: string | number;
+  description?: string;
+  imageUrl?: string;
+  attachments?: string[];
+  history?: { status: string, date: string, desc?: string, user?: string, transactionId?: string | number, receiptNumber?: string | number }[];
+};
+
+export type ProductCategory = {
+  id: string | number;
+  code?: string;
+  name: string;
+  description?: string;
+  parentId?: string | number | null;
+};
+
+export type Product = {
+  id: string | number;
+  code?: string;
+  barcode?: string;
+  name: string;
+  price: number;
+  purchasePrice?: number; 
+  stock?: number;
+  initialStock?: number;
+  initialStockQty?: number;
+  initialStockDocNumber?: string;
+  initialStockDate?: string;
+  initialStockWarehouseId?: string | number;
+  initialStockTimestamp?: number;
+  initialStockDescription?: string;
+  minStock?: number;
+  allowDecimalQuantity?: boolean;
+  unit?: string;
+  secondaryUnit?: string;
+  unitRatio?: number;
+  unitRatioDirection?: 'main_to_secondary' | 'secondary_to_main';
+  type: 'product' | 'service';
+  category: string;
+  categoryId?: string | number;
+  warehouseId?: string | number;
+  imageUrl?: string;
+  isActive?: boolean;
+  salePrice?: number;
+  discountPercent?: number;
+  minStockLevel?: number;
+  maxStock?: number;
+  description?: string;
+  // Steel & Pipe specific properties (for online scrapers & pricing by weight/branch/meter)
+  pipeDiameterInch?: string;
+  pipeThicknessMm?: number;
+  pipeDiameterMm?: number;
+  pipeLengthM?: number;
+  pipeWeightPerBranchKg?: number;
+  pipeLoadingLocation?: string;
+  sourceUrl?: string;
+  pricePerKg?: number;
+  pricePerMeter?: number;
+  pricePerBranch?: number;
+  pricingBasis?: 'kg' | 'meter' | 'branch';
+  currency?: string;
+  exchangeRate?: number;
+  sourcePriceToman?: number;
+  sourceCurrency?: string;
+};
+
+export type Account = {
+  accountingCode?: string;
+  id: string | number;
+  bankName: string;
+  branchName?: string;
+  accountNumber?: string;
+  cardNumber?: string;
+  shebaNumber?: string;
+  bankAccounts?: { id?: string; bankName: string; accountNumber?: string; cardNumber?: string; shebaNumber?: string; title?: string }[];
+  balance: number;
+  accountHolder?: string;
+  title?: string;
+};
+
+export type Cashbox = {
+  accountingCode?: string;
+  id: string | number;
+  name: string;
+  manager?: string;
+  accountNumber?: string;
+  balance: number;
+};
+
+export type Warehouse = {
+  id: string | number;
+  name: string;
+  manager?: string;
+  accountNumber?: string;
+  location?: string;
+  isActive: boolean;
+};
+
+export type InvoiceStatus = 'draft' | 'pending_approval' | 'approved' | 'final' | 'voided';
+export type WarehouseDocStatus = 'draft' | 'pending_approval' | 'approved' | 'final' | 'voided';
+
+export type InvoiceItem = {
+  id: string;
+  productId: string | number | '';
+  productName: string;
+  quantity: number;
+  unitPrice: number; // this will be price per selected unit
+  discountPercent: number;
+  totalPrice: number;
+  lineTotal?: number;
+  description?: string;
+  selectedUnit?: string;
+  unitRatio?: number;
+  unitRatioDirection?: 'main_to_secondary' | 'secondary_to_main';
+  isSecondaryUnit?: boolean;
+  baseUnitPrice?: number; // Price converted to base unit (e.g., price per single item)
+  baseQuantity?: number; // Quantity converted to base unit
+  warehouseId?: string | number;
+  maxQuantity?: number;
+  settledQuantity?: number;
+  returnedQuantity?: number;
+  remainingQuantity?: number;
+};
+
+export type Invoice = {
+  id: string | number;
+  invoiceNumber: string;
+  sellerInvoiceNumber?: string;
+  title?: string;
+  description?: string;
+  note?: string;
+  warehouseId?: string | number;
+  type: 'sale' | 'purchase' | 'proforma' | 'sale_return' | 'purchase_return' | 'warehouse_receipt' | 'warehouse_remittance' | 'waste' | 'consignment_out' | 'consignment_in';
+  currency?: string;
+  allowNegativeStock?: boolean;
+  date: string;
+  dueDate?: string | null;
+  customerId?: string | number;
+  customerName?: string;
+  driverPersonId?: string | number;
+  driverName?: string;
+  driverPhone?: string;
+  receiverPersonId?: string | number;
+  receiverName?: string;
+  receiverPhone?: string;
+  vehiclePlateNumber?: string;
+  shippingAddress?: string;
+  personId?: string | number;
+  sourceInvoiceId?: string | number;
+  sourceInvoiceNumber?: string;
+  items: InvoiceItem[];
+  overallDiscountPercent?: number;
+  totalAmount: number;
+  subtotal?: number;
+  totalDiscount?: number;
+  totalTax?: number;
+  grandTotal?: number;
+  paymentStatus?: 'paid' | 'partial' | 'unpaid';
+  paidAmount?: number;
+  consignmentStatus?: 'active' | 'partially_settled' | 'settled' | 'returned' | 'voided';
+  consignmentDueDate?: string | null;
+  consignmentTerms?: string;
+  consignmentSettledInvoices?: {
+    invoiceId: string | number;
+    invoiceNumber: string;
+    type: string;
+    date: string;
+    itemsCount: number;
+    amount: number;
+  }[];
+  isDraft?: boolean;
+  status?: InvoiceStatus;
+  isDeleted?: boolean;
+  createdAt?: number;
+  updatedAt?: number;
+};
+
+export type UserRole = 'admin' | 'manager' | 'employee' | 'customer' | 'guest' | 'accountant' | 'cashier' | 'warehouseman' | 'viewer';
+
+export interface UserSpecialPermissions {
+  canEditPrices?: boolean;
+  canDeleteInvoices?: boolean;
+  canGiveDiscounts?: boolean;
+  canViewCostAndProfit?: boolean;
+  canManageUsers?: boolean;
+  canManageSettings?: boolean;
+  canManageDatabase?: boolean;
+  canApproveChecks?: boolean;
+  canAccessAllWarehouses?: boolean;
+  allowedWarehouseIds?: (string | number)[];
+}
+
+export type RefundRequest = {
+  id?: string | number;
+  date: string; // YYYY/MM/DD
+  amount: number;
+  personId?: string | null;
+  profileLinkedAt?: string | null;
+  isProfileRequired?: boolean; // For selected existing person
+  miscName?: string; // For miscellaneous distinct from person entity
+  miscGroupId?: string | number; // Group ID for new miscellaneous person
+  cardNumber?: string;
+  resourceType: 'bank' | 'cashbox';
+  resourceId: string | number;
+  description?: string;
+  status: 'registered' | 'paid' | 'cancelled'; // ثبت شده، پرداخت شده، کنسل شده
+  createdAt?: number;
+  updatedAt?: number;
+};
+
+
+
+// --- Advanced Profile & Security Models ---
+export type UserPrivacyLevel = 'public' | 'private' | 'contacts_only';
+
+export type UserPreferences = {
+  theme: 'light' | 'dark' | 'system';
+  language: string;
+  timezone: string;
+  notifications: {
+    email: boolean;
+    sms: boolean;
+    inApp: boolean;
+  };
+  accessibility: {
+    highContrast: boolean;
+    fontSize: 'small' | 'medium' | 'large';
+  };
+};
+
+export type UserSecurity = {
+  twoFactorEnabled: boolean;
+  recoveryEmail?: string;
+  lastPasswordChange?: string;
+  activeSessions?: {
+    id: string;
+    device: string;
+    ip: string;
+    lastActive: string;
+  }[];
+};
+
+export type UserProfileExtended = {
+  bio?: string;
+  headline?: string;
+  location?: string;
+  socialLinks?: {
+    linkedin?: string;
+    github?: string;
+    twitter?: string;
+    website?: string;
+  };
+  skills?: string[];
+  experience?: {
+    id: string;
+    title: string;
+    company: string;
+    startDate: string;
+  requestDate?: string;
+  paymentDate?: string;
+  firstInstallmentDate?: string;
+    endDate?: string;
+    current: boolean;
+    description?: string;
+  }[];
+  education?: {
+    id: string;
+    institution: string;
+    degree: string;
+    field: string;
+    graduationYear: number;
+  }[];
+  privacySettings?: Record<string, UserPrivacyLevel>; // e.g., { phone: 'private', email: 'public' }
+  completionPercentage?: number;
+};
+
+// Update to User
+export type User = {
+  preferences?: UserPreferences;
+  security?: UserSecurity;
+  profile?: UserProfileExtended;
+  lastActive?: string;
+  joinDate?: string;
+  email?: string;
+  id: string | number;
+  username: string;
+  password?: string;
+  name: string;
+  role: UserRole;
+  isActive: boolean;
+  requires2FA?: boolean;
+  personId?: string | number;
+  autoLogoutMinutes?: number;
+  isProfileRequired?: boolean;
+  allowedTabs?: string[];
+  deniedTabs?: string[];
+  allowedModules?: string[];
+  specialPermissions?: UserSpecialPermissions;
+  customPermissionsEnabled?: boolean;
+}; 
+export type CompanySettings = {
+  checkApprovalThreshold?: number;
+  invoicePrintFormat?: "standard" | "minimal" | "official" | "compact" | "thermal";
+  companyName: string;
+  phone: string;
+  contacts?: { id?: string; type: 'mobile' | 'phone' | 'fax' | 'other'; number: string; title?: string }[];
+  email: string;
+  address: string;
+  website: string;
+  taxId: string;
+  registrationNumber: string;
+  logoBase64?: string;
+  currency?: string;
+  printPaperSize: 'A4' | 'A5' | '8cm';
+  printHasHeader: boolean;
+  printHasFooter: boolean;
+  printFooterText: string;
+  taxPercent: number;
+  invoiceNotes: string;
+  allowNegativeStock?: boolean;
+  quantityDecimals?: number;
+  fontFamily?: string;
+  requireWarehouse?: boolean;
+  invoicePrefix?: string;
+  invoiceStartNumber?: string;
+  invoiceNumberLength?: number;
+  smsProvider?: 'online' | 'gsm';
+  smsApiKey?: string;
+  smsSenderNumber?: string;
+  smsTemplateInvoice?: string;
+  smsTemplatePurchase?: string;
+  smsTemplateReturn?: string;
+  smsTemplateReceipt?: string;
+  smsTemplatePayment?: string;
+  smsTemplateCheck?: string;
+  smsTemplatePayableCheck?: string;
+  smsTemplateWarehouseReceipt?: string;
+  smsTemplateWarehouseRemittance?: string;
+  smsTemplateInvoiceDue?: string;
+  smsTemplateDebt?: string;
+  smsTemplateInstallment?: string;
+  // SMS Notification Toggles by section
+  notify_on_purchase_invoice?: boolean;
+  notify_on_sale_invoice?: boolean;
+  notify_on_return_invoices?: boolean;
+  notify_on_sale_return?: boolean;
+  notify_on_purchase_return?: boolean;
+  notify_on_receive?: boolean;
+  notify_on_payment?: boolean;
+  notify_on_warehouse_receipt?: boolean;
+  notify_on_warehouse_remittance?: boolean;
+  notify_on_invoice_due?: boolean;
+  notify_on_receivable_check?: boolean;
+  notify_on_payable_check?: boolean;
+  notify_on_debtors?: boolean;
+  notify_on_installment?: boolean;
+  smsDebtThresholdEnabled?: boolean;
+  smsDebtThresholdAmount?: number;
+  smsDebtThresholdMessage?: string;
+  debtorNotificationEnabled?: boolean;
+  debtorNotificationThreshold?: number;
+  debtorNotificationRepeatValue?: number;
+  debtorNotificationRepeatUnit?: number;
+  debtorNotificationRedisplayValue?: number;
+  debtorNotificationRedisplayUnit?: number;
+  debtorNotificationLocation?: 'top-right' | 'top-left' | 'bottom-right' | 'bottom-left' | 'top-center' | 'bottom-center' | 'modal';
+  debtorNotificationColor?: string;
+  debtorNotificationOrder?: 'random' | 'largest' | 'smallest';
+  debtorNotificationTheme?: 'standard' | 'hacker';
+  debtorNotificationMaxCount?: number;
+  debtorNotificationAutoClose?: boolean;
+  debtorNotificationAutoCloseDuration?: number;
+  debtorNotificationMinOverdueDays?: number;
+  debtorNotificationSound?: boolean;
+  inventoryControlEnabled?: boolean;
+  lowStockThresholdsByCategory?: Record<string, number>;
+  autoReplenishPrompt?: boolean;
+  [key: string]: any; // Allow custom numbering properties
+};
+
+export interface SmsMessage {
+  id: string;
+  recipient: string;
+  message: string;
+  status: 'pending' | 'sent' | 'failed';
+  provider: 'online' | 'gsm';
+  timestamp: number;
+}
+
+export interface WarehouseStock {
+  id: string;
+  productId: string | number;
+  warehouseId: string | number;
+  physicalStock: number;
+  reservedStock: number;
+  availableStock: number;
+  lastUpdated: number;
+}
+
+
+export type StocktakingItem = {
+  productId: string | number;
+  productName: string;
+  expectedStock: number;
+  countedStock: number | null;
+  difference: number; // countedStock - expectedStock
+  costValue?: number; // unit cost * difference (positive for surplus, negative for deficit)
+  unitPrice?: number;
+  unit?: string;
+  secondaryUnit?: string;
+  unitRatio?: number;
+  unitRatioDirection?: string;
+  countedBoxes?: number | null;
+  countedUnits?: number | null;
+  countRound1?: number | null;
+  countRound2?: number | null;
+  countRound3?: number | null;
+  finalApprovedRound?: 1 | 2 | 3;
+  note?: string;
+};
+
+export type Stocktaking = {
+  fiscalYearId?: string | number;
+  id: string | number;
+  date: string; // Jalali or ISO
+  warehouseId: string | number;
+  status: 'pending' | 'in_progress' | 'confirmed' | 'applied';
+  items: StocktakingItem[];
+  description?: string;
+  createdBy?: string;
+  appliedDate?: string;
+  totalDeficitValue?: number;
+  totalSurplusValue?: number;
+  receiptId?: string | number;
+  receiptNumber?: string;
+  remittanceId?: string | number;
+  remittanceNumber?: string;
+  accountingDocId?: string | number;
+  accountingDocNumber?: string | number;
+  verifierName?: string;
+  counterName?: string;
+  countingTurn?: 1 | 2 | 3;
+};
+
+export type LedgerAccount = {
+  id: string | number;
+  code: string;
+  title: string;
+  type: 'group' | 'general' | 'subsidiary' | 'detailed'; // گروه، کل، معین، تفصیلی
+  nature: 'debit' | 'credit'; // بدهکار یا بستانکار
+  parentId?: string | number | null;
+};
+
+export type AccountingDocumentItem = {
+  id?: string | number;
+  ledgerAccountId: string | number;
+  detailedAccountId?: string | number; // references Persons, Banks, etc. if needed
+  description: string;
+  debit: number;
+  credit: number;
+  currency?: string;
+};
+
+export type AccountingDocument = {
+  id: string | number;
+  documentNumber: number | string;
+  date: string;
+  description: string;
+  status: 'draft' | 'approved' | 'permanent' | 'finalized' | 'voided' | string;
+  items: AccountingDocumentItem[];
+  sourceType?: string;
+  sourceId?: string | number; 
+  createdAt?: number;
+  updatedAt?: number;
+  currency?: string;
+  fiscalYearId?: string | number;
+  isFinalized?: boolean;
+  isAutoGenerated?: boolean;
+  isReversed?: boolean;
+  reversedDocId?: string | number;
+  reversalDocId?: string | number;
+  reversalDocNumber?: string | number;
+  type?: string;
+};
+
+export type LoanHistoryItem = {
+  id?: string | number;
+  loanId: string | number;
+  status: string;
+  date: string;
+  desc?: string;
+  user?: string;
+  createdAt?: string;
+};
+
+export type Loan = { 
+  id: string | number; 
+  personId: string | number; 
+  amount: number; 
+  interestRate?: number; 
+  frequency?: 'monthly' | 'quarterly' | 'yearly'; 
+  startDate: string; 
+  totalInstallments: number; 
+  installmentAmount: number; 
+  description?: string; 
+  status: 'requested' | 'incomplete' | 'completed_dossier' | 'approved' | 'active' | 'completed' | 'overdue'; 
+  type: 'given' | 'received'; 
+  accountId?: string | number; 
+  loanNumber?: string; 
+  history?: { status: string, date: string, desc?: string, user?: string }[];
+  penaltyType?: 'none' | 'fixed_per_day' | 'percent_per_day' | 'fixed_per_month' | 'percent_per_month';
+  penaltyRate?: number;
+  earlySettlementPolicy?: 'none' | 'discount_interest';
+  earlySettlementDiscountPercent?: number;
+};
+
+export type Installment = { id: string | number; loanId: string | number; dueDate: string; amount: number; status: 'pending' | 'paid' | 'overdue'; paidDate?: string; paidAmount?: number; penaltyPaidAmount?: number; description?: string; installmentNumber?: number; installmentCode?: string; receiptId?: string | number; receiptNumber?: string; };
+
+
+export type SystemLog = {
+  id: string | number;
+  action: string;
+  userId?: string | number;
+  username?: string;
+  userName?: string;
+  userRole?: string;
+  details: string;
+  entityType: string;
+  entityId?: string | number;
+  timestamp: number;
+  dateStr?: string;
+  changes?: string;
+  oldData?: any;
+  newData?: any;
+  diffSummary?: string;
+  browser?: string;
+  os?: string;
+  device?: string;
+  ip?: string;
+  userAgent?: string;
+};
+
+export type ProductPriceHistory = {
+  id: string | number;
+  productId: string | number;
+  date: string;
+  type: 'purchase' | 'sale';
+  price: number;
+  invoiceId?: string | number;
+  quantity?: number;
+  invoiceItemId?: string | number;
+};
+
+export type ProductInventoryHistory = {
+  id: string | number;
+  productId: string | number;
+  warehouseId: string | number;
+  date: string;
+  type: 'in' | 'out';
+  quantity: number;
+  documentType: string;
+  documentId: string | number;
+  documentNumber?: string | number;
+  description?: string;
+  balanceBefore: number;
+  balanceAfter: number;
+  timestamp: number;
+};
+
+
+export interface NoteHistory {
+  date: string;
+  action: string;
+  details?: string;
+}
+
+export interface PersonalNote {
+
+  id: string;
+  title: string;
+  content: string;
+  color?: string;
+  isPinned?: boolean;
+  isArchived?: boolean;
+  tags?: string[];
+  createdAt: string;
+  updatedAt: string;
+  linkedPersons?: string[];
+  linkedDocs?: string[];
+  images?: string[];
+  reminderDate?: string;
+  history?: NoteHistory[];
+
+}
+
